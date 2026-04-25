@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Surf Travel | Surf stays, spots, and trip planning</title>
+    <meta
+      name="description"
+      content="Surf Travel is a mobile app for discovering surf spots, checking conditions, and finding places to stay by surf area."
+    />
+    <style>
+      :root {
+        --sand: #f5efe5;
+        --cream: #fcf8f1;
+        --ink: #21312e;
+        --muted: #667571;
+        --sea: #163f3d;
+        --foam: #d9f0ec;
+        --sun: #d89f58;
+        --card: rgba(255, 255, 255, 0.76);
+        --line: rgba(22, 63, 61, 0.1);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(216, 159, 88, 0.25), transparent 30%),
+          radial-gradient(circle at bottom right, rgba(22, 63, 61, 0.18), transparent 30%),
+          linear-gradient(180deg, var(--cream), var(--sand));
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .page {
+        width: min(1120px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 24px 0 56px;
+      }
+
+      .nav {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 28px;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 1rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+      }
+
+      .brand-mark {
+        width: 40px;
+        height: 40px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        color: white;
+        background: linear-gradient(135deg, var(--sea), var(--sun));
+        box-shadow: 0 12px 30px rgba(22, 63, 61, 0.16);
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 24px;
+        align-items: stretch;
+      }
+
+      .hero-copy,
+      .hero-card,
+      .section-card {
+        background: var(--card);
+        backdrop-filter: blur(14px);
+        border: 1px solid var(--line);
+        border-radius: 30px;
+        box-shadow: 0 24px 60px rgba(22, 63, 61, 0.08);
+      }
+
+      .hero-copy {
+        padding: 34px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: var(--foam);
+        color: var(--sea);
+        font-size: 0.85rem;
+        font-weight: 700;
+      }
+
+      h1 {
+        margin: 18px 0 12px;
+        font-size: clamp(2.35rem, 5vw, 4.6rem);
+        line-height: 0.98;
+        letter-spacing: -0.05em;
+      }
+
+      .hero-copy p {
+        margin: 0;
+        max-width: 46rem;
+        color: var(--muted);
+        font-size: 1.05rem;
+        line-height: 1.7;
+      }
+
+      .hero-actions {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 24px;
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 48px;
+        padding: 0 18px;
+        border-radius: 999px;
+        text-decoration: none;
+        font-weight: 700;
+        transition: transform 0.18s ease;
+      }
+
+      .button:hover {
+        transform: translateY(-1px);
+      }
+
+      .button-primary {
+        color: white;
+        background: var(--sea);
+      }
+
+      .button-secondary {
+        border: 1px solid rgba(22, 63, 61, 0.18);
+        background: white;
+      }
+
+      .hero-card {
+        padding: 22px;
+        overflow: hidden;
+        background:
+          linear-gradient(160deg, rgba(22, 63, 61, 0.96), rgba(216, 159, 88, 0.92)),
+          var(--card);
+        color: white;
+      }
+
+      .hero-card h2 {
+        margin: 6px 0 10px;
+        font-size: 1.65rem;
+      }
+
+      .hero-card p {
+        margin: 0 0 18px;
+        color: rgba(255, 255, 255, 0.78);
+        line-height: 1.6;
+      }
+
+      .pill-list,
+      .stat-grid,
+      .feature-grid {
+        display: grid;
+        gap: 12px;
+      }
+
+      .pill-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .pill,
+      .stat,
+      .feature,
+      .mini-card {
+        border-radius: 22px;
+      }
+
+      .pill {
+        padding: 14px;
+        background: rgba(255, 255, 255, 0.14);
+        border: 1px solid rgba(255, 255, 255, 0.16);
+      }
+
+      .pill strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 0.84rem;
+        opacity: 0.7;
+      }
+
+      .sections {
+        display: grid;
+        gap: 18px;
+        margin-top: 22px;
+      }
+
+      .section-card {
+        padding: 28px;
+      }
+
+      .section-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: end;
+        margin-bottom: 18px;
+      }
+
+      .section-title h3 {
+        margin: 0;
+        font-size: 1.7rem;
+      }
+
+      .section-title p {
+        margin: 0;
+        color: var(--muted);
+        max-width: 42rem;
+        line-height: 1.6;
+      }
+
+      .feature-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .feature {
+        padding: 20px;
+        background: white;
+        border: 1px solid var(--line);
+      }
+
+      .feature strong,
+      .mini-card strong {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 1rem;
+      }
+
+      .feature span,
+      .mini-card span,
+      .note {
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .stat-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .stat {
+        padding: 18px;
+        background: white;
+        border: 1px solid var(--line);
+      }
+
+      .stat strong {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 1.55rem;
+      }
+
+      .mini-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .mini-card {
+        padding: 18px;
+        background: white;
+        border: 1px solid var(--line);
+      }
+
+      .footer {
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        align-items: center;
+        margin-top: 24px;
+        padding: 0 4px;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      @media (max-width: 920px) {
+        .hero,
+        .feature-grid,
+        .stat-grid,
+        .mini-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .section-title,
+        .footer,
+        .nav {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .pill-list {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="nav">
+        <div class="brand">
+          <span class="brand-mark">S</span>
+          <span>Surf Travel</span>
+        </div>
+        <div class="note">Mobile surf app for spots, stays, and trip planning</div>
+      </header>
+
+      <section class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow">Bali first. More surf destinations next.</div>
+          <h1>Find where to stay by surf area, not just by city.</h1>
+          <p>
+            Surf Travel helps surfers discover stays, surf spots, forecasts, tides,
+            and trip ideas in destinations like Bali. Instead of digging through
+            random booking pages, users browse places to stay by surf area like
+            Canggu, Uluwatu, Medewi, Lembongan, and more.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="mailto:tytaneth@gmail.com">Contact for partnerships</a>
+            <a class="button button-secondary" href="mailto:tytaneth@gmail.com?subject=Surf%20Travel%20Beta">Join beta waitlist</a>
+          </div>
+        </div>
+
+        <aside class="hero-card">
+          <div class="eyebrow" style="background: rgba(255,255,255,0.14); color: white;">
+            Current focus
+          </div>
+          <h2>Bali surf stays and spot discovery</h2>
+          <p>
+            The first version is focused on helping surfers pick the right area to
+            live, save favorite stays, and plan trips around surf conditions.
+          </p>
+          <div class="pill-list">
+            <div class="pill">
+              <strong>Areas</strong>
+              Canggu, Uluwatu, Medewi, Lembongan, Sanur, Amed
+            </div>
+            <div class="pill">
+              <strong>Stay types</strong>
+              Hostels, villas, hotels, guesthouses
+            </div>
+            <div class="pill">
+              <strong>Trip tools</strong>
+              Surf spots, forecasts, tides, alerts
+            </div>
+            <div class="pill">
+              <strong>Platform</strong>
+              iPhone-first mobile app
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="sections">
+        <div class="section-card">
+          <div class="section-title">
+            <div>
+              <h3>What the app does</h3>
+            </div>
+            <p>
+              Surf Travel is being built as a surf-focused travel app where users can
+              discover surf spots, explore destinations by area, and find places to
+              stay that match the kind of trip they want.
+            </p>
+          </div>
+          <div class="feature-grid">
+            <article class="feature">
+              <strong>Surf spots</strong>
+              <span>Browse surf breaks, skill level, forecast windows, and tide context in one place.</span>
+            </article>
+            <article class="feature">
+              <strong>Area-based stays</strong>
+              <span>View places to stay by surf area like Canggu or Uluwatu instead of generic city search.</span>
+            </article>
+            <article class="feature">
+              <strong>Trip planning</strong>
+              <span>Save favorite stays, compare areas, and build surf trips around where users want to live.</span>
+            </article>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title">
+            <div>
+              <h3>Launch direction</h3>
+            </div>
+            <p>
+              The first travel rollout is focused on accommodation discovery and surf
+              planning in Bali, with affiliate booking links and partner listings to
+              follow.
+            </p>
+          </div>
+          <div class="stat-grid">
+            <div class="stat">
+              <strong>Bali</strong>
+              <span>Initial launch destination</span>
+            </div>
+            <div class="stat">
+              <strong>8 areas</strong>
+              <span>Area-based travel browsing</span>
+            </div>
+            <div class="stat">
+              <strong>4 stay types</strong>
+              <span>Hostels, villas, hotels, guesthouses</span>
+            </div>
+            <div class="stat">
+              <strong>Mobile app</strong>
+              <span>Surf-first iPhone experience</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title">
+            <div>
+              <h3>For partners</h3>
+            </div>
+            <p>
+              Surf Travel is looking to work with accommodation and booking partners
+              that help surfers find relevant stays by surf area.
+            </p>
+          </div>
+          <div class="mini-grid">
+            <div class="mini-card">
+              <strong>Use case</strong>
+              <span>
+                Users discover stays in surf destinations like Bali, compare areas,
+                then tap out to book.
+              </span>
+            </div>
+            <div class="mini-card">
+              <strong>Contact</strong>
+              <span>
+                Partnership and affiliate inquiries:
+                <a href="mailto:tytaneth@gmail.com">tytaneth@gmail.com</a>
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <span>Surf Travel</span>
+        <span>Built for surfers planning where to stay next.</span>
+      </footer>
+    </main>
+  </body>
+</html>
