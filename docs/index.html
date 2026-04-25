@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tydes | Surf stays, spots, and trip planning</title>
+    <title>Tydes | Surf forecasts, community, and stays</title>
     <meta
       name="description"
-      content="Tydes is a mobile app for discovering surf spots, checking conditions, and finding places to stay across Australia and Southeast Asia."
+      content="Tydes is a surf app for wave forecasts, spot discovery, community, and stays across Australia and Southeast Asia."
     />
     <style>
       :root {
@@ -118,6 +118,23 @@
         color: var(--muted);
         font-size: 1.05rem;
         line-height: 1.7;
+      }
+
+      .hero-points {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 22px;
+      }
+
+      .hero-point {
+        padding: 10px 14px;
+        border-radius: 999px;
+        background: white;
+        border: 1px solid var(--line);
+        font-size: 0.93rem;
+        font-weight: 700;
+        color: var(--sea);
       }
 
       .hero-actions {
@@ -286,6 +303,20 @@
         border: 1px solid var(--line);
       }
 
+      .coverage-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .coverage-chip {
+        padding: 10px 14px;
+        border-radius: 999px;
+        background: white;
+        border: 1px solid var(--line);
+        font-weight: 700;
+      }
+
       .footer {
         display: flex;
         justify-content: space-between;
@@ -322,54 +353,61 @@
     <main class="page">
       <header class="nav">
         <div class="brand">
-          <span class="brand-mark">S</span>
+          <span class="brand-mark">T</span>
           <span>Tydes</span>
         </div>
-        <div class="note">Mobile surf app for spots, stays, and trip planning</div>
+        <div class="note">Wave forecasts, community, and surf travel</div>
       </header>
 
       <section class="hero">
         <div class="hero-copy">
-          <div class="eyebrow">Australia + Southeast Asia surf travel</div>
-          <h1>Find where to stay by surf area, not just by city.</h1>
+          <div class="eyebrow">Australia + Southeast Asia</div>
+          <h1>Know the waves, find your crew, and book the right surf base.</h1>
           <p>
-            Tydes helps surfers discover stays, surf spots, forecasts, tides, and
-            trip ideas across Australia and Southeast Asia. Instead of digging
-            through random booking pages, users browse places to stay by surf area
-            like Canggu, Uluwatu, Byron Bay, Siargao, Da Nang, and more.
+            Tydes is built for surfers who want better wave information, a real
+            surf community, and easier trip planning across Australia and Southeast
+            Asia. Users can check conditions, follow surf areas, connect with other
+            surfers, and find places to stay near the breaks they actually care
+            about.
           </p>
+          <div class="hero-points">
+            <span class="hero-point">Wave forecasts</span>
+            <span class="hero-point">Spot detail</span>
+            <span class="hero-point">Community posts</span>
+            <span class="hero-point">Area-based stays</span>
+          </div>
           <div class="hero-actions">
             <a class="button button-primary" href="mailto:tytaneth@gmail.com">Contact for partnerships</a>
-            <a class="button button-secondary" href="mailto:tytaneth@gmail.com?subject=Surf%20Travel%20Beta">Join beta waitlist</a>
+            <a class="button button-secondary" href="mailto:tytaneth@gmail.com?subject=Tydes%20Beta">Join beta waitlist</a>
           </div>
         </div>
 
         <aside class="hero-card">
           <div class="eyebrow" style="background: rgba(255,255,255,0.14); color: white;">
-            Current focus
+            Built around how surfers actually use apps
           </div>
-          <h2>Surf stays and spot discovery built for the region</h2>
+          <h2>Forecasts first, community close behind, stays built into the same flow</h2>
           <p>
-            The first version starts with Bali, then expands across Australia and
-            Southeast Asia with area-based stays, surf spots, and trip tools built
-            around how surfers actually travel.
+            Tydes brings wave info, spot discovery, community, and accommodation
+            into one app so surfers can stop bouncing between forecast sites, group
+            chats, and booking pages.
           </p>
           <div class="pill-list">
             <div class="pill">
-              <strong>Areas</strong>
-              Bali first, then Australia and Southeast Asia
+              <strong>Wave info</strong>
+              Forecast windows, tides, conditions, and spot detail
             </div>
             <div class="pill">
-              <strong>Stay types</strong>
-              Hostels, villas, hotels, guesthouses
+              <strong>Community</strong>
+              Profiles, posts, crew, and surf-trip conversations
             </div>
             <div class="pill">
-              <strong>Trip tools</strong>
-              Surf spots, forecasts, tides, alerts
+              <strong>Stays</strong>
+              Hostels, villas, hotels, and guesthouses by surf area
             </div>
             <div class="pill">
-              <strong>Platform</strong>
-              iPhone-first mobile app
+              <strong>Coverage</strong>
+              Australia and Southeast Asia surf destinations
             </div>
           </div>
         </aside>
@@ -383,23 +421,23 @@
             </div>
             <p>
               Tydes is being built as a surf-focused travel app where users can
-              discover surf spots, explore destinations by area, and find places to
-              stay that match the kind of trip they want across the main surf routes
-              in Australia and Southeast Asia.
+              discover surf spots, track conditions, connect with other surfers,
+              and find places to stay that match the kind of trip they want across
+              Australia and Southeast Asia.
             </p>
           </div>
           <div class="feature-grid">
             <article class="feature">
-              <strong>Surf spots</strong>
-              <span>Browse surf breaks, skill level, forecast windows, and tide context in one place.</span>
+              <strong>Wave information</strong>
+              <span>Browse spot detail, skill level, forecast windows, tides, and live or estimated conditions in one place.</span>
+            </article>
+            <article class="feature">
+              <strong>Community</strong>
+              <span>Post updates, build a profile, connect with friends, and follow the surf conversation around the places people are traveling.</span>
             </article>
             <article class="feature">
               <strong>Area-based stays</strong>
               <span>View places to stay by surf area like Canggu, Uluwatu, Byron Bay, or Siargao instead of generic city search.</span>
-            </article>
-            <article class="feature">
-              <strong>Trip planning</strong>
-              <span>Save favorite stays, compare areas, and build surf trips around where users want to live.</span>
             </article>
           </div>
         </div>
@@ -407,31 +445,22 @@
         <div class="section-card">
           <div class="section-title">
             <div>
-              <h3>Launch direction</h3>
+              <h3>Regional coverage</h3>
             </div>
             <p>
-              The first travel rollout starts with Bali, with Australia and wider
-              Southeast Asia destinations planned next. Accommodation discovery comes
-              first, followed by booking links and partner listings.
+              Tydes is being built for the main surf routes across Australia and
+              Southeast Asia, with accommodation, community, and wave information
+              living in the same product.
             </p>
           </div>
-          <div class="stat-grid">
-            <div class="stat">
-              <strong>Bali first</strong>
-              <span>Initial launch destination</span>
-            </div>
-            <div class="stat">
-              <strong>Regional</strong>
-              <span>Australia + Southeast Asia roadmap</span>
-            </div>
-            <div class="stat">
-              <strong>4 stay types</strong>
-              <span>Hostels, villas, hotels, guesthouses</span>
-            </div>
-            <div class="stat">
-              <strong>Mobile app</strong>
-              <span>Surf-first iPhone experience</span>
-            </div>
+          <div class="coverage-list">
+            <span class="coverage-chip">Indonesia</span>
+            <span class="coverage-chip">Australia</span>
+            <span class="coverage-chip">Philippines</span>
+            <span class="coverage-chip">Vietnam</span>
+            <span class="coverage-chip">Sri Lanka</span>
+            <span class="coverage-chip">Thailand</span>
+            <span class="coverage-chip">More regional surf areas next</span>
           </div>
         </div>
 
@@ -442,16 +471,16 @@
             </div>
             <p>
               Tydes is looking to work with accommodation and booking partners that
-              help surfers find relevant stays by surf area across Bali, Australia,
-              and Southeast Asia.
+              help surfers find relevant stays by surf area across Australia and
+              Southeast Asia.
             </p>
           </div>
           <div class="mini-grid">
             <div class="mini-card">
               <strong>Use case</strong>
               <span>
-                Users discover stays in surf destinations, compare areas, then tap
-                out to book through partner links.
+                Users check conditions, explore destinations, connect with the
+                community, then tap out to book the right stay for the area.
               </span>
             </div>
             <div class="mini-card">
@@ -467,7 +496,7 @@
 
       <footer class="footer">
         <span>Tydes</span>
-        <span>Built for surfers planning where to stay next.</span>
+        <span>Built for surfers chasing waves, community, and the right place to stay.</span>
       </footer>
     </main>
   </body>
