@@ -3,6 +3,10 @@ class UserProfile {
     required this.id,
     required this.email,
     required this.displayName,
+    required this.handle,
+    required this.bio,
+    required this.surfSkill,
+    required this.avatarUrl,
     required this.homeRegion,
     required this.locale,
     required this.premium,
@@ -14,6 +18,10 @@ class UserProfile {
   final String id;
   final String email;
   final String displayName;
+  final String handle;
+  final String bio;
+  final String surfSkill;
+  final String? avatarUrl;
   final String homeRegion;
   final String locale;
   final bool premium;
@@ -25,10 +33,49 @@ class UserProfile {
     return premium || freeLiveSpotId == spotId;
   }
 
+  UserProfile copyWith({
+    String? id,
+    String? email,
+    String? displayName,
+    String? handle,
+    String? bio,
+    String? surfSkill,
+    String? avatarUrl,
+    String? homeRegion,
+    String? locale,
+    bool? premium,
+    String? freeLiveSpotId,
+    bool clearFreeLiveSpotId = false,
+    bool? adsEnabled,
+    List<String>? favoriteSpotIds,
+  }) => UserProfile(
+    id: id ?? this.id,
+    email: email ?? this.email,
+    displayName: displayName ?? this.displayName,
+    handle: handle ?? this.handle,
+    bio: bio ?? this.bio,
+    surfSkill: surfSkill ?? this.surfSkill,
+    avatarUrl: avatarUrl ?? this.avatarUrl,
+    homeRegion: homeRegion ?? this.homeRegion,
+    locale: locale ?? this.locale,
+    premium: premium ?? this.premium,
+    freeLiveSpotId: clearFreeLiveSpotId
+        ? null
+        : (freeLiveSpotId ?? this.freeLiveSpotId),
+    adsEnabled: adsEnabled ?? this.adsEnabled,
+    favoriteSpotIds: favoriteSpotIds ?? this.favoriteSpotIds,
+  );
+
   factory UserProfile.fromJson(Map<String, dynamic> json) => UserProfile(
     id: json['id'] as String,
     email: json['email'] as String,
     displayName: json['display_name'] as String,
+    handle: json['handle'] as String? ?? (json['email'] as String).split('@').first,
+    bio:
+        json['bio'] as String? ??
+        'Looking for clean waves, easy travel days, and people to paddle out with.',
+    surfSkill: json['surf_skill'] as String? ?? 'intermediate',
+    avatarUrl: json['avatar_url'] as String?,
     homeRegion: json['home_region'] as String,
     locale: json['locale'] as String,
     premium: json['premium'] as bool? ?? false,
@@ -289,25 +336,52 @@ class AlertModel {
   AlertModel({
     required this.id,
     required this.spotId,
+    required this.waveEnabled,
     required this.minWaveHeightM,
+    required this.windEnabled,
     required this.maxWindKts,
+    required this.tideEnabled,
+    required this.tideType,
+    required this.tideOffsetHours,
     required this.enabled,
+    this.status = 'watching',
+    this.statusReason,
+    this.lastEvaluatedAt,
+    this.lastTriggeredAt,
     required this.nextCheckAt,
   });
 
   final String id;
   final String spotId;
-  final double minWaveHeightM;
-  final int maxWindKts;
+  final bool waveEnabled;
+  final double? minWaveHeightM;
+  final bool windEnabled;
+  final int? maxWindKts;
+  final bool tideEnabled;
+  final String? tideType;
+  final int? tideOffsetHours;
   final bool enabled;
+  final String status;
+  final String? statusReason;
+  final String? lastEvaluatedAt;
+  final String? lastTriggeredAt;
   final String nextCheckAt;
 
   factory AlertModel.fromJson(Map<String, dynamic> json) => AlertModel(
     id: json['id'] as String,
     spotId: json['spot_id'] as String,
-    minWaveHeightM: (json['min_wave_height_m'] as num).toDouble(),
-    maxWindKts: json['max_wind_kts'] as int,
+    waveEnabled: json['wave_enabled'] as bool? ?? true,
+    minWaveHeightM: (json['min_wave_height_m'] as num?)?.toDouble(),
+    windEnabled: json['wind_enabled'] as bool? ?? true,
+    maxWindKts: json['max_wind_kts'] as int?,
+    tideEnabled: json['tide_enabled'] as bool? ?? false,
+    tideType: json['tide_type'] as String?,
+    tideOffsetHours: json['tide_offset_hours'] as int?,
     enabled: json['enabled'] as bool? ?? true,
+    status: json['status'] as String? ?? 'watching',
+    statusReason: json['status_reason'] as String?,
+    lastEvaluatedAt: json['last_evaluated_at'] as String?,
+    lastTriggeredAt: json['last_triggered_at'] as String?,
     nextCheckAt: json['next_check_at'] as String,
   );
 }
@@ -342,6 +416,9 @@ class SocialPostModel {
     required this.id,
     required this.userId,
     required this.authorName,
+    required this.authorHandle,
+    required this.authorAvatarUrl,
+    required this.authorPremium,
     required this.spotId,
     required this.postType,
     required this.visibility,
@@ -354,6 +431,9 @@ class SocialPostModel {
   final String id;
   final String userId;
   final String authorName;
+  final String? authorHandle;
+  final String? authorAvatarUrl;
+  final bool authorPremium;
   final String? spotId;
   final String postType;
   final String visibility;
@@ -368,6 +448,9 @@ class SocialPostModel {
     id: json['id'] as String,
     userId: json['user_id'] as String,
     authorName: json['author_name'] as String,
+    authorHandle: json['author_handle'] as String?,
+    authorAvatarUrl: json['author_avatar_url'] as String?,
+    authorPremium: json['author_premium'] as bool? ?? false,
     spotId: json['spot_id'] as String?,
     postType: json['post_type'] as String,
     visibility: json['visibility'] as String? ?? 'public',

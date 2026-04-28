@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/api_models.dart';
+import '../../core/notifications/notification_service.dart';
 import '../../core/network/surf_repository.dart';
 import 'create_alert_sheet.dart';
 import '../spots/spots_page.dart';
@@ -23,6 +24,35 @@ class AlertsPage extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Alerts'),
         actions: [
+          IconButton(
+            onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              final notifications = ref.read(notificationServiceProvider);
+              final granted = await notifications.requestPermissions();
+              if (!granted) {
+                if (!context.mounted) return;
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Notifications are blocked. Turn them on in macOS Settings.',
+                    ),
+                  ),
+                );
+                return;
+              }
+              await notifications.showTestNotification();
+              if (!context.mounted) return;
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Test notification sent. If no banner shows, check macOS notification settings for this app.',
+                  ),
+                ),
+              );
+            },
+            icon: const Icon(Icons.campaign_outlined),
+            tooltip: 'Send test notification',
+          ),
           IconButton(
             onPressed: () async {
               final items = spots.valueOrNull;
@@ -87,7 +117,7 @@ class AlertsPage extends ConsumerWidget {
                         },
                         title: Text(spot?.name ?? alert.spotId),
                         subtitle: Text(
-                          'Min wave ${alert.minWaveHeightM}m, max wind ${alert.maxWindKts}kts\nNext check ${alert.nextCheckAt}',
+                          '${_alertStatusLine(alert)}\n${_alertSummary(alert)}\nNext check ${_formatAlertTime(alert.nextCheckAt)}',
                         ),
                       ),
                     ),
@@ -105,6 +135,56 @@ class AlertsPage extends ConsumerWidget {
       ),
     );
   }
+}
+
+String _alertStatusLine(AlertModel alert) {
+  if (!alert.enabled) {
+    return 'Alert turned off';
+  }
+  switch (alert.status) {
+    case 'triggered':
+      return alert.statusReason ?? 'Conditions match right now';
+    case 'waiting':
+      return alert.statusReason ?? 'Waiting on live data';
+    case 'watching':
+    default:
+      return alert.statusReason ?? 'Watching conditions';
+  }
+}
+
+String _alertSummary(AlertModel alert) {
+  final parts = <String>[];
+  if (alert.waveEnabled && alert.minWaveHeightM != null) {
+    parts.add('Wave at least ${alert.minWaveHeightM}m');
+  }
+  if (alert.windEnabled && alert.maxWindKts != null) {
+    parts.add('Wind less than ${alert.maxWindKts}kts');
+  }
+  if (alert.tideEnabled && alert.tideType != null && alert.tideOffsetHours != null) {
+    final tideLabel = alert.tideType == 'high' ? 'high tide' : 'low tide';
+    final offset = alert.tideOffsetHours!;
+    if (offset == 0) {
+      parts.add('At $tideLabel');
+    } else if (offset < 0) {
+      parts.add('${offset.abs()}h before $tideLabel');
+    } else {
+      parts.add('${offset.abs()}h after $tideLabel');
+    }
+  }
+  if (parts.isEmpty) return 'Custom alert';
+  return parts.join(' • ');
+}
+
+String _formatAlertTime(String timestamp) {
+  final parsed = DateTime.tryParse(timestamp);
+  if (parsed == null) {
+    return timestamp;
+  }
+  final local = parsed.toLocal();
+  final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+  final minute = local.minute.toString().padLeft(2, '0');
+  final period = local.hour >= 12 ? 'PM' : 'AM';
+  return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} $hour:$minute $period';
 }
 
 class _EmptyAlertsState extends StatelessWidget {

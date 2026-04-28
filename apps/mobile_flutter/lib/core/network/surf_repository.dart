@@ -74,6 +74,71 @@ class SurfRepository {
     }
   }
 
+  Future<UserProfile> updateProfile({
+    required String displayName,
+    required String handle,
+    required String bio,
+    required String surfSkill,
+    String? avatarUrl,
+  }) async {
+    try {
+      final response = await _dio.put<Map<String, dynamic>>(
+        '/users/me',
+        data: {
+          'display_name': displayName,
+          'handle': handle,
+          'bio': bio,
+          'surf_skill': surfSkill,
+          'avatar_url': avatarUrl,
+        },
+      );
+      final profile = UserProfile.fromJson(response.data!);
+      DemoSeed.me = profile;
+      return profile;
+    } on DioException catch (error) {
+      final detail = error.response?.data;
+      if (detail is Map<String, dynamic> && detail['detail'] is String) {
+        throw StateError(detail['detail'] as String);
+      }
+      throw StateError('Could not update profile right now.');
+    } catch (_) {
+      DemoSeed.me = DemoSeed.me.copyWith(
+        displayName: displayName,
+        handle: handle,
+        bio: bio,
+        surfSkill: surfSkill,
+        avatarUrl: avatarUrl,
+      );
+      return DemoSeed.me;
+    }
+  }
+
+  Future<UserProfile> setFreeLiveSpot(String spotId) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/users/free-live-spot',
+        data: {'spot_id': spotId},
+      );
+      final profile = UserProfile.fromJson(response.data!);
+      DemoSeed.me = profile;
+      return profile;
+    } on DioException catch (error) {
+      final detail = error.response?.data;
+      if (detail is Map<String, dynamic> && detail['detail'] is String) {
+        throw StateError(detail['detail'] as String);
+      }
+      throw StateError('Could not unlock live data right now.');
+    } catch (_) {
+      if (!DemoSeed.me.premium &&
+          DemoSeed.me.freeLiveSpotId != null &&
+          DemoSeed.me.freeLiveSpotId != spotId) {
+        throw StateError('Free live spot already selected');
+      }
+      DemoSeed.me = DemoSeed.me.copyWith(freeLiveSpotId: spotId);
+      return DemoSeed.me;
+    }
+  }
+
   Future<DashboardModel> fetchDashboard() async {
     try {
       final response = await _dio.get<Map<String, dynamic>>('/users/dashboard');
@@ -166,8 +231,13 @@ class SurfRepository {
 
   Future<AlertModel> createAlert({
     required String spotId,
-    required double minWaveHeightM,
-    required int maxWindKts,
+    required bool waveEnabled,
+    double? minWaveHeightM,
+    required bool windEnabled,
+    int? maxWindKts,
+    required bool tideEnabled,
+    String? tideType,
+    int? tideOffsetHours,
     bool enabled = true,
   }) async {
     try {
@@ -175,8 +245,13 @@ class SurfRepository {
         '/alerts',
         data: {
           'spot_id': spotId,
+          'wave_enabled': waveEnabled,
           'min_wave_height_m': minWaveHeightM,
+          'wind_enabled': windEnabled,
           'max_wind_kts': maxWindKts,
+          'tide_enabled': tideEnabled,
+          'tide_type': tideType,
+          'tide_offset_hours': tideOffsetHours,
           'enabled': enabled,
         },
       );
@@ -189,8 +264,13 @@ class SurfRepository {
       final alert = AlertModel(
         id: 'alert_${DateTime.now().millisecondsSinceEpoch}',
         spotId: spotId,
+        waveEnabled: waveEnabled,
         minWaveHeightM: minWaveHeightM,
+        windEnabled: windEnabled,
         maxWindKts: maxWindKts,
+        tideEnabled: tideEnabled,
+        tideType: tideType,
+        tideOffsetHours: tideOffsetHours,
         enabled: enabled,
         nextCheckAt: DateTime.now()
             .toUtc()
@@ -228,8 +308,13 @@ class SurfRepository {
       final updated = AlertModel(
         id: existing.id,
         spotId: existing.spotId,
+        waveEnabled: existing.waveEnabled,
         minWaveHeightM: existing.minWaveHeightM,
+        windEnabled: existing.windEnabled,
         maxWindKts: existing.maxWindKts,
+        tideEnabled: existing.tideEnabled,
+        tideType: existing.tideType,
+        tideOffsetHours: existing.tideOffsetHours,
         enabled: enabled,
         nextCheckAt: existing.nextCheckAt,
       );
@@ -316,6 +401,9 @@ class SurfRepository {
         id: 'post_${DateTime.now().millisecondsSinceEpoch}',
         userId: DemoSeed.me.id,
         authorName: DemoSeed.me.displayName,
+        authorHandle: DemoSeed.me.handle,
+        authorAvatarUrl: DemoSeed.me.avatarUrl,
+        authorPremium: DemoSeed.me.premium,
         spotId: spotId,
         postType: 'general',
         visibility: visibility,

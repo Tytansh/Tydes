@@ -20,6 +20,10 @@ final travelFeedPostsProvider = FutureProvider((ref) {
 final travelFeedSpotsProvider = FutureProvider(
   (ref) => ref.watch(surfRepositoryProvider).fetchSpots(),
 );
+final currentViewerProvider = FutureProvider(
+  (ref) => ref.watch(surfRepositoryProvider).fetchMe(),
+);
+final videoSoundEnabledProvider = StateProvider<bool>((ref) => false);
 
 class TravelFeedSection extends ConsumerWidget {
   const TravelFeedSection({
@@ -124,15 +128,31 @@ class _EmptyFeedCard extends StatelessWidget {
   }
 }
 
-class _PostCard extends StatelessWidget {
+class _PostCard extends ConsumerWidget {
   const _PostCard({required this.post, required this.spots});
 
   final SocialPostModel post;
   final List<SpotModel> spots;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final spot = _spotForId(spots, post.spotId);
+    final currentViewer = ref.watch(currentViewerProvider).valueOrNull;
+    final authorAvatarUrl =
+        post.authorAvatarUrl ??
+        ((currentViewer != null && currentViewer.id == post.userId)
+            ? currentViewer.avatarUrl
+            : null);
+    final authorHandle =
+        post.authorHandle ??
+        ((currentViewer != null && currentViewer.id == post.userId)
+            ? currentViewer.handle
+            : null);
+    final authorPremium =
+        post.authorPremium ||
+        (currentViewer != null && currentViewer.id == post.userId
+            ? currentViewer.premium
+            : false);
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Padding(
@@ -142,17 +162,44 @@ class _PostCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                CircleAvatar(child: Text(post.authorName.characters.first)),
+                CircleAvatar(
+                  backgroundColor: Colors.white,
+                  backgroundImage: authorAvatarUrl == null
+                      ? null
+                      : NetworkImage(authorAvatarUrl),
+                  child: authorAvatarUrl == null
+                      ? Text(post.authorName.characters.first)
+                      : null,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        post.authorName,
-                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              post.authorName,
+                              style: const TextStyle(fontWeight: FontWeight.w800),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (authorPremium) ...[
+                            const SizedBox(width: 6),
+                            const Icon(
+                              Icons.verified_rounded,
+                              size: 16,
+                              color: Color(0xFF2AA7A1),
+                            ),
+                          ],
+                        ],
                       ),
-                      Text('${_labelForVisibility(post.visibility)} post'),
+                      Text(
+                        authorHandle == null || authorHandle.isEmpty
+                            ? '${_labelForVisibility(post.visibility)} post'
+                            : '@$authorHandle • ${_labelForVisibility(post.visibility)} post',
+                      ),
                     ],
                   ),
                 ),
@@ -166,7 +213,7 @@ class _PostCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             if (post.media.isNotEmpty) ...[
-              _PostMediaGrid(media: post.media),
+              SocialPostMediaCarousel(media: post.media),
               const SizedBox(height: 12),
             ],
             if (post.body.isNotEmpty)
@@ -178,121 +225,94 @@ class _PostCard extends StatelessWidget {
   }
 }
 
-class _PostMediaGrid extends StatelessWidget {
-  const _PostMediaGrid({required this.media});
+class SocialPostMediaCarousel extends StatefulWidget {
+  const SocialPostMediaCarousel({
+    super.key,
+    required this.media,
+    this.borderRadius = 18,
+  });
 
   final List<SocialMediaAttachmentModel> media;
+  final double borderRadius;
 
   @override
-  Widget build(BuildContext context) {
-    final videos = media
-        .where((item) => item.mediaType == 'video')
-        .take(1)
-        .toList();
-    if (videos.isNotEmpty) return _PostVideoPlayer(url: videos.first.url);
-
-    final photos = media
-        .where((item) => item.mediaType == 'photo')
-        .take(3)
-        .toList();
-    if (photos.isEmpty) return const SizedBox.shrink();
-
-    if (photos.length == 1) {
-      return AspectRatio(
-        aspectRatio: 4 / 3,
-        child: _PostPhoto(url: photos.first.url),
-      );
-    }
-
-    return SizedBox(
-      height: 210,
-      child: Row(
-        children: [
-          Expanded(child: _PostPhoto(url: photos.first.url)),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Column(
-              children: [
-                Expanded(child: _PostPhoto(url: photos[1].url)),
-                if (photos.length > 2) ...[
-                  const SizedBox(height: 6),
-                  Expanded(child: _PostPhoto(url: photos[2].url)),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  State<SocialPostMediaCarousel> createState() =>
+      _SocialPostMediaCarouselState();
 }
 
-class _PostVideoPlayer extends StatefulWidget {
-  const _PostVideoPlayer({required this.url});
-
-  final String url;
-
-  @override
-  State<_PostVideoPlayer> createState() => _PostVideoPlayerState();
-}
-
-class _PostVideoPlayerState extends State<_PostVideoPlayer> {
-  late final VideoPlayerController _controller;
+class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
+  late final PageController _pageController;
+  int _pageIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
-      ..initialize().then((_) {
-        if (mounted) setState(() {});
-      });
+    _pageController = PageController();
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _pageController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final ready = _controller.value.isInitialized;
+    final media = widget.media;
+    final videos = media
+        .where((item) => item.mediaType == 'video')
+        .take(1)
+        .toList();
+    if (videos.isNotEmpty) {
+      return AutoplayVideoPlayer(
+        url: videos.first.url,
+        borderRadius: widget.borderRadius,
+      );
+    }
+
+    final photos = media
+        .where((item) => item.mediaType == 'photo')
+        .toList();
+    if (photos.isEmpty) return const SizedBox.shrink();
+
     return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(widget.borderRadius),
       child: AspectRatio(
-        aspectRatio: ready ? _controller.value.aspectRatio : 16 / 9,
+        aspectRatio: 4 / 5,
         child: Stack(
-          alignment: Alignment.center,
           children: [
-            Positioned.fill(
-              child: ready
-                  ? VideoPlayer(_controller)
-                  : Container(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHighest,
-                    ),
+            PageView.builder(
+              controller: _pageController,
+              itemCount: photos.length,
+              onPageChanged: (index) => setState(() => _pageIndex = index),
+              itemBuilder: (context, index) {
+                return _PostPhoto(url: photos[index].url);
+              },
             ),
-            Material(
-              color: Colors.black.withValues(alpha: 0.35),
-              shape: const CircleBorder(),
-              child: IconButton(
-                color: Colors.white,
-                iconSize: 34,
-                onPressed: ready
-                    ? () {
-                        setState(() {
-                          _controller.value.isPlaying
-                              ? _controller.pause()
-                              : _controller.play();
-                        });
-                      }
-                    : null,
-                icon: Icon(
-                  _controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
+            if (photos.length > 1)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 12,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(photos.length, (index) {
+                    final selected = index == _pageIndex;
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      width: selected ? 8 : 6,
+                      height: selected ? 8 : 6,
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? Colors.white
+                            : Colors.white.withValues(alpha: 0.45),
+                        shape: BoxShape.circle,
+                      ),
+                    );
+                  }),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -307,15 +327,180 @@ class _PostPhoto extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return Image.network(
+      url,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) => Container(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        alignment: Alignment.center,
+        child: const Icon(Icons.image_not_supported_outlined),
+      ),
+    );
+  }
+}
+
+class AutoplayVideoPlayer extends ConsumerStatefulWidget {
+  const AutoplayVideoPlayer({
+    super.key,
+    required this.url,
+    this.borderRadius = 18,
+  });
+
+  final String url;
+  final double borderRadius;
+
+  @override
+  ConsumerState<AutoplayVideoPlayer> createState() => _AutoplayVideoPlayerState();
+}
+
+class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
+  late final VideoPlayerController _controller;
+  ScrollPosition? _scrollPosition;
+  bool _userPaused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+    _controller
+      ..setLooping(true)
+      ..initialize().then((_) {
+        final soundEnabled = ref.read(videoSoundEnabledProvider);
+        _controller.setVolume(soundEnabled ? 1.0 : 0.0);
+        if (mounted) {
+          setState(() {});
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _syncPlaybackToVisibility();
+          });
+        }
+      });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final nextPosition = Scrollable.maybeOf(context)?.position;
+    if (_scrollPosition == nextPosition) return;
+    _scrollPosition?.removeListener(_handleScroll);
+    _scrollPosition = nextPosition;
+    _scrollPosition?.addListener(_handleScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncPlaybackToVisibility();
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollPosition?.removeListener(_handleScroll);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleScroll() {
+    _syncPlaybackToVisibility();
+  }
+
+  void _syncPlaybackToVisibility() {
+    if (!mounted || !_controller.value.isInitialized) return;
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return;
+
+    final topLeft = renderObject.localToGlobal(Offset.zero);
+    final size = renderObject.size;
+    final screenHeight = MediaQuery.of(context).size.height;
+    final visibleTop = topLeft.dy.clamp(0.0, screenHeight);
+    final visibleBottom = (topLeft.dy + size.height).clamp(0.0, screenHeight);
+    final visibleHeight = (visibleBottom - visibleTop).clamp(0.0, size.height);
+    final visibleFraction = size.height == 0 ? 0.0 : visibleHeight / size.height;
+    final shouldPlay = visibleFraction >= 0.6 && !_userPaused;
+
+    if (shouldPlay && !_controller.value.isPlaying) {
+      _controller.play();
+      if (mounted) setState(() {});
+    } else if (!shouldPlay && _controller.value.isPlaying) {
+      _controller.pause();
+      if (mounted) setState(() {});
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final soundEnabled = ref.watch(videoSoundEnabledProvider);
+    final ready = _controller.value.isInitialized;
+    final isPlaying = ready && _controller.value.isPlaying;
+    final targetVolume = soundEnabled ? 1.0 : 0.0;
+    if (ready && _controller.value.volume != targetVolume) {
+      _controller.setVolume(targetVolume);
+    }
     return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
-      child: Image.network(
-        url,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) => Container(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          alignment: Alignment.center,
-          child: const Icon(Icons.image_not_supported_outlined),
+      borderRadius: BorderRadius.circular(widget.borderRadius),
+      child: AspectRatio(
+        aspectRatio: ready ? _controller.value.aspectRatio : 16 / 9,
+        child: GestureDetector(
+          onTap: ready
+              ? () {
+                  if (_controller.value.isPlaying) {
+                    _userPaused = true;
+                    _controller.pause();
+                  } else {
+                    _userPaused = false;
+                    _controller.play();
+                  }
+                  setState(() {});
+                }
+              : null,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Positioned.fill(
+                child: ready
+                    ? VideoPlayer(_controller)
+                    : Container(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
+                      ),
+              ),
+              if (!isPlaying)
+                IgnorePointer(
+                  child: Material(
+                    color: Colors.black.withValues(alpha: 0.28),
+                    shape: const CircleBorder(),
+                    child: const Padding(
+                      padding: EdgeInsets.all(10),
+                      child: Icon(
+                        Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size: 34,
+                      ),
+                    ),
+                  ),
+                ),
+              if (ready)
+                Positioned(
+                  right: 10,
+                  bottom: 10,
+                  child: Material(
+                    color: Colors.black.withValues(alpha: 0.32),
+                    shape: const CircleBorder(),
+                    child: IconButton(
+                      onPressed: () {
+                        ref.read(videoSoundEnabledProvider.notifier).state =
+                            !soundEnabled;
+                      },
+                      color: Colors.white,
+                      iconSize: 20,
+                      visualDensity: VisualDensity.compact,
+                      icon: Icon(
+                        soundEnabled
+                            ? Icons.volume_up_rounded
+                            : Icons.volume_off_rounded,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

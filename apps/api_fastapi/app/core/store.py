@@ -4,7 +4,7 @@ from collections.abc import Iterable
 import json
 from pathlib import Path
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from app.core.models import AdCard, Alert, BillingPlan, Dashboard, ForecastEntry, FriendProfile, Session, SocialPost, Spot, TideForecast, Trip, User, build_seed
 from app.integrations.tide_providers.tidecheck import TideCheckProvider
@@ -36,10 +36,8 @@ class DemoStore:
         self.user.premium = (
             "+premium" in normalized_email
             or normalized_email.startswith("premium@")
-            or normalized_email == "tytaneth@gmail.com"
         )
         self.user.ads_enabled = not self.user.premium
-        self.user.free_live_spot_id = self._default_free_live_spot_id()
         self.capture_email(email)
         self._save_state()
         return Session(access_token="demo-access-token", user=self.user)
@@ -47,10 +45,31 @@ class DemoStore:
     def logout(self) -> User:
         self.user.email = "demo@surftravel.app"
         self.user.display_name = "Tytan"
+        self.user.handle = "tytan"
+        self.user.bio = "Looking for clean waves, easy travel days, and people to paddle out with."
+        self.user.surf_skill = "intermediate"
+        self.user.avatar_url = None
         self.user.locale = "en"
         self.user.premium = False
         self.user.ads_enabled = True
-        self.user.free_live_spot_id = self._default_free_live_spot_id()
+        self.user.free_live_spot_id = None
+        self._save_state()
+        return self.user
+
+    def update_profile(
+        self,
+        *,
+        display_name: str,
+        handle: str,
+        bio: str,
+        surf_skill: str,
+        avatar_url: str | None,
+    ) -> User:
+        self.user.display_name = display_name
+        self.user.handle = handle
+        self.user.bio = bio
+        self.user.surf_skill = surf_skill
+        self.user.avatar_url = avatar_url
         self._save_state()
         return self.user
 
@@ -97,7 +116,29 @@ class DemoStore:
                 available=False,
                 note="Spot not found.",
             )
-        return self.tide_provider.fetch_spot_tides(spot, start_day or date.today())
+        if not self._can_access_live_data(spot_id):
+            locked_note = (
+                "Unlock this spot to view live tide data."
+                if self.user.free_live_spot_id is None
+                else "Premium subscription unlocks live tide data on more spots."
+            )
+            return TideForecast(
+                spot_id=spot_id,
+                available=False,
+                note=locked_note,
+            )
+        try:
+            return self.tide_provider.fetch_spot_tides(
+                spot,
+                start_day or date.today(),
+            )
+        except Exception as error:
+            print(f"Live tide data unavailable for {spot.id}: {error}")
+            return TideForecast(
+                spot_id=spot_id,
+                available=False,
+                note="Live tide data is unavailable right now.",
+            )
 
     def list_trips(self) -> Iterable[Trip]:
         return self.trips
@@ -108,9 +149,11 @@ class DemoStore:
         return trip
 
     def list_alerts(self) -> Iterable[Alert]:
+        self.evaluate_alerts()
         return self.alerts
 
     def add_alert(self, alert: Alert) -> Alert:
+        self._evaluate_alert(alert)
         self.alerts.append(alert)
         self._save_state()
         return alert
@@ -120,8 +163,15 @@ class DemoStore:
         if alert is None:
             return None
         alert.enabled = enabled
+        self._evaluate_alert(alert)
         self._save_state()
         return alert
+
+    def evaluate_alerts(self) -> list[Alert]:
+        for alert in self.alerts:
+            self._evaluate_alert(alert)
+        self._save_state()
+        return self.alerts
 
     def delete_alert(self, alert_id: str) -> bool:
         before = len(self.alerts)
@@ -160,6 +210,22 @@ class DemoStore:
         ]
         self._save_state()
         return self.user.favorite_spot_ids
+
+    def set_free_live_spot(self, spot_id: str) -> User | None:
+        if self.get_spot(spot_id) is None:
+            return None
+        if self.user.premium:
+            self.user.free_live_spot_id = spot_id
+            self._save_state()
+            return self.user
+        if (
+            self.user.free_live_spot_id is not None
+            and self.user.free_live_spot_id != spot_id
+        ):
+            raise ValueError("Free live spot already selected")
+        self.user.free_live_spot_id = spot_id
+        self._save_state()
+        return self.user
 
     def capture_email(self, email: str) -> dict[str, str]:
         normalized = email.strip().lower()
@@ -220,9 +286,7 @@ class DemoStore:
         self.state_file.write_text(json.dumps(payload, indent=2))
 
     def _can_access_live_forecast(self, spot_id: str) -> bool:
-        # During the demo build, keep live forecast access open so provider
-        # issues are easier to debug without account state getting in the way.
-        return True
+        return self._can_access_live_data(spot_id)
 
     def _featured_spot(self) -> Spot:
         if not self.user.premium and self.user.free_live_spot_id is not None:
@@ -231,16 +295,99 @@ class DemoStore:
                 return spot
         return self.spots[0]
 
-    def _default_free_live_spot_id(self) -> str | None:
-        regional_match = next(
-            (
-                spot.id
-                for spot in self.spots
-                if spot.region.lower() == self.user.home_region.lower()
-            ),
-            None,
-        )
-        return regional_match or (self.spots[0].id if self.spots else None)
+    def _can_access_live_data(self, spot_id: str) -> bool:
+        return self.user.premium or self.user.free_live_spot_id == spot_id
+
+    def _evaluate_alert(self, alert: Alert) -> None:
+        now = datetime.now(timezone.utc)
+        previous_status = alert.status
+        alert.last_evaluated_at = now
+
+        if not alert.enabled:
+            alert.status = "watching"
+            alert.status_reason = "Alert is turned off."
+            alert.next_check_at = now + timedelta(hours=4)
+            return
+
+        spot = self.get_spot(alert.spot_id)
+        if spot is None:
+            alert.status = "waiting"
+            alert.status_reason = "Spot not found."
+            alert.next_check_at = now + timedelta(hours=4)
+            return
+
+        unmet: list[str] = []
+        waiting: list[str] = []
+        forecast = next(iter(self.list_forecasts(alert.spot_id)), None)
+
+        if alert.wave_enabled:
+            wave_value = None
+            if forecast is not None:
+                wave_value = (
+                    forecast.wave_height_max_m
+                    or forecast.wave_height_m
+                    or forecast.wave_height_min_m
+                )
+            if wave_value is None:
+                waiting.append("wave data")
+            elif alert.min_wave_height_m is not None and wave_value < alert.min_wave_height_m:
+                unmet.append(f"wave below {alert.min_wave_height_m}m")
+
+        if alert.wind_enabled:
+            wind_value = None
+            if forecast is not None:
+                wind_value = (
+                    forecast.wind_kts_max
+                    or forecast.wind_kts
+                    or forecast.wind_kts_min
+                )
+            if wind_value is None:
+                waiting.append("wind data")
+            elif alert.max_wind_kts is not None and wind_value > alert.max_wind_kts:
+                unmet.append(f"wind above {alert.max_wind_kts}kts")
+
+        if alert.tide_enabled:
+            tide = self.get_tides(alert.spot_id, now.date())
+            if not tide.available or alert.tide_type is None or alert.tide_offset_hours is None:
+                waiting.append("tide data")
+            else:
+                matching_events = [
+                    event for event in tide.events if event.type == alert.tide_type
+                ]
+                if not matching_events:
+                    waiting.append("tide events")
+                else:
+                    target_times = [
+                        event.time + timedelta(hours=alert.tide_offset_hours)
+                        for event in matching_events
+                    ]
+                    in_window = any(
+                        abs((target - now).total_seconds()) <= 90 * 60
+                        for target in target_times
+                    )
+                    if not in_window:
+                        tide_label = "high tide" if alert.tide_type == "high" else "low tide"
+                        offset = alert.tide_offset_hours
+                        if offset == 0:
+                            unmet.append(f"not at {tide_label}")
+                        elif offset is not None and offset < 0:
+                            unmet.append(f"not {abs(offset)}h before {tide_label}")
+                        else:
+                            unmet.append(f"not {abs(offset or 0)}h after {tide_label}")
+
+        if waiting:
+            alert.status = "waiting"
+            alert.status_reason = f"Waiting on {', '.join(waiting)}."
+        elif unmet:
+            alert.status = "watching"
+            alert.status_reason = "Watching: " + " • ".join(unmet)
+        else:
+            alert.status = "triggered"
+            alert.status_reason = "Conditions match your alert right now."
+            if previous_status != "triggered":
+                alert.last_triggered_at = now
+
+        alert.next_check_at = now + timedelta(hours=1 if alert.tide_enabled else 4)
 
 
 store = DemoStore()

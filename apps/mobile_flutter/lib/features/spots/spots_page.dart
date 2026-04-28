@@ -6,21 +6,60 @@ import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../home/home_page.dart';
 
+const _favoriteAccent = Color(0xFF2AA7A1);
+
 final spotsProvider = FutureProvider(
   (ref) => ref.watch(surfRepositoryProvider).fetchSpots(),
 );
+final spotCardForecastProvider = FutureProvider.autoDispose
+    .family<ForecastModel?, String>((ref, spotId) async {
+      final forecasts = await ref
+          .watch(surfRepositoryProvider)
+          .fetchForecasts(spotId);
+      if (forecasts.isEmpty) return null;
+      return forecasts.first;
+    });
 
 const _groupByRegionThreshold = 5;
+const _groupWithinRegionThreshold = 8;
+const _baliAreaOrder = <String>[
+  'Canggu',
+  'Bukit / Uluwatu',
+  'Kuta / Airport Reefs',
+  'Sanur',
+  'Keramas / East Bali',
+  'Medewi / West Bali',
+  'Nusa Lembongan',
+];
 
-class SpotsPage extends ConsumerWidget {
+class SpotsPage extends ConsumerStatefulWidget {
   const SpotsPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SpotsPage> createState() => _SpotsPageState();
+}
+
+class _SpotsPageState extends ConsumerState<SpotsPage> {
+  final _searchController = TextEditingController();
+
+  String get _searchQuery => _searchController.text.trim();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final spots = ref.watch(spotsProvider);
     final favoriteSpotIds = ref.watch(favoriteSpotIdsProvider);
-    final dashboard = ref.watch(dashboardProvider);
     final ads = ref.watch(homeAdsProvider);
+    final me = ref.watch(meProvider);
+    final isPremium = me.maybeWhen(
+      data: (profile) => profile.premium,
+      orElse: () => false,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -41,40 +80,49 @@ class SpotsPage extends ConsumerWidget {
               return const _EmptySpotsState();
             }
 
+            final filteredItems = _searchQuery.isEmpty
+                ? items
+                : _sortSpots(
+                    items.where((spot) => _matchesSpot(spot, _searchQuery)).toList(),
+                  );
             final favoriteSpots = _sortSpots(
               items.where((spot) => favoriteSpotIds.contains(spot.id)).toList(),
             );
 
-            final countries = _groupBy(items, (spot) => spot.country);
-            final orderedCountryNames = _ordered(countries.keys.toList());
+            final countries = _groupBy(filteredItems, (spot) => spot.country);
+            final orderedCountryNames = _orderedGroupedKeys(countries);
 
             return ListView(
               children: [
                 const _SpotsHero(),
                 const SizedBox(height: 18),
-                dashboard.when(
-                  data: (data) => _FeaturedForecastCard(data: data),
-                  loading: () => const Card(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Center(child: CircularProgressIndicator()),
-                    ),
+                _SpotsSearchBar(
+                  controller: _searchController,
+                  onChanged: (_) => setState(() {}),
+                  onCleared: () {
+                    _searchController.clear();
+                    setState(() {});
+                  },
+                ),
+                const SizedBox(height: 18),
+                if (_searchQuery.isEmpty) ...[
+                  _FavoritesSection(
+                    spots: favoriteSpots,
+                    isPremium: isPremium,
+                    favoriteSpotIds: favoriteSpotIds,
+                    onFavoritePressed: (spotId) => ref
+                        .read(favoriteSpotIdsProvider.notifier)
+                        .toggle(spotId),
                   ),
-                  error: (_, _) => const SizedBox.shrink(),
-                ),
-                const SizedBox(height: 18),
-                _FavoritesSection(
-                  spots: favoriteSpots,
-                  favoriteSpotIds: favoriteSpotIds,
-                  onFavoritePressed: (spotId) =>
-                      ref.read(favoriteSpotIdsProvider.notifier).toggle(spotId),
-                ),
-                const SizedBox(height: 18),
+                  const SizedBox(height: 18),
+                ],
                 Row(
                   children: [
                     Expanded(
                       child: Text(
-                        'Countries',
+                        _searchQuery.isEmpty
+                            ? 'Countries'
+                            : 'Search results (${filteredItems.length})',
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                     ),
@@ -86,19 +134,30 @@ class SpotsPage extends ConsumerWidget {
                   ],
                 ),
                 const SizedBox(height: 10),
-                ...orderedCountryNames.map(
-                  (country) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _CountrySection(
-                      country: country,
-                      spots: _sortSpots(countries[country]!),
-                      favoriteSpotIds: favoriteSpotIds,
-                      onFavoritePressed: (spotId) => ref
-                          .read(favoriteSpotIdsProvider.notifier)
-                          .toggle(spotId),
+                if (filteredItems.isEmpty)
+                  const Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(18),
+                      child: Text(
+                        'No spots matched that search yet. Try a country, area, or break name.',
+                      ),
+                    ),
+                  )
+                else
+                  ...orderedCountryNames.map(
+                    (country) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _CountrySection(
+                        country: country,
+                        spots: _sortSpots(countries[country]!),
+                        isPremium: isPremium,
+                        favoriteSpotIds: favoriteSpotIds,
+                        onFavoritePressed: (spotId) => ref
+                            .read(favoriteSpotIdsProvider.notifier)
+                            .toggle(spotId),
+                      ),
                     ),
                   ),
-                ),
                 const SizedBox(height: 8),
                 _PartnerOffers(ads: ads),
               ],
@@ -110,12 +169,6 @@ class SpotsPage extends ConsumerWidget {
         ),
       ),
     );
-  }
-
-  List<String> _ordered(List<String> items) {
-    final next = [...items];
-    next.sort();
-    return next;
   }
 
   List<SpotModel> _sortSpots(List<SpotModel> spots) {
@@ -141,6 +194,65 @@ class SpotsPage extends ConsumerWidget {
       groups.putIfAbsent(keyOf(spot), () => []).add(spot);
     }
     return groups;
+  }
+
+  bool _matchesSpot(SpotModel spot, String query) {
+    final q = query.toLowerCase();
+    return spot.name.toLowerCase().contains(q) ||
+        spot.area.toLowerCase().contains(q) ||
+        spot.region.toLowerCase().contains(q) ||
+        spot.country.toLowerCase().contains(q);
+  }
+}
+
+List<String> _orderedGroupedKeys(Map<String, List<SpotModel>> groups) {
+  final next = groups.keys.toList();
+  next.sort((a, b) {
+    final countCompare = groups[b]!.length.compareTo(groups[a]!.length);
+    if (countCompare != 0) return countCompare;
+    return a.compareTo(b);
+  });
+  return next;
+}
+
+class _SpotsSearchBar extends StatelessWidget {
+  const _SpotsSearchBar({
+    required this.controller,
+    required this.onChanged,
+    required this.onCleared,
+  });
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onCleared;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      onChanged: onChanged,
+      textInputAction: TextInputAction.search,
+      decoration: InputDecoration(
+        hintText: 'Search spots, areas, or countries',
+        prefixIcon: const Icon(Icons.search),
+        suffixIcon: controller.text.isEmpty
+            ? null
+            : IconButton(
+                onPressed: onCleared,
+                icon: const Icon(Icons.close),
+              ),
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(20),
+          borderSide: BorderSide.none,
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 16,
+        ),
+      ),
+    );
   }
 }
 
@@ -187,58 +299,6 @@ class _SpotsHero extends StatelessWidget {
   }
 }
 
-class _FeaturedForecastCard extends StatelessWidget {
-  const _FeaturedForecastCard({required this.data});
-
-  final DashboardModel data;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(24),
-        onTap: () => context.push('/spot/${data.featuredSpot.id}'),
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Row(
-            children: [
-              Container(
-                width: 58,
-                height: 58,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFD7EFEC),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: const Icon(Icons.bolt_outlined),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Featured now',
-                      style: Theme.of(context).textTheme.labelLarge,
-                    ),
-                    Text(
-                      data.featuredSpot.name,
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    Text(
-                      '${data.topForecast.waveDisplay} • ${data.topForecast.quality}',
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _PartnerOffers extends StatelessWidget {
   const _PartnerOffers({required this.ads});
 
@@ -279,11 +339,13 @@ class _PartnerOffers extends StatelessWidget {
 class _FavoritesSection extends StatelessWidget {
   const _FavoritesSection({
     required this.spots,
+    required this.isPremium,
     required this.favoriteSpotIds,
     required this.onFavoritePressed,
   });
 
   final List<SpotModel> spots;
+  final bool isPremium;
   final Set<String> favoriteSpotIds;
   final ValueChanged<String> onFavoritePressed;
 
@@ -319,6 +381,7 @@ class _FavoritesSection extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 12),
             child: _SpotCard(
               spot: spot,
+              isPremium: isPremium,
               isFavorite: favoriteSpotIds.contains(spot.id),
               onFavoritePressed: () => onFavoritePressed(spot.id),
             ),
@@ -333,12 +396,14 @@ class _CountrySection extends StatelessWidget {
   const _CountrySection({
     required this.country,
     required this.spots,
+    required this.isPremium,
     required this.favoriteSpotIds,
     required this.onFavoritePressed,
   });
 
   final String country;
   final List<SpotModel> spots;
+  final bool isPremium;
   final Set<String> favoriteSpotIds;
   final ValueChanged<String> onFavoritePressed;
 
@@ -370,12 +435,13 @@ class _CountrySection extends StatelessWidget {
       regions.putIfAbsent(spot.region, () => []).add(spot);
     }
 
-    final regionNames = regions.keys.toList()..sort();
+    final regionNames = _orderedGroupedKeys(regions);
     return regionNames
         .map(
           (region) => _RegionSection(
             region: region,
             spots: regions[region]!,
+            isPremium: isPremium,
             favoriteSpotIds: favoriteSpotIds,
             onFavoritePressed: onFavoritePressed,
           ),
@@ -393,6 +459,7 @@ class _CountrySection extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 10),
             child: _SpotCard(
               spot: spot,
+              isPremium: isPremium,
               includeCountry: includeCountry,
               isFavorite: favoriteSpotIds.contains(spot.id),
               onFavoritePressed: () => onFavoritePressed(spot.id),
@@ -407,18 +474,35 @@ class _RegionSection extends StatelessWidget {
   const _RegionSection({
     required this.region,
     required this.spots,
+    required this.isPremium,
     required this.favoriteSpotIds,
     required this.onFavoritePressed,
   });
 
   final String region;
   final List<SpotModel> spots;
+  final bool isPremium;
   final Set<String> favoriteSpotIds;
   final ValueChanged<String> onFavoritePressed;
 
   @override
   Widget build(BuildContext context) {
-    final areas = spots.map((spot) => spot.area).toSet().toList()..sort();
+    if (region == 'Bali') {
+      return _BaliRegionSection(
+        spots: spots,
+        isPremium: isPremium,
+        favoriteSpotIds: favoriteSpotIds,
+        onFavoritePressed: onFavoritePressed,
+      );
+    }
+
+    final areaGroups = <String, List<SpotModel>>{};
+    for (final spot in spots) {
+      areaGroups.putIfAbsent(spot.area, () => []).add(spot);
+    }
+    final areas = _orderedGroupedKeys(areaGroups);
+    final shouldGroupByArea =
+        spots.length >= _groupWithinRegionThreshold && areas.length >= 3;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -432,15 +516,108 @@ class _RegionSection extends StatelessWidget {
           childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
           title: Text(region),
           subtitle: Text('${spots.length} breaks • ${areas.join(', ')}'),
-          children: spots
+          children: shouldGroupByArea ? _areaSections() : _spotCards(),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _areaSections() {
+    final groups = <String, List<SpotModel>>{};
+    for (final spot in spots) {
+      groups.putIfAbsent(spot.area, () => []).add(spot);
+    }
+
+    final orderedAreas = _orderedGroupedKeys(groups);
+    return orderedAreas
+        .map(
+          (area) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _AreaSection(
+              label: area,
+              spots: groups[area]!,
+              isPremium: isPremium,
+              favoriteSpotIds: favoriteSpotIds,
+              onFavoritePressed: onFavoritePressed,
+            ),
+          ),
+        )
+        .toList();
+  }
+
+  List<Widget> _spotCards() {
+    return spots
+        .map(
+          (spot) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _SpotCard(
+              spot: spot,
+              isPremium: isPremium,
+              includeCountry: false,
+              isFavorite: favoriteSpotIds.contains(spot.id),
+              onFavoritePressed: () => onFavoritePressed(spot.id),
+            ),
+          ),
+        )
+        .toList();
+  }
+}
+
+class _BaliRegionSection extends StatelessWidget {
+  const _BaliRegionSection({
+    required this.spots,
+    required this.isPremium,
+    required this.favoriteSpotIds,
+    required this.onFavoritePressed,
+  });
+
+  final List<SpotModel> spots;
+  final bool isPremium;
+  final Set<String> favoriteSpotIds;
+  final ValueChanged<String> onFavoritePressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final groups = <String, List<SpotModel>>{};
+    for (final spot in spots) {
+      final key = _baliAreaForSpot(spot);
+      groups.putIfAbsent(key, () => []).add(spot);
+    }
+
+    final orderedAreas = groups.keys.toList()
+      ..sort((a, b) {
+        final countCompare = groups[b]!.length.compareTo(groups[a]!.length);
+        if (countCompare != 0) return countCompare;
+        final aIndex = _baliAreaOrder.indexOf(a);
+        final bIndex = _baliAreaOrder.indexOf(b);
+        if (aIndex != -1 && bIndex != -1) return aIndex.compareTo(bIndex);
+        if (aIndex != -1) return -1;
+        if (bIndex != -1) return 1;
+        return a.compareTo(b);
+      });
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: const Color(0xFFF6F3ED),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+          childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+          title: const Text('Bali'),
+          subtitle: Text('${spots.length} breaks • ${orderedAreas.length} surf areas'),
+          children: orderedAreas
               .map(
-                (spot) => Padding(
+                (area) => Padding(
                   padding: const EdgeInsets.only(bottom: 10),
-                  child: _SpotCard(
-                    spot: spot,
-                    includeCountry: false,
-                    isFavorite: favoriteSpotIds.contains(spot.id),
-                    onFavoritePressed: () => onFavoritePressed(spot.id),
+                  child: _AreaSection(
+                    label: area,
+                    spots: groups[area]!,
+                    isPremium: isPremium,
+                    favoriteSpotIds: favoriteSpotIds,
+                    onFavoritePressed: onFavoritePressed,
                   ),
                 ),
               )
@@ -451,24 +628,103 @@ class _RegionSection extends StatelessWidget {
   }
 }
 
-class _SpotCard extends StatelessWidget {
+class _AreaSection extends StatelessWidget {
+  const _AreaSection({
+    required this.label,
+    required this.spots,
+    required this.isPremium,
+    required this.favoriteSpotIds,
+    required this.onFavoritePressed,
+  });
+
+  final String label;
+  final List<SpotModel> spots;
+  final bool isPremium;
+  final Set<String> favoriteSpotIds;
+  final ValueChanged<String> onFavoritePressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final sorted = [...spots]..sort((a, b) => a.name.compareTo(b.name));
+    final preview = sorted.take(3).map((spot) => spot.name).join(', ');
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+        childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+        title: Text(label),
+        subtitle: Text('${sorted.length} breaks • $preview'),
+        children: sorted
+            .map(
+              (spot) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _SpotCard(
+                  spot: spot,
+                  isPremium: isPremium,
+                  includeCountry: false,
+                  isFavorite: favoriteSpotIds.contains(spot.id),
+                  onFavoritePressed: () => onFavoritePressed(spot.id),
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+}
+
+String _baliAreaForSpot(SpotModel spot) {
+  switch (spot.area) {
+    case 'Canggu':
+      return 'Canggu';
+    case 'Uluwatu':
+    case 'Bukit':
+    case 'Nusa Dua':
+      return 'Bukit / Uluwatu';
+    case 'Kuta':
+      return 'Kuta / Airport Reefs';
+    case 'Sanur':
+      return 'Sanur';
+    case 'Keramas':
+    case 'East Bali':
+      return 'Keramas / East Bali';
+    case 'West Bali':
+      return 'Medewi / West Bali';
+    case 'Nusa Lembongan':
+    case 'Nusa Ceningan':
+      return 'Nusa Lembongan';
+    default:
+      return 'Bukit / Uluwatu';
+  }
+}
+
+class _SpotCard extends ConsumerWidget {
   const _SpotCard({
     required this.spot,
+    required this.isPremium,
     required this.isFavorite,
     required this.onFavoritePressed,
     this.includeCountry = true,
   });
 
   final SpotModel spot;
+  final bool isPremium;
   final bool isFavorite;
   final VoidCallback onFavoritePressed;
   final bool includeCountry;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final location = includeCountry
         ? '${spot.area}, ${spot.region}, ${spot.country}'
         : '${spot.area}, ${spot.region}';
+    final forecast = isPremium
+        ? ref.watch(spotCardForecastProvider(spot.id))
+        : const AsyncValue<ForecastModel?>.data(null);
 
     return Card(
       margin: EdgeInsets.zero,
@@ -485,7 +741,22 @@ class _SpotCard extends StatelessWidget {
         ),
         subtitle: Text('$location\n${spot.summary}'),
         isThreeLine: true,
-        trailing: Text('${spot.waveHeightM}m'),
+        trailing: isPremium
+            ? forecast.when(
+                data: (row) => row == null
+                    ? const SizedBox.shrink()
+                    : Text(
+                        row.waveDisplay,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                loading: () => const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                error: (_, _) => const SizedBox.shrink(),
+              )
+            : null,
         onTap: () => context.push('/spot/${spot.id}'),
       ),
     );
@@ -507,7 +778,7 @@ class _FavoriteButton extends StatelessWidget {
       padding: EdgeInsets.zero,
       icon: Icon(
         isFavorite ? Icons.favorite : Icons.favorite_border,
-        color: isFavorite ? const Color(0xFFCF4A3B) : const Color(0xFF81949A),
+        color: isFavorite ? _favoriteAccent : const Color(0xFF81949A),
       ),
       tooltip: isFavorite ? 'Remove favorite' : 'Save favorite',
     );

@@ -29,9 +29,18 @@ class DemoPersistence {
             (alert) => {
               'id': alert.id,
               'spot_id': alert.spotId,
+              'wave_enabled': alert.waveEnabled,
               'min_wave_height_m': alert.minWaveHeightM,
+              'wind_enabled': alert.windEnabled,
               'max_wind_kts': alert.maxWindKts,
+              'tide_enabled': alert.tideEnabled,
+              'tide_type': alert.tideType,
+              'tide_offset_hours': alert.tideOffsetHours,
               'enabled': alert.enabled,
+              'status': alert.status,
+              'status_reason': alert.statusReason,
+              'last_evaluated_at': alert.lastEvaluatedAt,
+              'last_triggered_at': alert.lastTriggeredAt,
               'next_check_at': alert.nextCheckAt,
             },
           )

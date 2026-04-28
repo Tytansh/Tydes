@@ -28,7 +28,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: 'spots-map',
-            builder: (context, state) => const SpotsMapPage(),
+            builder: (context, state) => SpotsMapPage(
+              initialSpotId: state.uri.queryParameters['spotId'],
+            ),
           ),
           GoRoute(path: 'login', builder: (context, state) => const AuthPage()),
           GoRoute(

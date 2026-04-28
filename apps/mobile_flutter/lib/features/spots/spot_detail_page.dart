@@ -7,6 +7,8 @@ import '../../core/network/surf_repository.dart';
 import '../alerts/create_alert_sheet.dart';
 import '../home/home_page.dart';
 
+const _favoriteAccent = Color(0xFF2AA7A1);
+
 final spotDetailProvider = FutureProvider.autoDispose.family((
   ref,
   String spotId,
@@ -26,6 +28,13 @@ final spotTideProvider = FutureProvider.autoDispose.family((
   String spotId,
 ) {
   return ref.watch(surfRepositoryProvider).fetchTides(spotId);
+});
+
+final unlockingLiveSpotProvider = StateProvider.family<bool, String>((
+  ref,
+  spotId,
+) {
+  return false;
 });
 
 final spotDetailBundleProvider = FutureProvider.autoDispose.family((
@@ -73,6 +82,11 @@ class SpotDetailPage extends ConsumerWidget {
         title: const Text('Spot detail'),
         actions: [
           IconButton(
+            onPressed: () => context.push('/spots-map?spotId=$spotId'),
+            icon: const Icon(Icons.map_outlined),
+            tooltip: 'Open on map',
+          ),
+          IconButton(
             onPressed: () =>
                 ref.read(favoriteSpotIdsProvider.notifier).toggle(spotId),
             icon: Icon(
@@ -80,7 +94,7 @@ class SpotDetailPage extends ConsumerWidget {
                   ? Icons.favorite
                   : Icons.favorite_border,
               color: favoriteSpotIds.contains(spotId)
-                  ? const Color(0xFFCF4A3B)
+                  ? _favoriteAccent
                   : null,
             ),
           ),
@@ -122,6 +136,20 @@ class SpotDetailPage extends ConsumerWidget {
                   ],
                 ),
                 const SizedBox(height: 16),
+                me.when(
+                  data: (profile) => _LiveDataUnlockCard(
+                    profile: profile,
+                    spotId: spotId,
+                    onUnlocked: () {
+                      ref.invalidate(meProvider);
+                      ref.invalidate(dashboardProvider);
+                      ref.invalidate(spotDetailBundleProvider(spotId));
+                    },
+                  ),
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, _) => const SizedBox.shrink(),
+                ),
+                const SizedBox(height: 12),
                 FilledButton.tonalIcon(
                   onPressed: () => showModalBottomSheet<void>(
                     context: context,
@@ -143,8 +171,13 @@ class SpotDetailPage extends ConsumerWidget {
                   data: (profile) => Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (!profile.canAccessLiveForecast(spotId))
-                        _UpgradeCard(),
+                      if (!profile.canAccessLiveForecast(spotId) &&
+                          profile.freeLiveSpotId != null)
+                        const _UpgradeCard(
+                          title: 'Premium subscription',
+                          body:
+                              'Your one free live-data unlock is already used. Upgrade to unlock live forecast and tide data on every spot.',
+                        ),
                       ...bundle.forecasts.map((row) => _ForecastCard(row: row)),
                     ],
                   ),
@@ -293,9 +326,7 @@ class _TideCard extends StatelessWidget {
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                       ),
-                      Expanded(
-                        child: Text('${event.localTime}${event.heightDisplay}'),
-                      ),
+                      Expanded(child: Text(event.localTime)),
                     ],
                   ),
                 ),
@@ -424,6 +455,14 @@ class _ForecastSummary extends StatelessWidget {
 }
 
 class _UpgradeCard extends StatelessWidget {
+  const _UpgradeCard({
+    this.title = 'Access more live forecast data',
+    this.body,
+  });
+
+  final String title;
+  final String? body;
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -433,13 +472,11 @@ class _UpgradeCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Access more live forecast data',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            Text(title, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
-            const Text(
-              'Free users get one unlocked live forecast spot. Upgrade to unlock live wave, wind, and period data across more breaks.',
+            Text(
+              body ??
+                  'Free users get one unlocked live forecast spot. Upgrade to unlock live wave, wind, period, and tide data across more breaks.',
             ),
             const SizedBox(height: 12),
             FilledButton(
@@ -448,6 +485,115 @@ class _UpgradeCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _LiveDataUnlockCard extends ConsumerWidget {
+  const _LiveDataUnlockCard({
+    required this.profile,
+    required this.spotId,
+    required this.onUnlocked,
+  });
+
+  final UserProfile profile;
+  final String spotId;
+  final VoidCallback onUnlocked;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (profile.premium) {
+      return const SizedBox.shrink();
+    }
+
+    final isUnlockedSpot = profile.freeLiveSpotId == spotId;
+    final hasChosenAnotherSpot =
+        profile.freeLiveSpotId != null && !isUnlockedSpot;
+    final isSaving = ref.watch(unlockingLiveSpotProvider(spotId));
+
+    Future<void> unlockSpot() async {
+      ref.read(unlockingLiveSpotProvider(spotId).notifier).state = true;
+      try {
+        await ref.read(surfRepositoryProvider).setFreeLiveSpot(spotId);
+        onUnlocked();
+      } catch (error) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(error.toString().replaceFirst('Bad state: ', '')),
+            ),
+          );
+        }
+      } finally {
+        ref.read(unlockingLiveSpotProvider(spotId).notifier).state = false;
+      }
+    }
+
+    final title = isUnlockedSpot
+        ? 'Live data unlocked'
+        : hasChosenAnotherSpot
+        ? 'Premium subscription'
+        : 'Unlock more data';
+    final subtitle = isUnlockedSpot
+        ? 'This is your free live-data spot for wave, wind, period, and tide updates.'
+        : hasChosenAnotherSpot
+        ? 'Free users can unlock one location only. Premium unlocks live data on every spot.'
+        : 'Free users can unlock one spot for live wave and tide data. Choose carefully.';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isUnlockedSpot
+            ? const Color(0xFFDDF5EA)
+            : const Color(0xFFF6F2E8),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: isUnlockedSpot
+              ? const Color(0xFF9CD8B8)
+              : const Color(0xFFE4DCCD),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 6),
+                    Text(subtitle),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              IgnorePointer(
+                ignoring: isUnlockedSpot || hasChosenAnotherSpot || isSaving,
+                child: Switch.adaptive(
+                  value: isUnlockedSpot || isSaving,
+                  onChanged:
+                      (!isUnlockedSpot && !hasChosenAnotherSpot && !isSaving)
+                      ? (_) => unlockSpot()
+                      : null,
+                ),
+              ),
+            ],
+          ),
+          if (hasChosenAnotherSpot) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: () => context.push('/paywall'),
+                icon: const Icon(Icons.lock_outline),
+                label: const Text('Premium subscription'),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

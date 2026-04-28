@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 import os
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -21,7 +22,7 @@ class TideCheckProvider:
     """Fetch high/low tide predictions from TideCheck behind a swappable provider."""
 
     def __init__(self) -> None:
-        self._api_key = os.getenv("TIDECHECK_API_KEY", "").strip()
+        self._api_key = _load_api_key()
         self._client = httpx.Client(base_url="https://tidecheck.com", timeout=8.0)
         self._station_cache: dict[str, _CacheItem] = {}
         self._tide_cache: dict[str, _CacheItem] = {}
@@ -154,3 +155,30 @@ def _as_float(value: Any) -> float | None:
     if value is None:
         return None
     return round(float(value), 1)
+
+
+def _load_api_key() -> str:
+    env_key = os.getenv("TIDECHECK_API_KEY", "").strip()
+    if env_key:
+        return env_key
+
+    api_dir = Path(__file__).resolve().parents[3]
+    repo_dir = api_dir.parents[1]
+    for env_path in (api_dir / ".env", repo_dir / ".env"):
+        key = _read_env_value(env_path, "TIDECHECK_API_KEY")
+        if key:
+            return key
+    return ""
+
+
+def _read_env_value(path: Path, name: str) -> str:
+    if not path.exists():
+        return ""
+    for line in path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        if key.strip() == name:
+            return value.strip().strip("'\"")
+    return ""
