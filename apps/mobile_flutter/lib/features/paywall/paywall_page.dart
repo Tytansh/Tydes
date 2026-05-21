@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/surf_repository.dart';
+import '../home/home_page.dart';
 
 final plansProvider = FutureProvider(
   (ref) => ref.watch(surfRepositoryProvider).fetchPlans(),
@@ -13,6 +14,8 @@ class PaywallPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final plans = ref.watch(plansProvider);
+    final me = ref.watch(meProvider);
+    final isPremium = me.valueOrNull?.premium ?? false;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Premium plans')),
@@ -24,6 +27,14 @@ class PaywallPage extends ConsumerWidget {
             separatorBuilder: (_, _) => const SizedBox(height: 12),
             itemBuilder: (context, index) {
               final plan = items[index];
+              final isCurrent =
+                  (isPremium && plan.id == 'premium') ||
+                  (!isPremium && plan.id == 'free');
+              final actionLabel = isCurrent
+                  ? 'Current'
+                  : plan.id == 'premium'
+                  ? 'Upgrade'
+                  : 'Change plan';
               return Card(
                 child: Padding(
                   padding: const EdgeInsets.all(20),
@@ -42,10 +53,8 @@ class PaywallPage extends ConsumerWidget {
                       ...plan.features.map((feature) => Text(feature)),
                       const SizedBox(height: 16),
                       FilledButton(
-                        onPressed: () {},
-                        child: Text(
-                          plan.id == 'premium' ? 'Upgrade' : 'Current',
-                        ),
+                        onPressed: isCurrent ? null : () {},
+                        child: Text(actionLabel),
                       ),
                     ],
                   ),

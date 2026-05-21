@@ -1,61 +1,77 @@
 {
   "user": {
-    "id": "usr_demo",
-    "email": "tytaneth+premium@gmail.com",
+    "id": "usr_x50gyMATBU0",
+    "email": "demo+premium@surftravel.app",
     "display_name": "Tytan",
+    "handle": "ty",
+    "bio": "Looking for clean waves, easy travel days, and people to paddle out with.",
+    "surf_skill": "intermediate",
+    "avatar_url": null,
     "home_region": "Bali",
     "locale": "en",
     "premium": true,
-    "free_live_spot_id": "spot_uluwatu_peak",
+    "email_verified": true,
+    "free_live_spot_id": null,
     "ads_enabled": false,
-    "favorite_spot_ids": [
-      "spot_padang_padang",
-      "spot_uluwatu_peak",
-      "spot_balangan"
-    ]
+    "favorite_spot_ids": []
   },
   "alerts": [],
   "posts": [
     {
       "id": "post_uluwatu_dawn",
-      "user_id": "usr_demo",
+      "user_id": "friend_maya",
       "author_name": "Maya Surfer",
+      "author_handle": "mayasurfer",
+      "author_avatar_url": null,
+      "author_premium": false,
       "spot_id": "spot_uluwatu_peak",
-      "post_type": "surf_plan",
+      "post_type": "general",
       "visibility": "public",
       "body": "Thinking dawn patrol at Uluwatu tomorrow if the wind stays light. Anyone keen?",
       "media": [],
-      "meetup_date": "2026-04-22",
-      "created_at": "2026-04-21T02:21:26.177388Z"
+      "meetup_date": "2026-05-22",
+      "meetup_end_date": null,
+      "created_at": "2026-05-20T22:06:18.103621Z"
     },
     {
       "id": "post_balangan_buddy",
       "user_id": "friend_ari",
       "author_name": "Ari Dawn",
+      "author_handle": null,
+      "author_avatar_url": null,
+      "author_premium": false,
       "spot_id": "spot_balangan",
       "post_type": "looking_for_buddy",
       "visibility": "public",
       "body": "Intermediate surfer looking for someone to split a scooter ride to Balangan this week.",
       "media": [],
       "meetup_date": "2026-04-24",
+      "meetup_end_date": null,
       "created_at": "2026-04-20T21:21:26.177392Z"
     },
     {
       "id": "post_542e30c2",
       "user_id": "usr_demo",
       "author_name": "Tytan",
+      "author_handle": "ty",
+      "author_avatar_url": "http://127.0.0.1:8000/media/media_c19db8e5b6_thumb.jpg",
+      "author_premium": false,
       "spot_id": "spot_echo_beach",
       "post_type": "general",
       "visibility": "public",
       "body": "hi",
       "media": [],
       "meetup_date": null,
+      "meetup_end_date": null,
       "created_at": "2026-04-22T08:25:21.335836Z"
     },
     {
       "id": "post_be1eb977",
       "user_id": "usr_demo",
       "author_name": "Tytan",
+      "author_handle": "ty",
+      "author_avatar_url": "http://127.0.0.1:8000/media/media_c19db8e5b6_thumb.jpg",
+      "author_premium": false,
       "spot_id": "spot_echo_beach",
       "post_type": "general",
       "visibility": "public",
@@ -64,20 +80,24 @@
         {
           "id": "media_25395879a2",
           "media_type": "photo",
-          "url": "http://192.168.1.70:8000/media/media_25395879a2.jpg",
-          "thumbnail_url": "http://192.168.1.70:8000/media/media_25395879a2_thumb.jpg",
+          "url": "http://127.0.0.1:8000/media/media_25395879a2.jpg",
+          "thumbnail_url": "http://127.0.0.1:8000/media/media_25395879a2_thumb.jpg",
           "width": null,
           "height": null,
           "alt_text": null
         }
       ],
       "meetup_date": null,
+      "meetup_end_date": null,
       "created_at": "2026-04-22T09:12:09.760249Z"
     },
     {
       "id": "post_8f399e07",
       "user_id": "usr_demo",
       "author_name": "Tytan",
+      "author_handle": "ty",
+      "author_avatar_url": "http://127.0.0.1:8000/media/media_c19db8e5b6_thumb.jpg",
+      "author_premium": false,
       "spot_id": "spot_byron",
       "post_type": "general",
       "visibility": "public",
@@ -86,20 +106,666 @@
         {
           "id": "media_115e1f73fe",
           "media_type": "video",
-          "url": "http://192.168.1.70:8000/media/media_115e1f73fe.mov",
-          "thumbnail_url": "http://192.168.1.70:8000/media/media_115e1f73fe.mov",
+          "url": "http://127.0.0.1:8000/media/media_115e1f73fe.mov",
+          "thumbnail_url": "http://127.0.0.1:8000/media/media_115e1f73fe.mov",
           "width": null,
           "height": null,
           "alt_text": null
         }
       ],
       "meetup_date": null,
+      "meetup_end_date": null,
       "created_at": "2026-04-22T09:24:33.173563Z"
+    },
+    {
+      "id": "post_2048f5cd",
+      "user_id": "usr_demo",
+      "author_name": "Tytan",
+      "author_handle": "ty",
+      "author_avatar_url": "http://127.0.0.1:8000/media/media_c19db8e5b6_thumb.jpg",
+      "author_premium": false,
+      "spot_id": "spot_balangan",
+      "post_type": "general",
+      "visibility": "public",
+      "body": "hi",
+      "media": [
+        {
+          "id": "media_0ff121b0ee",
+          "media_type": "photo",
+          "url": "http://127.0.0.1:8000/media/media_0ff121b0ee.png",
+          "thumbnail_url": "http://127.0.0.1:8000/media/media_0ff121b0ee_thumb.png",
+          "width": null,
+          "height": null,
+          "alt_text": null
+        },
+        {
+          "id": "media_f602be0152",
+          "media_type": "photo",
+          "url": "http://127.0.0.1:8000/media/media_f602be0152.jpg",
+          "thumbnail_url": "http://127.0.0.1:8000/media/media_f602be0152_thumb.jpg",
+          "width": null,
+          "height": null,
+          "alt_text": null
+        },
+        {
+          "id": "media_36f6ae8f63",
+          "media_type": "photo",
+          "url": "http://127.0.0.1:8000/media/media_36f6ae8f63.jpg",
+          "thumbnail_url": "http://127.0.0.1:8000/media/media_36f6ae8f63_thumb.jpg",
+          "width": null,
+          "height": null,
+          "alt_text": null
+        }
+      ],
+      "meetup_date": null,
+      "meetup_end_date": null,
+      "created_at": "2026-04-26T15:53:28.967451Z"
+    },
+    {
+      "id": "post_b0e12998",
+      "user_id": "usr_demo",
+      "author_name": "Tytan",
+      "author_handle": "ty",
+      "author_avatar_url": "http://127.0.0.1:8000/media/media_c19db8e5b6_thumb.jpg",
+      "author_premium": false,
+      "spot_id": "spot_ballina_north_wall",
+      "post_type": "general",
+      "visibility": "followers",
+      "body": "hi guy",
+      "media": [],
+      "meetup_date": null,
+      "meetup_end_date": null,
+      "created_at": "2026-04-28T08:29:39.828556Z"
+    },
+    {
+      "id": "post_a8e903b6",
+      "user_id": "usr_demo",
+      "author_name": "Tytan",
+      "author_handle": "ty",
+      "author_avatar_url": "http://127.0.0.1:8000/media/media_c19db8e5b6_thumb.jpg",
+      "author_premium": false,
+      "spot_id": "spot_balangan",
+      "post_type": "surf_plan",
+      "visibility": "followers",
+      "body": "sunset tomorrow who\u2019s coming",
+      "media": [],
+      "meetup_date": "2026-04-28",
+      "meetup_end_date": null,
+      "created_at": "2026-04-28T10:11:04.535178Z"
+    },
+    {
+      "id": "post_c238e86d",
+      "user_id": "usr_demo",
+      "author_name": "Tytan",
+      "author_handle": "ty",
+      "author_avatar_url": "http://127.0.0.1:8000/media/media_c19db8e5b6_thumb.jpg",
+      "author_premium": false,
+      "spot_id": "spot_hideaways",
+      "post_type": "general",
+      "visibility": "public",
+      "body": "hi",
+      "media": [],
+      "meetup_date": null,
+      "meetup_end_date": null,
+      "created_at": "2026-04-29T06:14:10.217381Z"
+    },
+    {
+      "id": "post_55805029",
+      "user_id": "usr_demo",
+      "author_name": "Tytan",
+      "author_handle": "ty",
+      "author_avatar_url": "http://127.0.0.1:8000/media/media_c19db8e5b6_thumb.jpg",
+      "author_premium": false,
+      "spot_id": "spot_balangan",
+      "post_type": "general",
+      "visibility": "followers",
+      "body": "hi",
+      "media": [],
+      "meetup_date": null,
+      "meetup_end_date": null,
+      "created_at": "2026-04-30T07:54:32.589539Z"
+    },
+    {
+      "id": "post_lina_canggu_photo",
+      "user_id": "friend_lina",
+      "author_name": "Lina Reef",
+      "author_handle": "linareef",
+      "author_avatar_url": null,
+      "author_premium": false,
+      "spot_id": "spot_echo_beach",
+      "post_type": "general",
+      "visibility": "public",
+      "body": "Little Canggu glass-off before the crowd filled in. Coffee run after if anyone is around.",
+      "media": [
+        {
+          "id": "media_25395879a2",
+          "media_type": "photo",
+          "url": "http://127.0.0.1:8000/media/media_25395879a2.jpg",
+          "thumbnail_url": "http://127.0.0.1:8000/media/media_25395879a2_thumb.jpg",
+          "width": null,
+          "height": null,
+          "alt_text": "Canggu session photo"
+        }
+      ],
+      "meetup_date": null,
+      "meetup_end_date": null,
+      "created_at": "2026-05-20T23:31:18.103585Z"
+    },
+    {
+      "id": "post_ari_balangan_event",
+      "user_id": "friend_ari",
+      "author_name": "Ari Dawn",
+      "author_handle": "aridawn",
+      "author_avatar_url": null,
+      "author_premium": false,
+      "spot_id": "spot_balangan",
+      "post_type": "surf_plan",
+      "visibility": "public",
+      "body": "Sunset Balangan session tomorrow. Easy paddle, then warung dinner if it lines up.",
+      "media": [],
+      "meetup_date": "2026-05-22",
+      "meetup_end_date": null,
+      "created_at": "2026-05-20T23:06:18.103595Z"
+    },
+    {
+      "id": "post_kai_byron_clip",
+      "user_id": "friend_kai",
+      "author_name": "Kai Glass",
+      "author_handle": "kaiglass",
+      "author_avatar_url": null,
+      "author_premium": false,
+      "spot_id": "spot_byron",
+      "post_type": "general",
+      "visibility": "public",
+      "body": "The Pass was slow but had a couple long runners if you waited your turn.",
+      "media": [
+        {
+          "id": "media_115e1f73fe",
+          "media_type": "video",
+          "url": "http://127.0.0.1:8000/media/media_115e1f73fe.mov",
+          "thumbnail_url": "http://127.0.0.1:8000/media/media_115e1f73fe.mov",
+          "width": null,
+          "height": null,
+          "alt_text": "Byron point clip"
+        }
+      ],
+      "meetup_date": null,
+      "meetup_end_date": null,
+      "created_at": "2026-05-20T21:06:18.103602Z"
+    },
+    {
+      "id": "post_noa_arugam_event",
+      "user_id": "friend_noa",
+      "author_name": "Noa Current",
+      "author_handle": "noacurrent",
+      "author_avatar_url": null,
+      "author_premium": false,
+      "spot_id": "spot_arugam",
+      "post_type": "looking_for_buddy",
+      "visibility": "public",
+      "body": "Beginner-friendly sunset paddle at Main Point, then beach food after. First timers welcome.",
+      "media": [],
+      "meetup_date": "2026-05-23",
+      "meetup_end_date": null,
+      "created_at": "2026-05-20T20:06:18.103605Z"
+    },
+    {
+      "id": "post_sam_snapper_photos",
+      "user_id": "friend_sam",
+      "author_name": "Sam Lines",
+      "author_handle": "samlines",
+      "author_avatar_url": null,
+      "author_premium": false,
+      "spot_id": "spot_snapper",
+      "post_type": "general",
+      "visibility": "public",
+      "body": "Goldie had little runners this morning. Not pumping, but fun enough for a before-work slide.",
+      "media": [
+        {
+          "id": "media_f602be0152",
+          "media_type": "photo",
+          "url": "http://127.0.0.1:8000/media/media_f602be0152.jpg",
+          "thumbnail_url": "http://127.0.0.1:8000/media/media_f602be0152_thumb.jpg",
+          "width": null,
+          "height": null,
+          "alt_text": "Gold Coast wave photo"
+        },
+        {
+          "id": "media_36f6ae8f63",
+          "media_type": "photo",
+          "url": "http://127.0.0.1:8000/media/media_36f6ae8f63.jpg",
+          "thumbnail_url": "http://127.0.0.1:8000/media/media_36f6ae8f63_thumb.jpg",
+          "width": null,
+          "height": null,
+          "alt_text": "Beach lineup photo"
+        }
+      ],
+      "meetup_date": null,
+      "meetup_end_date": null,
+      "created_at": "2026-05-20T18:06:18.103612Z"
+    },
+    {
+      "id": "post_maya_uluwatu_party",
+      "user_id": "friend_maya",
+      "author_name": "Maya Surfer",
+      "author_handle": "mayasurfer",
+      "author_avatar_url": null,
+      "author_premium": false,
+      "spot_id": "spot_uluwatu_peak",
+      "post_type": "surf_plan",
+      "visibility": "followers",
+      "body": "Small Uluwatu crew hang Friday night. Bring a story from your best or worst reef entry.",
+      "media": [
+        {
+          "id": "media_ba729993a2",
+          "media_type": "photo",
+          "url": "http://127.0.0.1:8000/media/media_ba729993a2.jpg",
+          "thumbnail_url": "http://127.0.0.1:8000/media/media_ba729993a2_thumb.jpg",
+          "width": null,
+          "height": null,
+          "alt_text": "Uluwatu hangout photo"
+        }
+      ],
+      "meetup_date": "2026-05-25",
+      "meetup_end_date": null,
+      "created_at": "2026-05-20T16:06:18.103617Z"
+    },
+    {
+      "id": "post_jo_cloud9_event",
+      "user_id": "friend_jo",
+      "author_name": "Jo Tide",
+      "author_handle": "jotide",
+      "author_avatar_url": null,
+      "author_premium": false,
+      "spot_id": "spot_siargao",
+      "post_type": "surf_plan",
+      "visibility": "public",
+      "body": "Cloud 9 watch mission at high tide. Probably just spectating if it gets spicy.",
+      "media": [],
+      "meetup_date": "2026-05-24",
+      "meetup_end_date": null,
+      "created_at": "2026-05-20T14:06:18.103619Z"
+    },
+    {
+      "id": "post_balangan_friends",
+      "user_id": "friend_ari",
+      "author_name": "Ari Dawn",
+      "author_handle": "aridawn",
+      "author_avatar_url": null,
+      "author_premium": false,
+      "spot_id": "spot_balangan",
+      "post_type": "general",
+      "visibility": "followers",
+      "body": "Looking for someone to split a scooter ride to Balangan this week.",
+      "media": [],
+      "meetup_date": "2026-05-24",
+      "meetup_end_date": null,
+      "created_at": "2026-05-20T17:06:18.103623Z"
+    },
+    {
+      "id": "post_bd2cdd58",
+      "user_id": "usr_demo",
+      "author_name": "Tytan",
+      "author_handle": "ty",
+      "author_avatar_url": "http://127.0.0.1:8000/media/media_c19db8e5b6_thumb.jpg",
+      "author_premium": false,
+      "spot_id": null,
+      "post_type": "surf_plan",
+      "visibility": "public",
+      "body": "hi fool",
+      "media": [
+        {
+          "id": "media_d6fbf4d2c9",
+          "media_type": "photo",
+          "url": "http://127.0.0.1:8000/media/media_d6fbf4d2c9.jpg",
+          "thumbnail_url": "http://127.0.0.1:8000/media/media_d6fbf4d2c9_thumb.jpg",
+          "width": null,
+          "height": null,
+          "alt_text": null
+        }
+      ],
+      "meetup_date": "2026-05-03",
+      "meetup_end_date": null,
+      "created_at": "2026-05-02T11:36:20.507253Z"
+    },
+    {
+      "id": "post_8e3e977c",
+      "user_id": "usr_demo",
+      "author_name": "Tytan",
+      "author_handle": "ty",
+      "author_avatar_url": "http://127.0.0.1:8000/media/media_c19db8e5b6_thumb.jpg",
+      "author_premium": false,
+      "spot_id": "spot_echo_beach",
+      "post_type": "general",
+      "visibility": "followers",
+      "body": "hi",
+      "media": [
+        {
+          "id": "media_2eac0fdec9",
+          "media_type": "photo",
+          "url": "http://127.0.0.1:8000/media/media_2eac0fdec9.jpg",
+          "thumbnail_url": "http://127.0.0.1:8000/media/media_2eac0fdec9_thumb.jpg",
+          "width": null,
+          "height": null,
+          "alt_text": null
+        }
+      ],
+      "meetup_date": null,
+      "meetup_end_date": null,
+      "created_at": "2026-05-04T07:32:32.582175Z"
+    },
+    {
+      "id": "post_443474c3",
+      "user_id": "usr_demo",
+      "author_name": "Tytan",
+      "author_handle": "ty",
+      "author_avatar_url": "http://127.0.0.1:8000/media/media_c19db8e5b6_thumb.jpg",
+      "author_premium": false,
+      "spot_id": null,
+      "post_type": "general",
+      "visibility": "followers",
+      "body": "hi",
+      "media": [
+        {
+          "id": "media_2bed2eb0f7",
+          "media_type": "photo",
+          "url": "http://127.0.0.1:8000/media/media_2bed2eb0f7.jpg",
+          "thumbnail_url": "http://127.0.0.1:8000/media/media_2bed2eb0f7_thumb.jpg",
+          "width": null,
+          "height": null,
+          "alt_text": null
+        },
+        {
+          "id": "media_53eccf94fc",
+          "media_type": "photo",
+          "url": "http://127.0.0.1:8000/media/media_53eccf94fc.png",
+          "thumbnail_url": "http://127.0.0.1:8000/media/media_53eccf94fc_thumb.png",
+          "width": null,
+          "height": null,
+          "alt_text": null
+        },
+        {
+          "id": "media_e694122730",
+          "media_type": "photo",
+          "url": "http://127.0.0.1:8000/media/media_e694122730.jpg",
+          "thumbnail_url": "http://127.0.0.1:8000/media/media_e694122730_thumb.jpg",
+          "width": null,
+          "height": null,
+          "alt_text": null
+        }
+      ],
+      "meetup_date": null,
+      "meetup_end_date": null,
+      "created_at": "2026-05-04T08:00:56.627176Z"
+    },
+    {
+      "id": "post_d33d7616",
+      "user_id": "usr_demo",
+      "author_name": "Tytan",
+      "author_handle": "ty",
+      "author_avatar_url": "http://127.0.0.1:8000/media/media_c19db8e5b6_thumb.jpg",
+      "author_premium": false,
+      "spot_id": "spot_echo_beach",
+      "post_type": "general",
+      "visibility": "followers",
+      "body": "hi",
+      "media": [
+        {
+          "id": "media_c6e1bb0391",
+          "media_type": "photo",
+          "url": "http://127.0.0.1:8000/media/media_c6e1bb0391.jpg",
+          "thumbnail_url": "http://127.0.0.1:8000/media/media_c6e1bb0391_thumb.jpg",
+          "width": null,
+          "height": null,
+          "alt_text": null
+        }
+      ],
+      "meetup_date": null,
+      "meetup_end_date": null,
+      "created_at": "2026-05-05T08:28:08.980817Z"
+    },
+    {
+      "id": "post_62f9ae45",
+      "user_id": "usr_demo",
+      "author_name": "Tytan",
+      "author_handle": "ty",
+      "author_avatar_url": "http://127.0.0.1:8000/media/media_c19db8e5b6_thumb.jpg",
+      "author_premium": false,
+      "spot_id": "spot_batu_bolong",
+      "post_type": "surf_plan",
+      "visibility": "public",
+      "body": "beach party who\u2019s in?",
+      "media": [
+        {
+          "id": "media_5dcc67ff9b",
+          "media_type": "photo",
+          "url": "http://127.0.0.1:8000/media/media_5dcc67ff9b.png",
+          "thumbnail_url": "http://127.0.0.1:8000/media/media_5dcc67ff9b_thumb.png",
+          "width": null,
+          "height": null,
+          "alt_text": null
+        }
+      ],
+      "meetup_date": "2026-05-06",
+      "meetup_end_date": null,
+      "created_at": "2026-05-05T08:29:10.358860Z"
+    },
+    {
+      "id": "post_183e860f",
+      "user_id": "usr_demo",
+      "author_name": "Tytan",
+      "author_handle": "ty",
+      "author_avatar_url": "http://127.0.0.1:8000/media/media_c19db8e5b6_thumb.jpg",
+      "author_premium": false,
+      "spot_id": null,
+      "post_type": "surf_plan",
+      "visibility": "followers",
+      "body": "hi",
+      "media": [],
+      "meetup_date": "2026-05-09",
+      "meetup_end_date": null,
+      "created_at": "2026-05-08T05:02:16.938893Z"
+    },
+    {
+      "id": "post_4f8cc898",
+      "user_id": "usr_demo",
+      "author_name": "Tytan",
+      "author_handle": "ty",
+      "author_avatar_url": "http://127.0.0.1:8000/media/media_c19db8e5b6_thumb.jpg",
+      "author_premium": false,
+      "spot_id": null,
+      "post_type": "surf_plan",
+      "visibility": "followers",
+      "body": "@linareef",
+      "media": [],
+      "meetup_date": "2026-05-09",
+      "meetup_end_date": null,
+      "created_at": "2026-05-08T07:44:01.514968Z"
     }
   ],
+  "comments": [
+    {
+      "id": "comment_lina_photo_maya",
+      "post_id": "post_lina_canggu_photo",
+      "user_id": "friend_maya",
+      "author_name": "Maya Surfer",
+      "author_handle": "mayasurfer",
+      "author_avatar_url": null,
+      "author_premium": false,
+      "text": "That waterfall shot is unreal.",
+      "reply_to_comment_id": null,
+      "created_at": "2026-05-20T23:38:18.103625Z"
+    },
+    {
+      "id": "comment_lina_photo_ari",
+      "post_id": "post_lina_canggu_photo",
+      "user_id": "friend_ari",
+      "author_name": "Ari Dawn",
+      "author_handle": "aridawn",
+      "author_avatar_url": null,
+      "author_premium": false,
+      "text": "Coffee run after Echo sounds dangerous haha.",
+      "reply_to_comment_id": null,
+      "created_at": "2026-05-20T23:44:18.103629Z"
+    },
+    {
+      "id": "comment_ari_event_lina",
+      "post_id": "post_ari_balangan_event",
+      "user_id": "friend_lina",
+      "author_name": "Lina Reef",
+      "author_handle": "linareef",
+      "author_avatar_url": null,
+      "author_premium": false,
+      "text": "I'm keen if the wind stays light.",
+      "reply_to_comment_id": null,
+      "created_at": "2026-05-20T23:21:18.103631Z"
+    },
+    {
+      "id": "comment_ari_event_kai",
+      "post_id": "post_ari_balangan_event",
+      "user_id": "friend_kai",
+      "author_name": "Kai Glass",
+      "author_handle": "kaiglass",
+      "author_avatar_url": null,
+      "author_premium": false,
+      "text": "Save me a spot at the warung.",
+      "reply_to_comment_id": null,
+      "created_at": "2026-05-20T23:25:18.103632Z"
+    },
+    {
+      "id": "comment_noa_event_reef",
+      "post_id": "post_noa_arugam_event",
+      "user_id": "suggested_reef_milo",
+      "author_name": "Reef Milo",
+      "author_handle": "reefmilo",
+      "author_avatar_url": null,
+      "author_premium": false,
+      "text": "Main Point sunset mission sounds good.",
+      "reply_to_comment_id": null,
+      "created_at": "2026-05-20T22:06:18.103634Z"
+    },
+    {
+      "id": "comment_maya_party_jo",
+      "post_id": "post_maya_uluwatu_party",
+      "user_id": "friend_jo",
+      "author_name": "Jo Tide",
+      "author_handle": "jotide",
+      "author_avatar_url": null,
+      "author_premium": false,
+      "text": "Drop the time when you know it.",
+      "reply_to_comment_id": null,
+      "created_at": "2026-05-20T21:06:18.103635Z"
+    }
+  ],
+  "social_engagement": {
+    "liked_post_ids": [
+      "post_62f9ae45"
+    ],
+    "reposted_post_ids": [
+      "post_lina_canggu_photo",
+      "post_62f9ae45",
+      "post_sam_snapper_photos"
+    ],
+    "reposts": [
+      {
+        "post_id": "post_lina_canggu_photo",
+        "created_at": "2026-05-16T04:15:53.899892Z"
+      },
+      {
+        "post_id": "post_62f9ae45",
+        "created_at": "2026-05-10T05:52:25.268389Z"
+      },
+      {
+        "post_id": "post_sam_snapper_photos",
+        "created_at": "2026-05-08T08:56:20.310714Z"
+      }
+    ],
+    "liked_comment_ids": [],
+    "rsvp_post_ids": [
+      "post_62f9ae45",
+      "post_ari_balangan_event"
+    ],
+    "comments": [
+      {
+        "id": "comment_lina_photo_ari",
+        "post_id": "post_lina_canggu_photo",
+        "user_id": "friend_ari",
+        "author_name": "Ari Dawn",
+        "author_handle": "aridawn",
+        "author_avatar_url": null,
+        "author_premium": false,
+        "text": "Coffee run after Echo sounds dangerous haha.",
+        "reply_to_comment_id": null,
+        "created_at": "2026-05-20T23:44:18.103629Z"
+      },
+      {
+        "id": "comment_lina_photo_maya",
+        "post_id": "post_lina_canggu_photo",
+        "user_id": "friend_maya",
+        "author_name": "Maya Surfer",
+        "author_handle": "mayasurfer",
+        "author_avatar_url": null,
+        "author_premium": false,
+        "text": "That waterfall shot is unreal.",
+        "reply_to_comment_id": null,
+        "created_at": "2026-05-20T23:38:18.103625Z"
+      },
+      {
+        "id": "comment_ari_event_kai",
+        "post_id": "post_ari_balangan_event",
+        "user_id": "friend_kai",
+        "author_name": "Kai Glass",
+        "author_handle": "kaiglass",
+        "author_avatar_url": null,
+        "author_premium": false,
+        "text": "Save me a spot at the warung.",
+        "reply_to_comment_id": null,
+        "created_at": "2026-05-20T23:25:18.103632Z"
+      },
+      {
+        "id": "comment_ari_event_lina",
+        "post_id": "post_ari_balangan_event",
+        "user_id": "friend_lina",
+        "author_name": "Lina Reef",
+        "author_handle": "linareef",
+        "author_avatar_url": null,
+        "author_premium": false,
+        "text": "I'm keen if the wind stays light.",
+        "reply_to_comment_id": null,
+        "created_at": "2026-05-20T23:21:18.103631Z"
+      },
+      {
+        "id": "comment_noa_event_reef",
+        "post_id": "post_noa_arugam_event",
+        "user_id": "suggested_reef_milo",
+        "author_name": "Reef Milo",
+        "author_handle": "reefmilo",
+        "author_avatar_url": null,
+        "author_premium": false,
+        "text": "Main Point sunset mission sounds good.",
+        "reply_to_comment_id": null,
+        "created_at": "2026-05-20T22:06:18.103634Z"
+      },
+      {
+        "id": "comment_maya_party_jo",
+        "post_id": "post_maya_uluwatu_party",
+        "user_id": "friend_jo",
+        "author_name": "Jo Tide",
+        "author_handle": "jotide",
+        "author_avatar_url": null,
+        "author_premium": false,
+        "text": "Drop the time when you know it.",
+        "reply_to_comment_id": null,
+        "created_at": "2026-05-20T21:06:18.103635Z"
+      }
+    ]
+  },
   "waitlist_emails": [
     "demo@surftravel.app",
-    "demo+premium@surftravel.app",
-    "tytaneth+premium@gmail.com"
-  ]
+    "demo+premium@surftravel.app"
+  ],
+  "verified_emails": [],
+  "password_reset_codes": {},
+  "auth_accounts": {},
+  "session_tokens": {}
 }

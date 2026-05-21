@@ -7,6 +7,11 @@ import '../features/auth/auth_page.dart';
 import '../features/home/home_page.dart';
 import '../features/paywall/paywall_page.dart';
 import '../features/settings/settings_page.dart';
+import '../features/social/direct_messages_page.dart';
+import '../features/social/notifications_page.dart';
+import '../features/social/post_detail_page.dart';
+import '../features/social/public_profile_page.dart';
+import '../features/social/social_profile.dart';
 import '../features/spots/spot_detail_page.dart';
 import '../features/spots/spots_map_page.dart';
 import '../features/spots/spots_page.dart';
@@ -34,8 +39,42 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(path: 'login', builder: (context, state) => const AuthPage()),
           GoRoute(
+            path: 'people-search',
+            builder: (context, state) => const PeopleSearchPage(),
+          ),
+          GoRoute(
             path: 'paywall',
             builder: (context, state) => const PaywallPage(),
+          ),
+          GoRoute(
+            path: 'messages',
+            builder: (context, state) {
+              final extra = state.extra;
+              return DirectMessagesPage(
+                initialThreadId: state.uri.queryParameters['thread'],
+                seedProfile: extra is PublicProfilePreview ? extra : null,
+              );
+            },
+          ),
+          GoRoute(
+            path: 'notifications',
+            builder: (context, state) => const SocialNotificationsPage(),
+          ),
+          GoRoute(
+            path: 'post/:postId',
+            builder: (context, state) =>
+                PostDetailPage(postId: state.pathParameters['postId']!),
+          ),
+          GoRoute(
+            path: 'profile/:userId',
+            builder: (context, state) {
+              final extra = state.extra;
+              return PublicProfilePage(
+                userId: state.pathParameters['userId']!,
+                initialPostId: state.uri.queryParameters['post'],
+                seedProfile: extra is PublicProfilePreview ? extra : null,
+              );
+            },
           ),
         ],
       ),

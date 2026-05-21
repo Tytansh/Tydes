@@ -3,18 +3,19 @@ import 'api_models.dart';
 class DemoSeed {
   static UserProfile me = UserProfile(
     id: 'usr_demo',
-    email: 'demo@surftravel.app',
-    displayName: 'Maya Surfer',
-    handle: 'maya',
+    email: 'demo+premium@surftravel.app',
+    displayName: 'Tytan',
+    handle: 'ty',
     bio:
         'Looking for clean waves, easy travel days, and people to paddle out with.',
     surfSkill: 'intermediate',
-    avatarUrl: null,
+    avatarUrl: 'http://127.0.0.1:8000/media/media_ba729993a2_thumb.jpg',
     homeRegion: 'Bali',
     locale: 'en',
-    premium: false,
+    premium: true,
+    emailVerified: true,
     freeLiveSpotId: null,
-    adsEnabled: true,
+    adsEnabled: false,
     favoriteSpotIds: const ['spot_balangan', 'spot_echo_beach'],
   );
 
@@ -32,7 +33,8 @@ class DemoSeed {
       waveHeightM: 1.9,
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e',
-      summary: 'Powerful reef break with sunrise energy and serious walls.',
+      summary:
+          'Iconic Bukit reef chain with multiple sections, cave access, strong currents, and sharp coral that rewards experienced surfers.',
     ),
     SpotModel(
       id: 'spot_padang_padang',
@@ -48,7 +50,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Barreling reef setup with a compact takeoff and classic dry-season energy.',
+          'Heavy Bukit left reef with a compact takeoff and serious barrels over shallow coral when long-period swell hits.',
     ),
     SpotModel(
       id: 'spot_balangan',
@@ -64,7 +66,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Long playful left with easier paddling than the heaviest Bukit reefs.',
+          'Long playful Bukit left over coral and rock, friendlier than the heaviest reefs but still worth extra caution around lower tides.',
     ),
     SpotModel(
       id: 'spot_dreamland',
@@ -80,7 +82,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Popular Bukit beach break with fun peaks, easier access, and a more everyday session feel.',
+          'Scenic Bukit beach break over sand and rock, more approachable than nearby reefs but still punchy with hidden rocks and shorebreak.',
     ),
     SpotModel(
       id: 'spot_bingin',
@@ -96,7 +98,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Short draining Bukit left with a tight takeoff and one of the most photogenic cliffs in Bali.',
+          'Short, intense Bukit left over coral, famous for mechanical barrels, shallow reef, and a crowded expert lineup.',
     ),
     SpotModel(
       id: 'spot_impossibles',
@@ -112,7 +114,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'Fast racy reef wall that lights up on proper swell and rewards confident positioning.',
+          'Long, fast Bukit left over shallow coral reef where wave choice matters and low-tide entries can be rough.',
     ),
     SpotModel(
       id: 'spot_nyang_nyang',
@@ -128,7 +130,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e',
       summary:
-          'Wild Bukit stretch with more space, more paddle, and a rawer feel than the busier cliff-top reefs.',
+          'Remote south-facing Bukit reef with steep access, raw Indian Ocean exposure, and currents that deserve respect.',
     ),
     SpotModel(
       id: 'spot_green_bowl',
@@ -144,7 +146,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Steeper Bukit cave-and-reef setup with punchy takeoffs and a quieter mission feel.',
+          'Exposed south-coast reef below a steep cliff, best for confident surfers who can handle currents, heavy waves, and the long walk out.',
     ),
     SpotModel(
       id: 'spot_nusa_dua',
@@ -160,7 +162,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'Deep-water right that handles more swell and wind than many of Bali’s more fragile reef options.',
+          'Open-ocean right reef with shifting peaks, long paddles or boat access, strong currents, and serious size on bigger swells.',
     ),
     SpotModel(
       id: 'spot_echo_beach',
@@ -175,7 +177,8 @@ class DemoSeed {
       waveHeightM: 1.4,
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
-      summary: 'Flexible beach and reef options with easy trip logistics.',
+      summary:
+          'Lively Canggu zone with beach and reef options, faster sections, heavy crowds, and shallow reef at lower tides.',
     ),
     SpotModel(
       id: 'spot_batu_bolong',
@@ -191,7 +194,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1493558103817-58b2924bce98',
       summary:
-          'Friendly longboard wave with mellow takeoffs and easy post-surf hangs.',
+          'Canggu\'s mellow longboard hub with soft reef-and-sand peaks, busy surf schools, and extra collision risk in the crowd.',
     ),
     SpotModel(
       id: 'spot_berawa',
@@ -207,7 +210,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee',
       summary:
-          'Punchier beach break peaks with plenty of movement through the tides.',
+          'Punchier Canggu A-frame zone with shifting sandbanks, a shallow low-tide ledge, and more edge than Batu Bolong.',
     ),
     SpotModel(
       id: 'spot_pererenan',
@@ -223,7 +226,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'A little less beginner-heavy than Batu Bolong, with fun peaks and an easy Canggu mission.',
+          'Faster Canggu reef-and-beach setup with stronger currents and more advanced energy than the learner-heavy Batu Bolong zone.',
     ),
     SpotModel(
       id: 'spot_keramas',
@@ -239,7 +242,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e',
       summary:
-          'High-performance right reef with punchy sections and a proper east-side Bali feel.',
+          'High-performance east-Bali right over lava-and-coral reef, best around mid to high tide and shallow in sections.',
     ),
     SpotModel(
       id: 'spot_medewi',
@@ -255,7 +258,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1493558103817-58b2924bce98',
       summary:
-          'Long mellow left point for easier turns, cruisy trips, and slower west-Bali rhythm.',
+          'Long west-Bali left over rocky reef, mellow by Indo standards but still a bootie-friendly point with long rides.',
     ),
     SpotModel(
       id: 'spot_balian',
@@ -271,7 +274,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'A-frame river-mouth setup with more room to move than the crowded south-Bali zones.',
+          'Remote black-sand river-mouth peak over cobbles and rock, with cleanup sets and runoff risk after heavy rain.',
     ),
     SpotModel(
       id: 'spot_shipwrecks',
@@ -287,7 +290,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'Lembongan’s best-known reef with a proper dry-season travel feel and cleaner water than the mainland crowds.',
+          'Iconic Nusa Lembongan right over sharp coral, usually best mid to high tide with currents and seaweed markers in play.',
     ),
     SpotModel(
       id: 'spot_siargao',
@@ -303,7 +306,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee',
       summary:
-          'Fast reef setup with punchy walls and a world-class surf trip vibe.',
+          'World-famous Siargao right over shallow reef, best with more water on the reef and serious once overhead.',
     ),
     SpotModel(
       id: 'spot_jacking_horse',
@@ -319,7 +322,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'More approachable Siargao reef option with playful walls on medium swells.',
+          'Beginner-friendly right reef near Cloud 9 with mellow inside waves, sideways current, and rocks exposed at low tide.',
     ),
     SpotModel(
       id: 'spot_quicksilver',
@@ -335,7 +338,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'Fast playful right that lights up on cleaner swells just down the road from Cloud 9.',
+          'Fast Siargao right over reef, more serious than Jacking Horse and best with clean swell plus enough water on the coral.',
     ),
     SpotModel(
       id: 'spot_pacifico',
@@ -351,7 +354,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'Scenic reef and beach setup on Siargao’s quieter north side with more room to move.',
+          'North Siargao left reef that can be mellow when small but turns powerful, hollow, and current-heavy on bigger swells.',
     ),
     SpotModel(
       id: 'spot_monaliza',
@@ -383,7 +386,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e',
       summary:
-          'Powerful right reef on Siargao\'s island-hopping circuit with more juice than the beginner zones.',
+          'Heavy Siargao reef near Cloud 9 with fast lefts, shallow coral, and a mid-to-high tide safety margin.',
     ),
     SpotModel(
       id: 'spot_cemetery',
@@ -399,7 +402,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee',
       summary:
-          'Fun reef setup close to General Luna with a more approachable vibe than the heaviest Siargao peaks.',
+          'Deeper Siargao reef with multiple peaks, boat access, and currents, more forgiving than Cloud 9 but still not a casual paddle.',
     ),
     SpotModel(
       id: 'spot_urmizno',
@@ -447,7 +450,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee',
       summary:
-          'Easy-access beach break weekend zone for Manila surfers and newer riders.',
+          'Zambales beachbreak weekend zone with forgiving sandbars for newer surfers and stronger rips when typhoon swell arrives.',
     ),
     SpotModel(
       id: 'spot_puraran',
@@ -527,7 +530,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e',
       summary:
-          'Long forgiving Daet beachbreak with easy paddles and a quietly important local surf scene.',
+          'Long gray-sand Daet beachbreak with forgiving lefts and rights, surf schools, and rips or closeouts when typhoon swell jumps.',
     ),
     SpotModel(
       id: 'spot_real',
@@ -543,7 +546,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'Open Pacific-facing road-trip zone east of Manila with more swell and variety than the casual weekend beaches.',
+          'Pacific-facing Quezon beachbreak east of Manila with lefts and rights, mellow crowds, and runoff or rips after heavy rain.',
     ),
     SpotModel(
       id: 'spot_san_juan',
@@ -559,7 +562,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e',
       summary:
-          'The broader La Union beach zone around Urmizno with easy peaks, schools, and strong social-trip value.',
+          'La Union surf hub with Urbiztondo beachbreak, Monaliza right point, crowds, and shallow rock or coral outside the learner zone.',
     ),
     SpotModel(
       id: 'spot_dahican',
@@ -591,7 +594,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Typhoon-swell island setup with serious east-facing exposure and a more committed surf-trip feel than the casual learner zones.',
+          'Exposed Eastern Samar reef-and-sand setup at ABCD Beach, reliable on east swell with coral, rocks, and urchins.',
     ),
     SpotModel(
       id: 'spot_majestics',
@@ -607,7 +610,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Heavier Siargao reef zone with more power and consequence than the easier tourist-name peaks.',
+          'Siargao reef option with heavier Pacific energy than the learner peaks, better with local guidance and enough tide over coral.',
     ),
     SpotModel(
       id: 'spot_pilar',
@@ -623,7 +626,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Less famous Siargao-side option with roomier lineups and a more exploratory road-trip feel than Cloud 9.',
+          'Pilar-side Siargao reef that likes northeast swell, more remote than General Luna and best checked with local guidance.',
     ),
     SpotModel(
       id: 'spot_rock_island',
@@ -639,7 +642,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'Fun Siargao reef with more shape than the learner beaches and a mellower feel than the heavy headline sections.',
+          'Boat-access Siargao right reef near Stimpy\'s with long walls, inside rocks at low tide, and serious paddle work when big.',
     ),
     SpotModel(
       id: 'spot_cemento',
@@ -655,7 +658,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Heavier Baler reef with more push and local weight than the easy beachbreaks that bring most first-timers to town.',
+          'Baler\'s Cobra Reef right, shallow and heavy on bigger swells, best for confident surfers with local guidance.',
     ),
     SpotModel(
       id: 'spot_gubat',
@@ -671,7 +674,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Sorsogon beachbreak zone with a more off-the-radar road-trip feel than the country’s most publicized surf towns.',
+          'Sorsogon A-frame beachbreak with beginner-friendly sand peaks and a quieter community feel than bigger Philippine surf towns.',
     ),
     SpotModel(
       id: 'spot_charlies_point',
@@ -687,7 +690,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'Classic Baler point option with more wall and story than the softer beachbreak sessions closer to town.',
+          'Baler river-mouth beachbreak made famous by Apocalypse Now, with shifting banks, currents, and better shape when the sand lines up.',
     ),
     SpotModel(
       id: 'spot_sabang_baler',
@@ -703,7 +706,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'Main Baler beach zone with approachable peaks and the easiest surf-travel access in town.',
+          'Main Baler sand-bottom beachbreak for lessons and longboards, soft most days but able to close out on bigger typhoon swell.',
     ),
     SpotModel(
       id: 'spot_luklukan',
@@ -719,7 +722,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Another Baler zone name that helps round out the area beyond the one or two most famous crowd magnets.',
+          'Baler-side wave away from the main Sabang lesson strip, more condition-dependent and better checked with local advice.',
     ),
     SpotModel(
       id: 'spot_bacnotan',
@@ -735,7 +738,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'La Union-area beachbreak that helps northern Philippines feel more complete than just the one famous San Juan strip.',
+          'Quieter La Union beach or reef step-up when Urbiztondo is packed, condition-dependent and better with local advice.',
     ),
     SpotModel(
       id: 'spot_urbiztondo',
@@ -751,7 +754,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'The best-known La Union surf strip with easy access, social energy, and everyday peaks that drive a lot of the country’s surf tourism.',
+          'La Union\'s busy sand-bottom lesson beach, consistent in Amihan season with mellow peaks, weekend crowds, and cobbles at low tide.',
     ),
     SpotModel(
       id: 'spot_pundaquit',
@@ -767,7 +770,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Classic Zambales surf zone with a rawer road-trip feel than the better-known hostel-heavy northern hubs.',
+          'Zambales Magic Left zone, a long slow left on south or Habagat swell with rivermouth peaks nearby and longboard appeal.',
     ),
     SpotModel(
       id: 'spot_nipussi',
@@ -815,7 +818,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Sharply named Lembongan reef with more speed and consequence than the friendlier island walls nearby.',
+          'Hollow Lembongan reef named honestly: sharp coral, tidal currents, and shallow sections make it best left to confident surfers.',
     ),
     SpotModel(
       id: 'spot_stimpy',
@@ -831,7 +834,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e',
       summary:
-          'Mechanical left reef in the Mentawais with boat-trip dream energy.',
+          'Mechanical Mentawai left reef with boat-trip dream energy, fast takeoffs, and shallow coral when the swell stands up.',
     ),
     SpotModel(
       id: 'spot_lances_right',
@@ -847,7 +850,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'Long wrapping right with one of the most photogenic walls in Indonesia.',
+          'Mentawai right reef with long photogenic walls, sharp coral, and real consequence as swell and tide line up.',
     ),
     SpotModel(
       id: 'spot_desert_point',
@@ -863,7 +866,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Legendary freight-train left that turns on when the swell and wind line up.',
+          'World-class Lombok left barrel over extremely shallow coral, fickle, tide-sensitive, and strictly for experienced surfers when firing.',
     ),
     SpotModel(
       id: 'spot_lakey_peak',
@@ -879,7 +882,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1493558103817-58b2924bce98',
       summary:
-          'Rippable peak with rights and lefts, perfect for a strike mission in Sumbawa.',
+          'Lakey Bay A-frame over coral reef, with a hollow right, longer left, strong crowd focus, and a reef channel for the paddle out.',
     ),
     SpotModel(
       id: 'spot_mawi',
@@ -895,7 +898,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'Punchy Lombok reef with a more raw feel than Bali and a classic scooter-mission vibe.',
+          'Powerful south-Lombok A-frame reef that is fun when small but hollow, shallow, and advanced as swell builds.',
     ),
     SpotModel(
       id: 'spot_gerupuk',
@@ -911,7 +914,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e',
       summary:
-          'Boat-access bay with multiple peaks that makes Lombok more approachable for mixed-skill trips.',
+          'Boat-access Lombok bay with several reef breaks, from forgiving learner walls to more serious outside peaks.',
     ),
     SpotModel(
       id: 'spot_selong_belanak',
@@ -959,7 +962,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Fast punchy Indonesian left with more energy and consequence than the friendlier Sumbawa peaks.',
+          'Freight-train West Sumbawa left over ultra-sharp shallow coral, best with more tide and advanced commitment.',
     ),
     SpotModel(
       id: 'spot_supersuck',
@@ -975,7 +978,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'Hollow high-quality left that gives west Sumbawa some proper strike-mission credibility.',
+          'Heavy West Sumbawa left that drains hard over sharp coral, best around mid to high tide and unforgiving when it is on.',
     ),
     SpotModel(
       id: 'spot_hts',
@@ -991,7 +994,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Legendary Mentawai barrel with a fast hollow takeoff and proper boat-trip status.',
+          'World-class Mentawai right barrel over reef, best around mid to high tide and serious once the swell has size.',
     ),
     SpotModel(
       id: 'spot_macaronis',
@@ -1007,7 +1010,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'Perfect performance left that sits high on just about every Mentawai dream list.',
+          'Famous Mentawai left over flat coral reef, playful when small but faster and more hollow as the swell builds.',
     ),
     SpotModel(
       id: 'spot_tland',
@@ -1071,7 +1074,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'One of Indonesia’s legendary lefts with huge walls, sections, and all-time strike-trip status.',
+          'Legendary Java reef zone with long left walls, heavy paddling, coral cuts, and tricky lower-tide access.',
     ),
     SpotModel(
       id: 'spot_kandui',
@@ -1199,7 +1202,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Sanur-side Bali reef with more consistency and less fame than the Bukit names, making it a valuable everyday option.',
+          'Underrated Bali reef with fast walls and a raw open-water feel, better for confident surfers than first-timers.',
     ),
     SpotModel(
       id: 'spot_bintangs',
@@ -1215,7 +1218,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'Fun Lembongan wall with a mellower profile that helps round out the island for less all-in surf days.',
+          'Mellower Nusa Lembongan reef wall among the main island breaks, useful when Lacerations and Shipwrecks look too heavy.',
     ),
     SpotModel(
       id: 'spot_lakey_pipe',
@@ -1247,7 +1250,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Longer more user-friendly Sumbawa wall that gives the Lakey zone an easier option on less critical days.',
+          'Longer Sumbawa reef wall near Lakey with a more forgiving shoulder than the barrels, still shallow and tide-sensitive.',
     ),
     SpotModel(
       id: 'spot_beng_beng',
@@ -1263,7 +1266,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'More approachable Mentawai reef that helps round out the Playgrounds zone for surfers who do not want every session to be all-time heavy.',
+          'Friendly Mentawai left over forgiving reef, rippable from chest-high to overhead and good for easing into Playgrounds.',
     ),
     SpotModel(
       id: 'spot_mushrooms',
@@ -1279,7 +1282,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'More forgiving Lembongan option that helps the island work for mixed-skill trips, not just reef-hungry strike missions.',
+          'Lembongan\'s more forgiving reef-and-sand corner near Mushroom Bay, still worth watching for tide, reef, and boat traffic.',
     ),
     SpotModel(
       id: 'spot_hyatt_reef',
@@ -1295,7 +1298,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Sanur-side reef with cleaner walls and a more classic dawn-patrol vibe than Bali’s noisier fame spots.',
+          'Far-off Sanur right with outside barrels, inside walls, strong current, boat access, and sharp reef under mid-high tide.',
     ),
     SpotModel(
       id: 'spot_sanur_right',
@@ -1311,7 +1314,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'Sanur classic with more shape and performance than the easier reef options lining the same stretch.',
+          'Mythical Sanur reef right that needs solid swell, mid-high tide, and glassy wind, with ultra-sharp coral on the inside.',
     ),
     SpotModel(
       id: 'spot_keramas_right',
@@ -1343,7 +1346,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'More approachable Sanur-side surf option that helps round out Bali beyond the best-known high-performance reefs.',
+          'Sanur-side black-sand beachbreak with fast A-frame peaks, strong current, shorebreak, and runoff risk after rain.',
     ),
     SpotModel(
       id: 'spot_racetracks',
@@ -1359,7 +1362,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Quick high-line Mentawai reef that gives the Playgrounds zone even more variety beyond the marquee barrel names.',
+          'Playgrounds high-line reef with quick walls and shallow sections, best for surfers who can keep speed over coral.',
     ),
     SpotModel(
       id: 'spot_thunders',
@@ -1375,7 +1378,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'Fast playful Mentawai right that adds another high-quality option to the stacked Playgrounds mix.',
+          'Fast Mentawai right with playful walls when small and sharper reef consequences when the Playgrounds swell has size.',
     ),
     SpotModel(
       id: 'spot_mini_teepies',
@@ -1391,7 +1394,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Shorter fun Mentawai reef that helps make the zone feel more than just a list of heavy, expert-only sessions.',
+          'Shorter Playgrounds reef with quick playful walls, lighter than the famous slabs but still coral-bottom and boat-accessed.',
     ),
     SpotModel(
       id: 'spot_burgerworld',
@@ -1407,7 +1410,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'More forgiving Mentawai wall that helps the zone work for surfers chasing fun rather than nonstop intensity.',
+          'Playful Mentawai right point for smaller swells, with long walls after a short steep takeoff and less appeal when too big.',
     ),
     SpotModel(
       id: 'spot_kiddieland',
@@ -1423,7 +1426,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'Playful mellow Mentawai option that proves the islands are not only for heavy expert strike sessions.',
+          'Mellow Mentawai reef with playful walls for smaller days, still coral-bottom and best treated with boat-guide awareness.',
     ),
     SpotModel(
       id: 'spot_rifles',
@@ -1455,7 +1458,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'User-friendly Mentawai zone with multiple playful reefs that gives trips more session variety than the all-time barrel missions.',
+          'Wave-dense Mentawai zone with mellow reefs, heavy reefs, and boat access to more options than one trip can usually surf.',
     ),
     SpotModel(
       id: 'spot_four_bobs',
@@ -1551,7 +1554,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Fun consistent Mentawai left that helps round out the Playgrounds zone with more approachable quality.',
+          'Consistent Playgrounds right over sandy reef, with a fast takeoff into a rippable wall and a good all-tide warmup feel.',
     ),
     SpotModel(
       id: 'spot_kuta_reef',
@@ -1567,7 +1570,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Boat-access Kuta classic that makes Bali’s airport-and-reef zone feel more complete than just one or two named walls.',
+          'Boat-access Bali left far offshore, with long rippable walls on high tide, sharp coral, crowds, and dirty water after rain.',
     ),
     SpotModel(
       id: 'spot_krui_left',
@@ -1615,7 +1618,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Machine-like right-hander with a deep surf heritage and serious power.',
+          'Lagundri Bay\'s machine-like right reef, deep surf heritage, serious power, and shallow sections when swell turns on.',
     ),
     SpotModel(
       id: 'spot_da_nang',
@@ -1631,7 +1634,7 @@ class DemoSeed {
       waterTempC: 26,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'Accessible city beach with a growing local scene and easy first sessions.',
+          'My Khe city beachbreak with soft sand-bottom peaks, winter windswells, and easy access for first sessions.',
     ),
     SpotModel(
       id: 'spot_china_beach',
@@ -1711,7 +1714,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1493558103817-58b2924bce98',
       summary:
-          'Popular city beach with smaller summer surf and easy access from Ho Chi Minh City.',
+          'Vung Tau city beachbreak for quick Ho Chi Minh escapes, usually small but able to get messy rips and shorebreak in monsoon swell.',
     ),
     SpotModel(
       id: 'spot_phan_rang',
@@ -1727,7 +1730,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'Windy central-Vietnam coastline with more exposure than the mellow city beaches further north.',
+          'Windy Ninh Thuan coast with exposed beach peaks and reefy corners, better for confident surfers than casual learners.',
     ),
     SpotModel(
       id: 'spot_hoi_an',
@@ -1743,7 +1746,7 @@ class DemoSeed {
       waterTempC: 26,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Easy central-coast surf option near Hoi An with softer peaks and a strong travel-town base.',
+          'Hoi An beachbreak with soft winter windswells, shifting sandbars, and storm-season erosion near the river mouths.',
     ),
     SpotModel(
       id: 'spot_kata',
@@ -1759,7 +1762,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e',
       summary:
-          'Fun monsoon-season beach break with mellow travel logistics and warm water.',
+          'Phuket\'s main learner surf beach in southwest monsoon, sandy and social but crowded with lessons, jet skis, and rips on bigger days.',
     ),
     SpotModel(
       id: 'spot_kalim',
@@ -1775,7 +1778,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee',
       summary:
-          'Rocky reef-and-beach mix with punchier sections than the friendlier Phuket learner waves.',
+          'Rocky Patong-side reef that wakes up on bigger monsoon swell, with sharper bottom and more consequence than Phuket\'s sand beaches.',
     ),
     SpotModel(
       id: 'spot_nai_harn',
@@ -1791,7 +1794,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e',
       summary:
-          'Friendly shoulder-season Phuket option with smaller surf and an easy beach vibe.',
+          'South Phuket beachbreak that can offer long rides and the odd barrel in monsoon swell, with quieter crowds but real rip risk.',
     ),
     SpotModel(
       id: 'spot_khao_lak',
@@ -1807,7 +1810,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1493558103817-58b2924bce98',
       summary:
-          'Long mellow Khao Lak beachbreak that helps make the area one of Thailand\'s most useful learner zones.',
+          'Quiet Khao Lak sandbar stretch with mellow monsoon peaks, big tide swings, and lots of room for early progression sessions.',
     ),
     SpotModel(
       id: 'spot_pakarang',
@@ -1823,7 +1826,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee',
       summary:
-          'Punchier Khao Lak option that picks up more swell than the softer beginner beaches nearby.',
+          'Cape Pakarang coral-beach zone with gentle inside waves, bigger outside peaks, and reef or coral fragments to watch at lower tide.',
     ),
     SpotModel(
       id: 'spot_memories',
@@ -1839,7 +1842,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'One of Thailand’s most welcoming surf beaches with mellow peaks and a strong beginner scene.',
+          'Khao Lak beachbreak by Memories Bar, sand-bottom inside for learners and larger outside peaks during monsoon swell.',
     ),
     SpotModel(
       id: 'spot_koh_phayam',
@@ -1855,7 +1858,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'Remote Andaman island setup with fun seasonal surf and a low-key travel feel.',
+          'Koh Phayam\'s west-facing Aow Yai beachbreak, remote and mellow most days but exposed to monsoon rips and wind swings.',
     ),
     SpotModel(
       id: 'spot_kamala',
@@ -1871,7 +1874,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e',
       summary:
-          'Beginner-friendly monsoon beach with easier peaks and a quieter setup than the busier Phuket strips.',
+          'Relaxed Phuket beach where the northern end catches soft monsoon peaks, friendlier than Kalim but still currenty when swell jumps.',
     ),
     SpotModel(
       id: 'spot_surin',
@@ -1887,7 +1890,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee',
       summary:
-          'Cleaner Phuket beachbreak option that can offer a bit more shape than the soft learner corners.',
+          'Punchy Phuket beachbreak that can get bigger in peak monsoon, with shorebreak, rips, and less forgiveness than Kata.',
     ),
     SpotModel(
       id: 'spot_bang_tao',
@@ -1903,7 +1906,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Long Phuket beach with forgiving peaks, lots of room, and easy holiday-surf crossover appeal.',
+          'Long Phuket west-coast beachbreak with room to spread out, soft learner peaks when small, and shifting rips on monsoon days.',
     ),
     SpotModel(
       id: 'spot_nai_yang',
@@ -1919,7 +1922,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'More relaxed Phuket beachbreak with soft peaks and less chaos than the island’s busier surf corners.',
+          'North Phuket break with a long paddle to the better waves, shallow rocky reef, and a quieter feel than Kata or Patong.',
     ),
     SpotModel(
       id: 'spot_laem_sing',
@@ -1935,7 +1938,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Shorter punchier Phuket option with a little more shape and power than the soft learner beaches nearby.',
+          'Small Phuket cove between Kamala and Surin, punchy in monsoon swell with limited takeoff room and rocks near the edges.',
     ),
     SpotModel(
       id: 'spot_cherating',
@@ -1951,7 +1954,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1493558103817-58b2924bce98',
       summary:
-          'Malaysia’s best-known surf zone with easy beach-break learning conditions during the monsoon.',
+          'Malaysia\'s best-known monsoon surf village, with soft sand-bottom lefts, long rides on good days, and weekend crowds.',
     ),
     SpotModel(
       id: 'spot_batu_burok',
@@ -1967,7 +1970,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e',
       summary:
-          'Fun northeast monsoon beach break that helps round out Peninsular Malaysia surf trips.',
+          'Kuala Terengganu city beachbreak that turns on with northeast monsoon windswells, usually soft but drifty when stormy.',
     ),
     SpotModel(
       id: 'spot_kudat',
@@ -1983,7 +1986,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'Remote Borneo corner with more adventurous surf-travel appeal and less crowded lineups.',
+          'Kudat and Tip of Borneo surf corner with seasonal points and beachbreaks over sand, rock, or coral and very light crowds.',
     ),
     SpotModel(
       id: 'spot_tanjung_jara',
@@ -1999,7 +2002,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Seasonal east-coast option that adds more open-ocean feel than the better-known learner zones in peninsular Malaysia.',
+          'Terengganu resort-coast beachbreak with open monsoon exposure, cleaner mornings, and more drift than Cherating\'s protected learner waves.',
     ),
     SpotModel(
       id: 'spot_kijal',
@@ -2015,7 +2018,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e',
       summary:
-          'Fun east-coast Malaysia beachbreak that rounds out a monsoon surf road trip north of Cherating.',
+          'Kijal-area monsoon beachbreak north of Cherating, mostly forgiving sand peaks but messy with current when northeast swell is strong.',
     ),
     SpotModel(
       id: 'spot_chendor',
@@ -2031,7 +2034,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Another easy east-coast Malaysia beachbreak that helps flesh out the Cherating-zone surf trip corridor.',
+          'Chendor beachbreak just south of Cherating, a quieter sand-bottom option for small monsoon days and learner progression.',
     ),
     SpotModel(
       id: 'spot_balok',
@@ -2047,7 +2050,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Accessible Kuantan-area beachbreak that gives Malaysia another easy learner and road-trip stop.',
+          'Accessible Kuantan beachbreak with soft seasonal peaks, local crowds, and wind-chop when the northeast monsoon gets rough.',
     ),
     SpotModel(
       id: 'spot_batu_ferringhi',
@@ -2063,7 +2066,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1493558103817-58b2924bce98',
       summary:
-          'Small seasonal Penang beach option that helps round out Malaysia’s better-known coast choices.',
+          'Penang tourist beach with rare small windswells, better for novelty longboard slides than reliable surf missions.',
     ),
     SpotModel(
       id: 'spot_ngwe_saung',
@@ -2079,7 +2082,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Undeveloped beach-break zone with frontier travel energy and soft seasonal surf.',
+          'Long Ngwe Saung beach where surf is fickle and usually small, with the best little waves near dawn around the water-sports end.',
     ),
     SpotModel(
       id: 'spot_nabule',
@@ -2095,7 +2098,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee',
       summary:
-          'Remote southern Myanmar coastline with more open-ocean exposure than the country’s better-known beaches.',
+          'Remote Dawei beachbreak with Bay of Bengal exposure, basic access, and more exploration appeal than dependable season certainty.',
     ),
     SpotModel(
       id: 'spot_chaung_tha',
@@ -2111,7 +2114,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Soft seasonal beachbreak that gives Myanmar another accessible coast option beyond Ngwe Saung.',
+          'Local Ayeyarwady beachbreak zone near Chaung Tha, scruffier and busier with weekend visitors, with soft monsoon-season surf.',
     ),
     SpotModel(
       id: 'spot_areia_branca',
@@ -2127,7 +2130,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'Capital-adjacent beach option that helps introduce Timor-Leste into the surf-travel map.',
+          'Dili\'s popular white-sand bay beach, better for swimming or snorkeling than surf, with coral flats exposed at low tide.',
     ),
     SpotModel(
       id: 'spot_jaco',
@@ -2143,7 +2146,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'Far-east Timor adventure zone with empty-lineup fantasy energy and serious travel-story value.',
+          'Remote Tutuala island mission with stunning coral water and tricky currents, more adventure stop than dependable surf break.',
     ),
     SpotModel(
       id: 'spot_weligama',
@@ -2159,7 +2162,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1493558103817-58b2924bce98',
       summary:
-          'Sri Lanka\'s best-known learner bay with soft peaks, surf camps, and nonstop surf-travel energy.',
+          'Wide sand-bottom learner bay with soft peaks, stacks of surf schools, and stray boards as the main hazard.',
     ),
     SpotModel(
       id: 'spot_midigama',
@@ -2175,7 +2178,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'A cluster of reefs and points with more punch than Weligama and a strong surf-town feel.',
+          'South-coast reef cluster where Lazy Left is forgiving, Rams is shallow and hollow, and low tide exposes more rock.',
     ),
     SpotModel(
       id: 'spot_hiriketiya',
@@ -2191,7 +2194,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'Pretty horseshoe bay with easy rights, lots of beginners, and a huge social travel scene.',
+          'Compact horseshoe bay with learner waves inside and a faster left reef that gets crowded and shallow near the rocks.',
     ),
     SpotModel(
       id: 'spot_arugam',
@@ -2207,7 +2210,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'Long right point that turns on during the east-coast season and anchors Sri Lanka strike trips.',
+          'Consistent east-coast right point with long rides, crowd pressure, occasional jellyfish, and shallow reef sections near town.',
     ),
     SpotModel(
       id: 'spot_hikkaduwa',
@@ -2223,7 +2226,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee',
       summary:
-          'Classic Sri Lanka reef town with more push and experience than the soft learner bays.',
+          'Classic Sri Lanka reef town with crowded A-frame peaks, coral, urchins, and stronger current than the learner bays.',
     ),
     SpotModel(
       id: 'spot_ahangama',
@@ -2255,7 +2258,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee',
       summary:
-          'One of the south coast’s best-known peaks with a bit more push than the easiest learner bays nearby.',
+          'Ahangama\'s punchy A-frame reef, stronger than Weligama and best with enough tide over the rockier inside.',
     ),
     SpotModel(
       id: 'spot_mirissa',
@@ -2271,7 +2274,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1493558103817-58b2924bce98',
       summary:
-          'Easy south-coast bay option with enough surf to matter and a very strong travel-town feel.',
+          'Scenic south-coast bay with playful reef waves for intermediates and softer inside sections for easier sessions.',
     ),
     SpotModel(
       id: 'spot_unawatuna',
@@ -2287,7 +2290,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'Protected bay option near Galle with softer surf and strong first-trip appeal.',
+          'Protected Galle bay with softer beginner waves, reef patches, and a more sheltered first-trip feel than exposed points.',
     ),
     SpotModel(
       id: 'spot_peanut_farm',
@@ -2303,7 +2306,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'Fun east-coast right with a classic tuk-tuk day-trip feel from the Arugam base zone.',
+          'Arugam day-trip right with a mellow first peak, a stronger outside section, and rocks hiding under the surface.',
     ),
     SpotModel(
       id: 'spot_whiskey_point',
@@ -2319,7 +2322,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Playful east-coast point with easier lines and a strong beginner-intermediate crowd during season.',
+          'Gentle east-coast right that wraps from a rocky point into sandier water, friendly for learners but crowded in season.',
     ),
     SpotModel(
       id: 'spot_main_point',
@@ -2335,7 +2338,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'Arugam’s best-known right with longer walls and more surf-trip weight than the easy day-trip options nearby.',
+          'Arugam\'s main right point, long and consistent but crowded, with reef sections, sweep, and stronger current as swell builds.',
     ),
     SpotModel(
       id: 'spot_okanda',
@@ -2351,7 +2354,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee',
       summary:
-          'More remote east-coast right with less crowd and more adventure than the Arugam town breaks.',
+          'Remote east-coast right off a rock headland, with long sandbank walls, guide-only access, jellyfish risk, and strong current when overhead.',
     ),
     SpotModel(
       id: 'spot_pottuvil_point',
@@ -2367,7 +2370,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'Longer east-coast point option with more room and a classic tuk-tuk mission from Arugam.',
+          'Long sand-bottom right north of Arugam that can run close to shore, with boulders, jellyfish, and long walk-backs in play.',
     ),
     SpotModel(
       id: 'spot_lazy_left',
@@ -2383,7 +2386,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Midigama’s mellow reef left with long walls and a more forgiving feel than the heavier nearby reefs.',
+          'Mellow Midigama left over deeper reef, a good first reef step-up but still rocky on entry and busy when clean.',
     ),
     SpotModel(
       id: 'spot_rams_right',
@@ -2399,7 +2402,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Fast hollow Midigama reef that turns Sri Lanka’s easy south coast into a proper performance trip.',
+          'Short, fast Midigama reef with hollow right sections, shallow coral, and board-breaking potential on solid swell.',
     ),
     SpotModel(
       id: 'spot_plantations',
@@ -2415,7 +2418,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'More forgiving Midigama reef option that balances fun walls with easier positioning than the heavy locals’ picks.',
+          'Midigama deep-reef peak with mostly rights, some lefts, all-tide windows, and enough rock to keep it intermediate.',
     ),
     SpotModel(
       id: 'spot_marshmallows',
@@ -2431,7 +2434,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Soft playful south-coast option that gives learners a cleaner step up from the busiest beachbreak zones.',
+          'Ahangama-area soft reef with playful walls for progressing surfers, still shallow in spots and crowd-prone in season.',
     ),
     SpotModel(
       id: 'spot_dewata',
@@ -2479,7 +2482,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'Midigama wall that balances performance and fun more evenly than the area’s heavier specialist reefs.',
+          'Powerful Midigama A-frame over reef, longer left than right, best around mid to high tide and not a learner wave.',
     ),
     SpotModel(
       id: 'spot_lazies',
@@ -2495,7 +2498,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Easier Arugam option with softer walls that helps keep the east coast approachable for mixed-skill surf trips.',
+          'Softer inside Arugam section with easier walls than Main Point, useful for mixed groups but still busy in season.',
     ),
     SpotModel(
       id: 'spot_elephant_rock',
@@ -2511,7 +2514,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'East-coast day-trip right with a more adventure-travel feel than the easiest Arugam town options.',
+          'Scenic Arugam day-trip wave with softer beginner-friendly peaks, a sandy setup, and crowds from lessons when it is small.',
     ),
     SpotModel(
       id: 'spot_crocodile_rock',
@@ -2527,7 +2530,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Another Arugam option that fills out the east-coast surf map with more variety than the one-name tourist summaries.',
+          'Arugam-area right near Elephant Rock with learner-friendly shoulders on small days and more current as east swell rises.',
     ),
     SpotModel(
       id: 'spot_a_frames',
@@ -2543,7 +2546,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'More rippable Hiriketiya wall that adds some sharper shape beyond the friendlier bay peaks.',
+          'Hiriketiya punchier reef side, with faster left walls, tight crowds, and rocks close enough to respect on lower tides.',
     ),
     SpotModel(
       id: 'spot_main_reef_hikka',
@@ -2559,7 +2562,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Hikkaduwa staple that gives the reef-town zone a clearer anchor beyond broad destination naming.',
+          'Hikkaduwa central reef peak, busier and faster than the beachbreaks with coral, urchins, and more current.',
     ),
     SpotModel(
       id: 'spot_panama',
@@ -2575,7 +2578,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Further-south east-coast mission that adds another legit day-trip option beyond the standard Arugam names.',
+          'Quiet east-coast day trip south of Arugam, with sand and rock setups that need the right swell and local timing.',
     ),
     SpotModel(
       id: 'spot_guards',
@@ -2591,7 +2594,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Another Arugam-area wall that helps the east coast feel like a real zone of spots instead of a single famous right.',
+          'Arugam-area right wall close to town, useful when the main point is packed but still shaped by reef, current, and crowd flow.',
     ),
     SpotModel(
       id: 'spot_meddawatta',
@@ -2607,7 +2610,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'More relaxed south-coast bay option that broadens Sri Lanka beyond the same few social-media-famous surf towns.',
+          'Matara-area sand-bottom beachbreak with mellow A-frames, good learner progression, and less crowd pressure than Weligama.',
     ),
     SpotModel(
       id: 'spot_coconuts',
@@ -2623,7 +2626,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'Classic Midigama wall that surfers actually look for by name when piecing together a south-coast trip.',
+          'Midigama reef with fast lefts over dry inside reef, usually reached from Plantations and better for confident intermediates.',
     ),
     SpotModel(
       id: 'spot_sk_town',
@@ -2639,7 +2642,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Another legit east-coast wall that helps Arugam feel like a zone of breaks rather than just one right-hand point.',
+          'Town-side Arugam option with smaller right-hand walls, more forgiving than Main Point but still busy in peak season.',
     ),
     SpotModel(
       id: 'spot_peanut_left',
@@ -2655,7 +2658,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Another east-coast line that helps the Peanut Farm zone feel like a real cluster instead of one generic pin.',
+          'Peanut Farm-side wave with softer walls than Main Point, scenic access, and enough rocks to keep tide awareness important.',
     ),
     SpotModel(
       id: 'spot_baby_bay',
@@ -2671,7 +2674,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'Easier Hiriketiya section that helps the bay work for more than just high-performance surf days.',
+          'Hiriketiya softer inside bay wave, learner-friendly when small but packed with boards in the compact lineup.',
     ),
     SpotModel(
       id: 'spot_the_rock',
@@ -2687,7 +2690,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'More wedgy Weligama reef option that adds a bit more shape and consequence than the broad bay peaks.',
+          'Punchy deep-reef A-frame near Ahangama and Weligama, stronger on solid swell with a shallow inside finish.',
     ),
     SpotModel(
       id: 'spot_baby_point',
@@ -2703,7 +2706,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'More approachable Arugam option with softer inside walls and easier positioning than the headline points.',
+          'Inside Arugam Main Point section with softer right walls, easier than the outside but still affected by crowd and reef.',
     ),
     SpotModel(
       id: 'spot_scarborough',
@@ -2767,7 +2770,7 @@ class DemoSeed {
       waterTempC: 20,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Heavy open-ocean WA stage with serious size, power, and global contest recognition.',
+          'Margaret River Main Break A-frame with deep-water power, big sets, long paddles, and shallow reef inside.',
     ),
     SpotModel(
       id: 'spot_snapper',
@@ -2783,7 +2786,7 @@ class DemoSeed {
       waterTempC: 24,
       imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e',
       summary:
-          'World-famous superbank right with long walls and serious travel-destination gravity.',
+          'Superbank starting point with long sand-bottom rights, lava-rock jump-offs, and one of the most crowded lineups on earth.',
     ),
     SpotModel(
       id: 'spot_kirra',
@@ -2799,7 +2802,7 @@ class DemoSeed {
       waterTempC: 24,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Famous Gold Coast tube-running right with heavy pedigree and plenty of history.',
+          'Legendary Gold Coast sandbar tube, fickle but flawless on cyclone swells and competitive when the bank is working.',
     ),
     SpotModel(
       id: 'spot_dbah',
@@ -2815,7 +2818,7 @@ class DemoSeed {
       waterTempC: 24,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'High-performance beachbreak that gets more punch and variability than the long points nearby.',
+          'Gold Coast swell-magnet beachbreak with A-frame peaks, river-mouth currents, heavy crowds, and cleaner water after dry weather.',
     ),
     SpotModel(
       id: 'spot_burleigh',
@@ -2831,7 +2834,7 @@ class DemoSeed {
       waterTempC: 24,
       imageUrl: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee',
       summary:
-          'Crowded but beautiful point setup with one of the best hill-and-lineup views in Australia.',
+          'Classic Gold Coast right point over sand and rock, beautiful but competitive with rock jump-offs and strong current when solid.',
     ),
     SpotModel(
       id: 'spot_noosa',
@@ -2847,7 +2850,7 @@ class DemoSeed {
       waterTempC: 24,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'Classic longboard-friendly point with smooth walls and huge surf-culture appeal.',
+          'Noosa\'s longboard-famous First Point, smooth and accessible but crowded, with shallow sandbanks, rocks, and loose boards.',
     ),
     SpotModel(
       id: 'spot_bells',
@@ -2863,7 +2866,7 @@ class DemoSeed {
       waterTempC: 17,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'Cold-water icon with long walls, big surf heritage, and a serious performance identity.',
+          'Cold-water Surf Coast icon with big open walls, reef-and-sand bottom, long paddles, and The Button rock nearby.',
     ),
     SpotModel(
       id: 'spot_shipstern_bluff',
@@ -2879,7 +2882,7 @@ class DemoSeed {
       waterTempC: 15,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'World-famous cold-water slab with terrifying steps, huge south swell exposure, and serious consequence.',
+          'Remote Tasmanian big-wave slab with a notorious step, cold water, cliffy access, and expert-only consequence.',
     ),
     SpotModel(
       id: 'spot_clifton_beach_tas',
@@ -2895,7 +2898,7 @@ class DemoSeed {
       waterTempC: 16,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Tasmanian beachbreak staple near Hobart with colder-water everyday peaks and strong local relevance.',
+          'Hobart-area beachbreak with cold-water peaks, shifting sandbanks, and rips that matter when Southern Ocean swell wraps in.',
     ),
     SpotModel(
       id: 'spot_park_beach_tas',
@@ -2911,7 +2914,7 @@ class DemoSeed {
       waterTempC: 15,
       imageUrl: 'https://images.unsplash.com/photo-1493558103817-58b2924bce98',
       summary:
-          'North-west Tasmania option with more open swell exposure and a solid road-trip feel across the island.',
+          'North-west Tasmania beachbreak with cold-water exposure, shifting banks, and open Bass Strait swell.',
     ),
     SpotModel(
       id: 'spot_bicheno',
@@ -2927,7 +2930,7 @@ class DemoSeed {
       waterTempC: 16,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'More approachable east-coast Tasmania stop that helps round out the island beyond the heaviest marquee waves.',
+          'East-coast Tasmania surf town with accessible beachbreak peaks near Bicheno and Denison, generally friendlier than the wild west.',
     ),
     SpotModel(
       id: 'spot_bondi',
@@ -2943,7 +2946,7 @@ class DemoSeed {
       waterTempC: 21,
       imageUrl: 'https://images.unsplash.com/photo-1493558103817-58b2924bce98',
       summary:
-          'Famous Sydney beach with accessible peaks, heavy crowds, and huge content potential.',
+          'Iconic Sydney beach with learner-friendly north banks, heavier south-end surf, and crowds that can be the main hazard.',
     ),
     SpotModel(
       id: 'spot_manly',
@@ -2959,7 +2962,7 @@ class DemoSeed {
       waterTempC: 21,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Sydney staple with multiple peaks, surf history, and easy urban surf-travel storytelling.',
+          'Historic Sydney beachbreak with something for most levels, but heavy crowds and bigger southern points when swell jumps.',
     ),
     SpotModel(
       id: 'spot_byron',
@@ -2975,7 +2978,7 @@ class DemoSeed {
       waterTempC: 23,
       imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e',
       summary:
-          'Long cruisy right with a huge learner and longboard following in one of Australia’s most famous towns.',
+          'Byron right point over sand and rock, famous for long rides, intense crowds, and sweep on bigger easterly swell.',
     ),
     SpotModel(
       id: 'spot_lennox',
@@ -2991,7 +2994,7 @@ class DemoSeed {
       waterTempC: 23,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'Powerful right point south of Byron that brings more size, speed, and consequence.',
+          'World-class NSW right point over sand and rock, with slippery rock-off access, hollow sections, and a serious local crowd.',
     ),
     SpotModel(
       id: 'spot_wategos',
@@ -3007,7 +3010,7 @@ class DemoSeed {
       waterTempC: 23,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'Mellow Byron point option with easier lines and postcard travel appeal beyond the busier marquee takeoffs nearby.',
+          'Sheltered Byron longboard wave over sand and rock, slow and friendly when small but crowded on clean east swell.',
     ),
     SpotModel(
       id: 'spot_broken_head',
@@ -3023,7 +3026,7 @@ class DemoSeed {
       waterTempC: 23,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Byron-area beach-and-point zone with more room and less crowd pressure than the town’s most famous waves.',
+          'Byron-area right point and beachbreak over sand and rock, fun across levels but sand-dependent with shark and crowd risk.',
     ),
     SpotModel(
       id: 'spot_tea_tree',
@@ -3039,7 +3042,7 @@ class DemoSeed {
       waterTempC: 24,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'Noosa point section with easier, stylish walls that make the national-park setup feel fuller than just First Point.',
+          'Noosa National Park right over boulders and sand, steeper than First Point with rocks, urchins, and heavy crowds.',
     ),
     SpotModel(
       id: 'spot_sunshine_beach',
@@ -3055,7 +3058,7 @@ class DemoSeed {
       waterTempC: 24,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'More open Noosa-area beachbreak that balances the cruisy points with something punchier and more everyday.',
+          'Open Noosa beachbreak with punchier lefts and rights than the points, plus rip currents when swell and wind rise.',
     ),
     SpotModel(
       id: 'spot_mona_vale',
@@ -3071,7 +3074,7 @@ class DemoSeed {
       waterTempC: 20,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Northern Beaches staple that rounds out Sydney with another dependable everyday option beyond the biggest-name corners.',
+          'Northern Beaches beachbreak with shifting banks, local crowd pressure, and more bite when east or northeast swell lines up.',
     ),
     SpotModel(
       id: 'spot_palm_beach',
@@ -3103,7 +3106,7 @@ class DemoSeed {
       waterTempC: 24,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'Gold Coast beach option with easier peaks and a less intense vibe than the marquee points further south.',
+          'Southern Gold Coast beachbreak with softer sandbar peaks than Snapper or Kirra, good when the open banks settle.',
     ),
     SpotModel(
       id: 'spot_bilinga',
@@ -3119,7 +3122,7 @@ class DemoSeed {
       waterTempC: 24,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Another dependable Gold Coast strip that helps the area feel broader than the usual Snapper-Kirra talking points.',
+          'Airport-side Gold Coast beachbreak with open sandbars, sweep, and punchier walls when the south swell has shape.',
     ),
     SpotModel(
       id: 'spot_collaroy',
@@ -3135,7 +3138,7 @@ class DemoSeed {
       waterTempC: 20,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Northern Beaches staple that helps Sydney feel like a real spread of everyday surf zones, not just the biggest-name beaches.',
+          'Protected Northern Beaches sand stretch linked to Narrabeen, friendly for beginners but still shaped by strong currents.',
     ),
     SpotModel(
       id: 'spot_freshwater',
@@ -3167,7 +3170,7 @@ class DemoSeed {
       waterTempC: 20,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Central Coast staple that helps fill in NSW’s everyday surf backbone beyond the famous road-trip points.',
+          'Central Coast beachbreak with exposed sandbars, rips, and a local everyday feel between Avoca and Macmasters.',
     ),
     SpotModel(
       id: 'spot_duranbah_inside',
@@ -3183,7 +3186,7 @@ class DemoSeed {
       waterTempC: 24,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Extra Gold Coast pocket that helps the Snapper-D’bah zone feel like the multi-break machine it actually is.',
+          'Inside corner of D\'bah with shorter punchy peaks, sweep, and crowds when the outer beach is too exposed.',
     ),
     SpotModel(
       id: 'spot_north_burleigh',
@@ -3199,7 +3202,7 @@ class DemoSeed {
       waterTempC: 24,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Gold Coast staple that helps the zone feel more complete than just the super-famous points and airport strips.',
+          'Burleigh-adjacent beachbreak with sandbar peaks, headland influence, and more power than the southern learner strips.',
     ),
     SpotModel(
       id: 'spot_narrabeen',
@@ -3215,7 +3218,7 @@ class DemoSeed {
       waterTempC: 20,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Classic Sydney stretch that helps the Northern Beaches feel like a real surf zone instead of a couple isolated names.',
+          'Classic lagoon-fed Sydney sandbar, famous for Northy lefts, shifting banks, strong local crowd, and long-term knowledge.',
     ),
     SpotModel(
       id: 'spot_shark_island',
@@ -3231,7 +3234,7 @@ class DemoSeed {
       waterTempC: 20,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Heavy Sydney slab name that matters culturally and rounds out the city’s surf map beyond everyday beachbreaks.',
+          'Cronulla slab over shallow reef and rock, rising-tide only for experienced surfers who can handle heavy water.',
     ),
     SpotModel(
       id: 'spot_johanna',
@@ -3247,7 +3250,7 @@ class DemoSeed {
       waterTempC: 17,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Heavy open-ocean Victoria beachbreak that helps balance the classic point and reef names further east.',
+          'Exposed Victorian swell magnet with powerful sandbar peaks, strong rips, and no patrol margin for beginners.',
     ),
     SpotModel(
       id: 'spot_gunnamatta',
@@ -3263,7 +3266,7 @@ class DemoSeed {
       waterTempC: 17,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Well-known Victorian power beach that fills out the state beyond Bells and the Great Ocean Road icons.',
+          'Mornington Peninsula power beach with reef-shaped A-frames, heavy rips, and hazardous swimming conditions.',
     ),
     SpotModel(
       id: 'spot_merewether',
@@ -3327,7 +3330,7 @@ class DemoSeed {
       waterTempC: 20,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Heavy slabby WA barrel that adds some proper teeth beyond the more open-face Margaret River breaks.',
+          'Margaret River slab that lifts out of deep water onto shallow jagged reef, expert-only and dangerous on proper swell.',
     ),
     SpotModel(
       id: 'spot_tallows',
@@ -3359,7 +3362,7 @@ class DemoSeed {
       waterTempC: 21,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Consistent Newcastle beachbreak that adds more everyday options around the region’s better-known point and city spots.',
+          'Newcastle-area beachbreak with consistent open sandbars, strong rips, and more size than the protected city corners.',
     ),
     SpotModel(
       id: 'spot_dicky_beach',
@@ -3391,7 +3394,7 @@ class DemoSeed {
       waterTempC: 24,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'Iconic Gold Coast beach stretch with everyday peaks, huge name recognition, and more casual surf-travel pull than the performance points.',
+          'Open Gold Coast city beachbreak with shifting sandbars, softer learner days, and sweep or shorebreak when swell and wind rise.',
     ),
     SpotModel(
       id: 'spot_rainbow_bay',
@@ -3455,7 +3458,7 @@ class DemoSeed {
       waterTempC: 23,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Sunshine Coast staple with a mix of beach and point-style options that makes it a real surf-trip stop, not just a town name.',
+          'Sunshine Coast beachbreak zone with headland corners, shifting banks, and plenty of wind-sensitive everyday surf.',
     ),
     SpotModel(
       id: 'spot_alexandra_headland',
@@ -3471,7 +3474,7 @@ class DemoSeed {
       waterTempC: 23,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Sunshine Coast point-and-beach mix that helps the region feel fuller than just the single marquee names.',
+          'Alex Headland mixes rocky point sections with open beachbreak, fun on clean east swell but crowded when it is on.',
     ),
     SpotModel(
       id: 'spot_nobbys',
@@ -3487,7 +3490,7 @@ class DemoSeed {
       waterTempC: 21,
       imageUrl: 'https://images.unsplash.com/photo-1493558103817-58b2924bce98',
       summary:
-          'More approachable Newcastle option that balances city access with plenty of everyday surf sessions.',
+          'Newcastle breakwall beachbreak with accessible peaks, harbour-side rips, and wind exposure around the river entrance.',
     ),
     SpotModel(
       id: 'spot_cactus',
@@ -3519,7 +3522,7 @@ class DemoSeed {
       waterTempC: 24,
       imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e',
       summary:
-          'User-friendly Gold Coast point with smoother lines and easier entry than the heaviest superbank sections.',
+          'Sheltered Greenmount/Rainbow Bay sand-bottom point, friendlier than Snapper but crowded with learners and longboarders.',
     ),
     SpotModel(
       id: 'spot_moffat_beach',
@@ -3615,7 +3618,7 @@ class DemoSeed {
       waterTempC: 20,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Slab-heavy Sydney big-wave zone that gives the city a much more serious edge than its everyday beachbreak reputation.',
+          'Sydney\'s Ours slab: a heavy ledge breaking close to rock, big-wave only and unforgiving when south swell hits.',
     ),
     SpotModel(
       id: 'spot_cronulla_point',
@@ -3663,7 +3666,7 @@ class DemoSeed {
       waterTempC: 18,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Fast Bells-area wall with a stronger performance edge than the easier beach options nearby.',
+          'Fast right reef next to Bells with high-performance walls, hollow sections, and The Button rock marking the takeoff zone.',
     ),
     SpotModel(
       id: 'spot_north_narrabeen',
@@ -3679,7 +3682,7 @@ class DemoSeed {
       waterTempC: 20,
       imageUrl: 'https://images.unsplash.com/photo-1519046904884-53103b34b206',
       summary:
-          'Sydney power pocket with more consequence and performance pedigree than the mellow city beaches.',
+          'Northy famous lagoon-fed left sandbar, high-performance and localised with shifting banks and heavy crowds.',
     ),
     SpotModel(
       id: 'spot_avoca',
@@ -3711,7 +3714,7 @@ class DemoSeed {
       waterTempC: 23,
       imageUrl: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee',
       summary:
-          'Island beachbreak option with more room and swell than the easier Brisbane-area corners.',
+          'North Stradbroke beachbreak with open-ocean swell, shifting sandbars, rips, and more power than sheltered Brisbane corners.',
     ),
     SpotModel(
       id: 'spot_cape_woolamai',
@@ -3743,7 +3746,7 @@ class DemoSeed {
       waterTempC: 17,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'User-friendly Mornington Peninsula option that gives Victoria a softer learner-friendly surf base.',
+          'Mornington Peninsula reef-and-beach setup with softer peaks, rock shelves, and longboard-friendly days when the swell is modest.',
     ),
     SpotModel(
       id: 'spot_portsea',
@@ -3759,7 +3762,7 @@ class DemoSeed {
       waterTempC: 17,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Punchy open-ocean back beach with heavier Victorian energy than the protected bay-side options.',
+          'Mornington back beach with punchy open-ocean banks, strong rips, and heavier Victorian energy than bay-side beaches.',
     ),
     SpotModel(
       id: 'spot_redgate',
@@ -3775,7 +3778,7 @@ class DemoSeed {
       waterTempC: 20,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Margaret River beachbreak alternative that adds a more accessible WA option near the heavier reef setups.',
+          'Margaret River beachbreak alternative with shifting sandbars, south-west power, and more forgiveness than the nearby reefs.',
     ),
     SpotModel(
       id: 'spot_north_point_wa',
@@ -3807,7 +3810,7 @@ class DemoSeed {
       waterTempC: 20,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Yallingup-area setup with more room and classic south-west WA road-trip appeal.',
+          'Yallingup-area reef-and-beach setup with south-west WA power, rocks, and room when Margaret River is busy.',
     ),
     SpotModel(
       id: 'spot_pondalowie',
@@ -3823,7 +3826,7 @@ class DemoSeed {
       waterTempC: 17,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Yorke Peninsula staple that gives South Australia more than one serious surf stop.',
+          'Yorke Peninsula bay with reef and beach peaks, Southern Ocean swell, remote access, rocks, and rips on bigger days.',
     ),
     SpotModel(
       id: 'spot_chinamans_sa',
@@ -3839,7 +3842,7 @@ class DemoSeed {
       waterTempC: 17,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Powerful Yorke Peninsula reef wave that balances the easier bays with a proper advanced option.',
+          'Yorke Peninsula reef with fast powerful walls over rock, a clear step up from the easier bays and tide-sensitive.',
     ),
     SpotModel(
       id: 'spot_waitpinga',
@@ -3919,7 +3922,7 @@ class DemoSeed {
       waterTempC: 15,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Quality Marion Bay right-hander that adds another serious Tasmanian option beyond Shipstern.',
+          'Marion Bay right-hand reef with cold-water power and heavy walls, less forgiving than nearby beachbreaks.',
     ),
     SpotModel(
       id: 'spot_cimaja',
@@ -3976,7 +3979,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Consistent Mentawai left that gives the Lance\'s zone another world-class option beside HT\'s.',
+          'Mentawai left near Sipora with long reef walls, cleaner boat access, and real consequence when the swell gets solid.',
     ),
     SpotModel(
       id: 'spot_are_guling',
@@ -3992,7 +3995,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'South Lombok reef setup with lefts and rights that fills the gap between learner bays and heavier points.',
+          'South Lombok bay with left and right reef peaks, more punch than the learner beaches, and local tide knowledge required.',
     ),
     SpotModel(
       id: 'spot_seger',
@@ -4008,7 +4011,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'Accessible Kuta Lombok beach-and-reef option that keeps the area useful for easier progression days.',
+          'Kuta Lombok beach-and-reef option close to town, handy for progression but shallow and rocky in places.',
     ),
     SpotModel(
       id: 'spot_tanjung_setia',
@@ -4040,7 +4043,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
       summary:
-          'Hollow East Java reef option that broadens the island beyond the G-Land and West Java classics.',
+          'Pacitan reef break with hollow left and right barrels over sharp reef, serious when long-period swell stacks up.',
     ),
     SpotModel(
       id: 'spot_kata_noi',
@@ -4072,7 +4075,7 @@ class DemoSeed {
       waterTempC: 29,
       imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e',
       summary:
-          'Long Phuket beachbreak that adds another practical monsoon-season learner and intermediate option.',
+          'Long exposed Phuket beachbreak that needs the right monsoon size: fun when organized, mostly closeouts when too big.',
     ),
     SpotModel(
       id: 'spot_bang_sak',
@@ -4104,7 +4107,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Mui Ne left point option that gives Vietnam a more distinctive wave than the softer city beachbreaks.',
+          'Mui Ne\'s faster Little Buddha left, a reefy point-style wave for intermediates with local guidance when the beachbreaks are soft.',
     ),
     SpotModel(
       id: 'spot_hon_chong',
@@ -4129,7 +4132,7 @@ class DemoSeed {
       waterTempC: 27,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Nha Trang reef-and-beach zone that adds a more interesting option beside Bai Dai.',
+          'Nha Trang zone with an inside learner beach and outside reef takeoffs, including faster rocky sections when swell has size.',
     ),
     SpotModel(
       id: 'spot_ocean_vista',
@@ -4161,7 +4164,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
       summary:
-          'Kuantan-area seasonal beachbreak that rounds out Malaysia beyond Cherating, Balok, and Kijal.',
+          'Kuantan city beachbreak with seasonal northeast monsoon peaks, easy access, and the usual wind, rain, and current tradeoffs.',
     ),
     SpotModel(
       id: 'spot_jacking_horse_trails',
@@ -4177,7 +4180,7 @@ class DemoSeed {
       waterTempC: 28,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Another fun Siargao reef option that rounds out the island\'s lineup map beyond the most famous takeoff zones.',
+          'Cloud 9-area learner-to-intermediate reef fringe near Jacking Horse, mellow when small but crowded with lessons and shallow rocks at low tide.',
     ),
     SpotModel(
       id: 'spot_boomerang',
@@ -4209,9 +4212,1305 @@ class DemoSeed {
       waterTempC: 23,
       imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
       summary:
-          'Classic Sunshine Coast point that adds more clean-line variety than the region\'s softer open beaches.',
+          'Sunshine Coast headland wave with clean point lines when swell wraps in, but rocks and current deserve respect.',
+    ),
+    ..._auditSpots,
+  ];
+
+  static final _auditSpots = [
+    _auditSpot(
+      'spot_the_wreck_byron',
+      'The Wreck',
+      'Australia',
+      'New South Wales',
+      'Byron Bay',
+      -28.6416,
+      153.6150,
+      'intermediate',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul'],
+      'Byron shipwreck peak over sand and rock, usually punchier than town beach with fast rights near the Wollongbar remains.',
+    ),
+    _auditSpot(
+      'spot_ballina_north_wall',
+      'Ballina North Wall',
+      'Australia',
+      'New South Wales',
+      'Ballina',
+      -28.8711,
+      153.5915,
+      'intermediate',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'Richmond River breakwall setup with reliable sandbanks, sweep, and a shortboard-friendly wall when east swell lines up.',
+    ),
+    _auditSpot(
+      'spot_flat_rock_ballina',
+      'Flat Rock',
+      'Australia',
+      'New South Wales',
+      'Ballina',
+      -28.8119,
+      153.6049,
+      'intermediate',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'Ballina-area reef and beach option with more punch than the open learner beaches.',
+    ),
+    _auditSpot(
+      'spot_diggers_beach',
+      'Diggers Beach',
+      'Australia',
+      'New South Wales',
+      'Coffs Harbour',
+      -30.2706,
+      153.1414,
+      'beginner',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'Coffs Harbour beachbreak with headland shelter, surf-school days, and rips when the exposed banks get more swell.',
+    ),
+    _auditSpot(
+      'spot_scotts_head',
+      'Scotts Head',
+      'Australia',
+      'New South Wales',
+      'Mid North Coast',
+      -30.7466,
+      152.9966,
+      'intermediate',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'Mid North Coast point-and-beach setup with longboard-friendly rights, sand movement, and road-trip crowd pressure.',
+    ),
+    _auditSpot(
+      'spot_point_plomer',
+      'Point Plomer',
+      'Australia',
+      'New South Wales',
+      'Port Macquarie',
+      -31.3099,
+      152.9730,
+      'intermediate',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'Mid North Coast right point over rock and sand, fairly reliable on southeast swell with dirt-road access and campsite traffic.',
+    ),
+    _auditSpot(
+      'spot_lighthouse_port_macquarie',
+      'Lighthouse Beach',
+      'Australia',
+      'New South Wales',
+      'Port Macquarie',
+      -31.4775,
+      152.9281,
+      'beginner',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'Accessible Port Macquarie beachbreak with plenty of everyday local surf traffic.',
+    ),
+    _auditSpot(
+      'spot_seal_rocks',
+      'Seal Rocks',
+      'Australia',
+      'New South Wales',
+      'Seal Rocks',
+      -32.4442,
+      152.5366,
+      'intermediate',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'NSW headland zone with several sand-and-rock corners, rips, and exposed road-trip surf away from town crowds.',
+    ),
+    _auditSpot(
+      'spot_sandon_point',
+      'Sandon Point',
+      'Australia',
+      'New South Wales',
+      'Illawarra',
+      -34.3353,
+      150.9252,
+      'advanced',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'Illawarra point wave with serious local history and proper quality when it lines up.',
+    ),
+    _auditSpot(
+      'spot_the_farm',
+      'The Farm',
+      'Australia',
+      'New South Wales',
+      'Illawarra',
+      -34.5964,
+      150.8675,
+      'intermediate',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'Killalea classic with friendlier walls and one of the best-known South Coast setups.',
+    ),
+    _auditSpot(
+      'spot_werri_beach',
+      'Werri Beach',
+      'Australia',
+      'New South Wales',
+      'Illawarra',
+      -34.7368,
+      150.8291,
+      'intermediate',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'Gerringong sand-bottom beachbreak with lefts and rights, best on east swell and west wind, busy when holiday crowds arrive.',
+    ),
+    _auditSpot(
+      'spot_aussie_pipe',
+      'Aussie Pipe',
+      'Australia',
+      'New South Wales',
+      'South Coast',
+      -35.1610,
+      150.6920,
+      'advanced',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'Shoalhaven reef slab with a hollow barrel reputation, shallow rock bottom, and very little room for mistakes on solid swell.',
+    ),
+    _auditSpot(
+      'spot_green_island_nsw',
+      'Green Island',
+      'Australia',
+      'New South Wales',
+      'South Coast',
+      -35.1670,
+      150.6775,
+      'intermediate',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'Ulladulla-area left point tucked behind the island, more protected than open beaches but rock-and-tide aware.',
+    ),
+    _auditSpot(
+      'spot_mollymook',
+      'Mollymook Beach',
+      'Australia',
+      'New South Wales',
+      'South Coast',
+      -35.3338,
+      150.4726,
+      'beginner',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'South Coast beachbreak with softer learner days, shifting sandbanks, and rips when east or south swell pushes.',
+    ),
+    _auditSpot(
+      'spot_long_reef',
+      'Long Reef',
+      'Australia',
+      'New South Wales',
+      'Sydney',
+      -33.7437,
+      151.3146,
+      'intermediate',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'Northern Beaches headland zone with reef and beach peaks, strong sweep, rock shelves, and wind-sensitive open-coast energy.',
+    ),
+    _auditSpot(
+      'spot_curl_curl',
+      'Curl Curl',
+      'Australia',
+      'New South Wales',
+      'Sydney',
+      -33.7667,
+      151.2973,
+      'intermediate',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'Powerful Northern Beaches beachbreak with more size and punch than the mellow city spots.',
+    ),
+    _auditSpot(
+      'spot_elouera',
+      'Elouera',
+      'Australia',
+      'New South Wales',
+      'Sydney',
+      -34.0432,
+      151.1638,
+      'intermediate',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'Cronulla beachbreak with open sandbanks, reliable everyday peaks, and rips that move around with swell and tide.',
+    ),
+    _auditSpot(
+      'spot_voodoo',
+      'Voodoo',
+      'Australia',
+      'New South Wales',
+      'Sydney',
+      -34.0142,
+      151.2284,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'Heavy south-Sydney reef with ledgy takeoffs, rock shelves, and bigger-swell power for experienced surfers only.',
+    ),
+    _auditSpot(
+      'spot_tallebudgera',
+      'Tallebudgera',
+      'Australia',
+      'Queensland',
+      'Gold Coast',
+      -28.0958,
+      153.4646,
+      'intermediate',
+      const ['Feb', 'Mar', 'Apr', 'May', 'Jun'],
+      'Gold Coast creek-mouth beachbreak with shifting sandbars, sweep, and more workable peaks when the points are packed.',
+    ),
+    _auditSpot(
+      'spot_south_stradbroke',
+      'South Stradbroke',
+      'Australia',
+      'Queensland',
+      'Gold Coast',
+      -27.8547,
+      153.4287,
+      'advanced',
+      const ['Feb', 'Mar', 'Apr', 'May', 'Jun'],
+      'Powerful Gold Coast beachbreak across the seaway with dredging sandbars, boat access, sweep, and serious punch.',
+    ),
+    _auditSpot(
+      'spot_the_spit_gold_coast',
+      'The Spit',
+      'Australia',
+      'Queensland',
+      'Gold Coast',
+      -27.9393,
+      153.4289,
+      'intermediate',
+      const ['Feb', 'Mar', 'Apr', 'May', 'Jun'],
+      'Northern Gold Coast beachbreak near the seaway, shaped by shifting sandbars, sweep, and wind-sensitive open peaks.',
+    ),
+    _auditSpot(
+      'spot_agnes_water',
+      'Agnes Water',
+      'Australia',
+      'Queensland',
+      'Queensland North Coast',
+      -24.2112,
+      151.9036,
+      'beginner',
+      const ['Mar', 'Apr', 'May', 'Jun'],
+      'Queensland learner-friendly surf town that extends the map north of the usual points.',
+    ),
+    _auditSpot(
+      'spot_13th_beach',
+      '13th Beach',
+      'Australia',
+      'Victoria',
+      'Torquay',
+      -38.2797,
+      144.4893,
+      'intermediate',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'Long Bellarine beachbreak stretch with consistent open-coast peaks, rips, and wind-sensitive walls near Torquay.',
+    ),
+    _auditSpot(
+      'spot_jan_juc',
+      'Jan Juc',
+      'Australia',
+      'Victoria',
+      'Torquay',
+      -38.3441,
+      144.3029,
+      'intermediate',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'Torquay local staple with more day-to-day surf traffic than many famous-name reefs.',
+    ),
+    _auditSpot(
+      'spot_point_addis',
+      'Point Addis',
+      'Australia',
+      'Victoria',
+      'Torquay',
+      -38.3928,
+      144.2488,
+      'intermediate',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'Surf Coast right over rocky reef below cliffs, less crowded than Bells but still rock-bottom and intermediate-plus.',
+    ),
+    _auditSpot(
+      'spot_rye_ocean_beach',
+      'Rye Ocean Beach',
+      'Australia',
+      'Victoria',
+      'Mornington Peninsula',
+      -38.4135,
+      144.7888,
+      'intermediate',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'Mornington Peninsula back-beach with exposed sandbars, strong rips, and heavier Southern Ocean energy than bay-side beaches.',
+    ),
+    _auditSpot(
+      'spot_middleton_sa',
+      'Middleton Beach',
+      'Australia',
+      'South Australia',
+      'Fleurieu Peninsula',
+      -35.5142,
+      138.7108,
+      'beginner',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'Fleurieu learner and longboard beach with rolling peaks near Victor Harbor, colder water, and rips on bigger south swell.',
+    ),
+    _auditSpot(
+      'spot_greenly_beach',
+      'Greenly Beach',
+      'Australia',
+      'South Australia',
+      'Eyre Peninsula',
+      -34.6447,
+      135.3531,
+      'advanced',
+      const ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+      'Eyre Peninsula beach-and-rock slab setup with raw Southern Ocean power, remote access, and real consequence on size.',
+    ),
+    _auditSpot(
+      'spot_gnaraloo',
+      'Gnaraloo',
+      'Australia',
+      'Western Australia',
+      'North West WA',
+      -23.8102,
+      113.5270,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'],
+      'Remote WA reef zone led by Tombstones, a long shallow left barrel where low tide and limestone-coral bottom bite hard.',
+    ),
+    _auditSpot(
+      'spot_red_bluff_wa',
+      'Red Bluff',
+      'Australia',
+      'Western Australia',
+      'North West WA',
+      -24.0410,
+      113.4476,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'],
+      'Iconic north-west WA left with desert-camp energy and heavy Indian Ocean exposure.',
+    ),
+    _auditSpot(
+      'spot_strickland_bay',
+      'Strickland Bay',
+      'Australia',
+      'Western Australia',
+      'Rottnest Island',
+      -32.0062,
+      115.4536,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'],
+      'Rottnest Island reef peak with powerful lefts and rights, shallow rock bottom, and Perth crowds when the swell lines up.',
+    ),
+    _auditSpot(
+      'spot_lefthanders_wa',
+      'Lefthanders',
+      'Australia',
+      'Western Australia',
+      'Margaret River',
+      -33.9937,
+      114.9950,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'],
+      'Margaret River left reef with heavy takeoffs, open-ocean power, and shallow sections that suit confident locals and chargers.',
+    ),
+    _auditSpot(
+      'spot_supertubes_wa',
+      'Supertubes',
+      'Australia',
+      'Western Australia',
+      'Margaret River',
+      -33.9452,
+      114.9876,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'],
+      'Fast south-west WA reef that experienced surfers will expect around Margaret River.',
+    ),
+    _auditSpot(
+      'spot_eaglehawk_neck',
+      'Eaglehawk Neck',
+      'Australia',
+      'Tasmania',
+      'Tasman Peninsula',
+      -43.0327,
+      147.9480,
+      'intermediate',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'],
+      'Tasman Peninsula beach-and-reef zone with cold Southern Ocean swell, shifting banks, and rocks near the neck.',
+    ),
+    _auditSpot(
+      'spot_remarkable_caves',
+      'Remarkable Caves',
+      'Australia',
+      'Tasmania',
+      'Tasman Peninsula',
+      -43.1520,
+      147.9462,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'],
+      'Exposed Tasman Peninsula surf zone with cold-water power and proper mission feel.',
+    ),
+    _auditSpot(
+      'spot_trial_harbour',
+      'Trial Harbour',
+      'Australia',
+      'Tasmania',
+      'West Coast',
+      -41.9226,
+      145.1680,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'],
+      'Remote west-Tasmania left point that likes southwest groundswell and high tide, with cold water, rocks, rips, and rough-road access.',
+    ),
+    _auditSpot(
+      'spot_halfway_kuta',
+      'Halfway',
+      'Indonesia',
+      'Bali',
+      'Kuta',
+      -8.7190,
+      115.1690,
+      'beginner',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'],
+      'Central Kuta sandbar peak where visitors learn daily, with crowds, shorebreak, and cleaner shape before the wind.',
+    ),
+    _auditSpot(
+      'spot_legian_beach',
+      'Legian Beach',
+      'Indonesia',
+      'Bali',
+      'Kuta',
+      -8.7043,
+      115.1678,
+      'beginner',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'],
+      'Busy Kuta-Legian sandbar zone with surf schools, shorebreak, crowds, and cleaner shape early before wind.',
+    ),
+    _auditSpot(
+      'spot_padma',
+      'Padma',
+      'Indonesia',
+      'Bali',
+      'Kuta',
+      -8.7048,
+      115.1671,
+      'intermediate',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'],
+      'Legian peak with punchier sandbar sections than the learner strip, crowded but useful on dry-season mornings.',
+    ),
+    _auditSpot(
+      'spot_temples',
+      'Temples',
+      'Indonesia',
+      'Bali',
+      'Uluwatu',
+      -8.8150,
+      115.0842,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Uluwatu outer section with more swell exposure, long paddles, and the same sharp reef consequences as the main lineup.',
+    ),
+    _auditSpot(
+      'spot_outside_corner',
+      'Outside Corner',
+      'Indonesia',
+      'Bali',
+      'Uluwatu',
+      -8.8178,
+      115.0840,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Big-swell Uluwatu section that only turns on for confident surfers with boards, fitness, and reef awareness.',
+    ),
+    _auditSpot(
+      'spot_racetrack_uluwatu',
+      'Racetrack',
+      'Indonesia',
+      'Bali',
+      'Uluwatu',
+      -8.8164,
+      115.0874,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Fast Uluwatu inside section over shallow reef, famous for barrels when the tide and swell line up.',
+    ),
+    _auditSpot(
+      'spot_ketewel',
+      'Ketewel',
+      'Indonesia',
+      'Bali',
+      'East Bali',
+      -8.6303,
+      115.2945,
+      'intermediate',
+      const ['Nov', 'Dec', 'Jan', 'Feb', 'Mar'],
+      'East Bali black-sand wet-season wave with punchy rights, runoff risk after rain, and better wind when the west coast is onshore.',
+    ),
+    _auditSpot(
+      'spot_batu_karas',
+      'Batu Karas',
+      'Indonesia',
+      'Java',
+      'West Java',
+      -7.7467,
+      108.4963,
+      'beginner',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Mellow West Java right point with long soft walls, surf schools, and a friendly step-up from pure beginner foam.',
+    ),
+    _auditSpot(
+      'spot_turtles_java',
+      'Turtles',
+      'Indonesia',
+      'Java',
+      'West Java',
+      -7.3472,
+      106.4136,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Ujung Genteng reef setup with sharper takeoffs than Batu Karas, best for confident surfers chasing south-coast Java swell.',
+    ),
+    _auditSpot(
+      'spot_ujung_genteng',
+      'Ujung Genteng',
+      'Indonesia',
+      'Java',
+      'West Java',
+      -7.3734,
+      106.4000,
+      'intermediate',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'West Java south-coast base with beach and reef options, quieter lineups, and sharper coral at the named reefs.',
+    ),
+    _auditSpot(
+      'spot_way_jambu',
+      'Way Jambu',
+      'Indonesia',
+      'Sumatra',
+      'Krui',
+      -5.2355,
+      103.9825,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Serious Krui-area reef better known as Sumatran Pipeline, a heavy left barrel over shallow coral on proper swell.',
+    ),
+    _auditSpot(
+      'spot_jimmys_sumatra',
+      'Jimmys',
+      'Indonesia',
+      'Sumatra',
+      'Krui',
+      -5.1030,
+      103.9350,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Krui north-coast reef zone with Jimmys Right and Left, hollow advanced barrels over sharp coral and trade-wind exposure.',
+    ),
+    _auditSpot(
+      'spot_pulau_pisang',
+      'Pulau Pisang',
+      'Indonesia',
+      'Sumatra',
+      'Krui',
+      -5.1111,
+      103.8428,
+      'intermediate',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Krui offshore island with left and right reef breaks, exposed to wind and usually reached by boat from Krui or Tembakak.',
+    ),
+    _auditSpot(
+      'spot_jackals_simeulue',
+      'Jackals',
+      'Indonesia',
+      'Simeulue',
+      'Simeulue Island',
+      2.5490,
+      96.3310,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Simeulue right-hander for experienced surfers, with powerful reef sections and a remote Indo strike-trip feel.',
+    ),
+    _auditSpot(
+      'spot_teabags_simeulue',
+      'Teabags',
+      'Indonesia',
+      'Simeulue',
+      'Simeulue Island',
+      2.6420,
+      96.1090,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Simeulue reef option known for serious barrel potential, sharp coral, and the need for local boat or guide knowledge.',
+    ),
+    _auditSpot(
+      'spot_bay_of_plenty_banyak',
+      'Bay of Plenty',
+      'Indonesia',
+      'Banyak Islands',
+      'Banyak Islands',
+      2.1660,
+      97.3240,
+      'intermediate',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Banyak Islands reef zone with playful lefts and rights by boat, still remote enough that guides and tide calls matter.',
+    ),
+    _auditSpot(
+      'spot_ebay_mentawai',
+      'E-Bay',
+      'Indonesia',
+      'Mentawai',
+      'Playgrounds',
+      -1.9353,
+      99.2825,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Well-known Mentawai left near Playgrounds, separate from the Lembongan E-Bay name.',
+    ),
+    _auditSpot(
+      'spot_greenbush',
+      'Greenbush',
+      'Indonesia',
+      'Mentawai',
+      'Pagai',
+      -3.1540,
+      100.3050,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Remote Mentawai left reef known for thick barrels and a very shallow end section, expert-only when Indian Ocean swell pulses.',
+    ),
+    _auditSpot(
+      'spot_scarecrows',
+      'Scarecrows',
+      'Indonesia',
+      'Mentawai',
+      'Playgrounds',
+      -1.9310,
+      99.2700,
+      'intermediate',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Mentawai left with long workable walls near Playgrounds, more forgiving than the slabs but still a coral-reef boat break.',
+    ),
+    _auditSpot(
+      'spot_icelands',
+      'Icelands',
+      'Indonesia',
+      'Mentawai',
+      'Playgrounds',
+      -1.9170,
+      99.2740,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Open-ocean Mentawai left known for handling more swell than nearby soft options.',
+    ),
+    _auditSpot(
+      'spot_tanjung_aan',
+      'Tanjung Aan',
+      'Indonesia',
+      'Lombok',
+      'Kuta Lombok',
+      -8.9142,
+      116.3182,
+      'beginner',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Accessible south-Lombok bay that surfers use between Gerupuk and Seger missions.',
+    ),
+    _auditSpot(
+      'spot_mawun',
+      'Mawun',
+      'Indonesia',
+      'Lombok',
+      'Kuta Lombok',
+      -8.9014,
+      116.2443,
+      'intermediate',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'South Lombok crescent bay with an occasional right reef on small-to-medium SSW swell, cleaner mid-high and rarely crowded.',
+    ),
+    _auditSpot(
+      'spot_ekas_outside',
+      'Ekas Outside',
+      'Indonesia',
+      'Lombok',
+      'East Lombok',
+      -8.8990,
+      116.4800,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Outside Ekas reef with stronger south-swell exposure, longer hold-down potential, and more consequence than the inside bay.',
+    ),
+    _auditSpot(
+      'spot_occys_left',
+      'Occy\'s Left',
+      'Indonesia',
+      'Sumba',
+      'Nihiwatu',
+      -9.7630,
+      119.3220,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'World-class Sumba left at Nihi with hollow reef sections, limited access, and serious quality when Indian Ocean swell lines up.',
+    ),
+    _auditSpot(
+      'spot_millers_right',
+      'Miller\'s Rights',
+      'Indonesia',
+      'Sumba',
+      'Southeast Sumba',
+      -10.0610,
+      120.7490,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Remote Sumba right-hander with reef power and mission logistics, one for confident surfers rather than casual learners.',
+    ),
+    _auditSpot(
+      'spot_marosi',
+      'Marosi',
+      'Indonesia',
+      'Sumba',
+      'West Sumba',
+      -9.6428,
+      119.3820,
+      'intermediate',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'West Sumba beach-and-reef setup with lefts and rights, remote access, and more raw Indian Ocean energy than resort waves.',
+    ),
+    _auditSpot(
+      'spot_cobblestones_sumbawa',
+      'Cobblestones',
+      'Indonesia',
+      'Sumbawa',
+      'West Sumbawa',
+      -8.8210,
+      116.7900,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Lakey-area coral-reef bay with a bigger left and smaller right, walkable from Lakey Peak and worth local hazard advice.',
+    ),
+    _auditSpot(
+      'spot_periscope_point',
+      'Periscope Point',
+      'Indonesia',
+      'Sumbawa',
+      'Hu\'u',
+      -8.5116,
+      118.9998,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Lakey-area right reef with fast walls and coral bottom, distinct from Lakey Peak and better for confident intermediates.',
+    ),
+    _auditSpot(
+      'spot_boa_rote',
+      'Boa',
+      'Indonesia',
+      'Rote',
+      'Nembrala',
+      -10.8875,
+      122.8475,
+      'advanced',
+      const ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Rote right-hand reef near Nembrala and T-Land, more exposed and powerful, with shallow coral and local knowledge useful.',
+    ),
+    _auditSpot(
+      'spot_bennys_hikkaduwa',
+      'Bennys',
+      'Sri Lanka',
+      'South Coast',
+      'Hikkaduwa',
+      6.1350,
+      80.1000,
+      'advanced',
+      const ['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'],
+      'Hikkaduwa reef peak near Main Reef, heavier on solid southwest swell with coral, current, and crowded takeoffs.',
+    ),
+    _auditSpot(
+      'spot_inside_reef_hikkaduwa',
+      'Inside Reef',
+      'Sri Lanka',
+      'South Coast',
+      'Hikkaduwa',
+      6.1310,
+      80.1000,
+      'intermediate',
+      const ['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'],
+      'More protected Hikkaduwa reef option, softer than Main Reef but still coral-bottom with urchins and reef awareness needed.',
+    ),
+    _auditSpot(
+      'spot_jungle_beach_left',
+      'Jungle Beach Left',
+      'Sri Lanka',
+      'South Coast',
+      'Weligama',
+      5.9680,
+      80.4100,
+      'intermediate',
+      const ['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'],
+      'Weligama-area left reef away from the main learner bay, softer than Midigama reefs but still rock-bottom.',
+    ),
+    _auditSpot(
+      'spot_jungle_beach_right',
+      'Jungle Beach Right',
+      'Sri Lanka',
+      'South Coast',
+      'Weligama',
+      5.9685,
+      80.4110,
+      'intermediate',
+      const ['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'],
+      'Right-hand Weligama-area reef paired with the left, with rock bottom and a more defined wall than the learner bay.',
+    ),
+    _auditSpot(
+      'spot_midigama_right',
+      'Midigama Right',
+      'Sri Lanka',
+      'South Coast',
+      'Midigama',
+      5.9660,
+      80.3890,
+      'intermediate',
+      const ['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'],
+      'Named Midigama right over reef, less famous than Rams but still quicker and rockier than the learner bays.',
+    ),
+    _auditSpot(
+      'spot_madiha_left',
+      'Madiha Left',
+      'Sri Lanka',
+      'South Coast',
+      'Madiha',
+      5.9380,
+      80.5160,
+      'intermediate',
+      const ['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'],
+      'Matara-side reef wave with mellow intermediate walls, turtle-filled water, and rocks around the reef.',
+    ),
+    _auditSpot(
+      'spot_wijiya_dalawella',
+      'Wijiya Beach',
+      'Sri Lanka',
+      'South Coast',
+      'Dalawella',
+      6.0020,
+      80.2570,
+      'beginner',
+      const ['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'],
+      'Dalawella and Wijaya beach pocket with protected learner waves and reef patches near the swimming lagoon.',
+    ),
+    _auditSpot(
+      'spot_green_room_arugam',
+      'Green Room',
+      'Sri Lanka',
+      'East Coast',
+      'Arugam Bay',
+      6.8450,
+      81.8340,
+      'intermediate',
+      const ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Arugam-area right point with quieter walls than Main Point, still tide-and-rock dependent and best checked locally.',
+    ),
+    _auditSpot(
+      'spot_lucky_point',
+      'Lucky Point',
+      'Philippines',
+      'Catanduanes',
+      'Baras',
+      13.7125,
+      124.3780,
+      'advanced',
+      const ['Oct', 'Nov', 'Dec', 'Jan'],
+      'Catanduanes reef near Puraran that favors northeast swell, less crowded than Majestics but still rocky and exposed.',
+    ),
+    _auditSpot(
+      'spot_point_b_catanduanes',
+      'Point B',
+      'Philippines',
+      'Catanduanes',
+      'Baras',
+      13.7160,
+      124.3760,
+      'intermediate',
+      const ['Oct', 'Nov', 'Dec', 'Jan'],
+      'Catanduanes exposed reef that favors northeast swell and a rising high tide, usually quiet but rocky in the lineup.',
+    ),
+    _auditSpot(
+      'spot_virac_harbour',
+      'Virac Harbour',
+      'Philippines',
+      'Catanduanes',
+      'Virac',
+      13.5760,
+      124.2360,
+      'intermediate',
+      const ['Oct', 'Nov', 'Dec', 'Jan'],
+      'Catanduanes reef near Virac that catches Pacific swell, less famous than Puraran but still rocky and exposed.',
+    ),
+    _auditSpot(
+      'spot_pirates_cove',
+      'Pirates Cove',
+      'Philippines',
+      'Eastern Samar',
+      'Calicoan Island',
+      10.9560,
+      125.7770,
+      'intermediate',
+      const ['Oct', 'Nov', 'Dec', 'Jan'],
+      'Eastern Samar reef zone north of Calicoan, exposed to Pacific swell and better checked with local guidance.',
+    ),
+    _auditSpot(
+      'spot_stimpys_siargao',
+      'Stimpy\'s',
+      'Philippines',
+      'Siargao',
+      'General Luna',
+      9.8800,
+      126.1550,
+      'advanced',
+      const ['Sep', 'Oct', 'Nov', 'Dec'],
+      'Boat-access Siargao left reef with fun walls when small, barrel sections when bigger, and an inside rock visible at low tide.',
+    ),
+    _auditSpot(
+      'spot_caridad',
+      'Caridad',
+      'Philippines',
+      'Siargao',
+      'Caridad',
+      9.9350,
+      126.0500,
+      'intermediate',
+      const ['Sep', 'Oct', 'Nov', 'Dec'],
+      'Exposed north-Siargao left reef that likes northeast swell and southwest wind, usually uncrowded but rocky underfoot.',
+    ),
+    _auditSpot(
+      'spot_big_star',
+      'Big Star',
+      'Philippines',
+      'Surigao del Sur',
+      'Lanuza',
+      9.2390,
+      126.0710,
+      'intermediate',
+      const ['Nov', 'Dec', 'Jan', 'Feb'],
+      'Lanuza-area named wave on the Surigao del Sur coast, best treated as a seasonal northeast-monsoon check.',
+    ),
+    _auditSpot(
+      'spot_jellys_point',
+      'Jelly\'s Point',
+      'Philippines',
+      'Surigao del Sur',
+      'Lanuza',
+      9.2390,
+      126.0670,
+      'intermediate',
+      const ['Nov', 'Dec', 'Jan', 'Feb'],
+      'Lanuza-area point-style wave on Surigao del Sur Pacific swell, a quieter seasonal option when northeast energy shows.',
+    ),
+    _auditSpot(
+      'spot_poro_point',
+      'Poro Point',
+      'Philippines',
+      'La Union',
+      'San Fernando',
+      16.6110,
+      120.2870,
+      'intermediate',
+      const ['Oct', 'Nov', 'Dec', 'Jan'],
+      'San Fernando reef/point option away from San Juan lessons, with more rock and less forgiveness on bigger north swell.',
+    ),
+    _auditSpot(
+      'spot_lindys_point',
+      'Lindy\'s Point',
+      'Philippines',
+      'Baler',
+      'Baler',
+      15.7750,
+      121.5660,
+      'intermediate',
+      const ['Oct', 'Nov', 'Dec', 'Jan'],
+      'Exposed Baler river-left point that works through the tide on northwest swell, with rips and a crowd when it turns on.',
+    ),
+    _auditSpot(
+      'spot_cape_pakarang_left',
+      'Cape Pakarang Left',
+      'Thailand',
+      'Khao Lak',
+      'Takua Pa',
+      8.7485,
+      98.2197,
+      'intermediate',
+      const ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Cape Pakarang reef-side left with more shape than Memories, best with enough tide over coral fragments.',
+    ),
+    _auditSpot(
+      'spot_cape_pakarang_right',
+      'Cape Pakarang Right',
+      'Thailand',
+      'Khao Lak',
+      'Takua Pa',
+      8.7488,
+      98.2212,
+      'intermediate',
+      const ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Right-hand Pakarang shoulder that can suit intermediates on monsoon swell, with shallow coral beach terrain nearby.',
+    ),
+    _auditSpot(
+      'spot_bang_niang',
+      'Bang Niang Rivermouth',
+      'Thailand',
+      'Khao Lak',
+      'Takua Pa',
+      8.6696,
+      98.2464,
+      'beginner',
+      const ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Khao Lak rivermouth beachbreak with soft seasonal peaks, sand movement, and murkier water after rain.',
+    ),
+    _auditSpot(
+      'spot_nang_thong',
+      'Nang Thong',
+      'Thailand',
+      'Khao Lak',
+      'Takua Pa',
+      8.6400,
+      98.2470,
+      'beginner',
+      const ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Central Khao Lak beachbreak with mellow monsoon surf, shallow low-tide banks, and easy town access.',
+    ),
+    _auditSpot(
+      'spot_thai_mueang',
+      'Thai Mueang Beach',
+      'Thailand',
+      'Phang Nga',
+      'Thai Mueang',
+      8.4680,
+      98.2370,
+      'beginner',
+      const ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Long quiet Phang Nga beachbreak with seasonal windswells, very spread-out peaks, and little crowd pressure.',
+    ),
+    _auditSpot(
+      'spot_patong_beach',
+      'Patong Beach',
+      'Thailand',
+      'Phuket',
+      'Patong',
+      7.8965,
+      98.2956,
+      'beginner',
+      const ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'],
+      'Sheltered Phuket tourist beach that only gets small beginner waves on bigger monsoon pulses, with crowds and watercraft around.',
+    ),
+    _auditSpot(
+      'spot_lang_co',
+      'Lang Co',
+      'Vietnam',
+      'Da Nang',
+      'Lang Co',
+      16.2420,
+      108.0910,
+      'beginner',
+      const ['Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb'],
+      'Scenic Da Nang pass beachbreak with winter northeast windswells, lefts and rights on sand, and empty but inconsistent sessions.',
+    ),
+    _auditSpot(
+      'spot_nam_o',
+      'Nam O Point',
+      'Vietnam',
+      'Da Nang',
+      'Da Nang',
+      16.1170,
+      108.1290,
+      'intermediate',
+      const ['Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb'],
+      'Da Nang river-mouth point and jetty wave that can handle beach closeouts, with rocks and murky runoff risk.',
+    ),
+    _auditSpot(
+      'spot_cua_dai',
+      'Cua Dai Beach',
+      'Vietnam',
+      'Hoi An',
+      'Cua Dai',
+      15.8790,
+      108.3670,
+      'beginner',
+      const ['Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb'],
+      'Hoi An beachbreak with northeast-season windswells, shifting erosion-prone sandbars, and rips near the river mouth.',
+    ),
+    _auditSpot(
+      'spot_binh_an',
+      'Binh An',
+      'Vietnam',
+      'Da Nang',
+      'Ngu Hanh Son',
+      15.9850,
+      108.2760,
+      'beginner',
+      const ['Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb'],
+      'Da Nang exposed beachbreak with inconsistent windswells, left and right sandbar waves, and plenty of soft small days.',
+    ),
+    _auditSpot(
+      'spot_dark_reef',
+      'Dark Reef',
+      'Vietnam',
+      'Nha Trang',
+      'Nha Trang',
+      12.2360,
+      109.2110,
+      'advanced',
+      const ['Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb'],
+      'Nha Trang reef option for stronger surfers, with rocky takeoffs and local guidance worth having before paddling out.',
+      waveHeightM: 0.8,
+    ),
+    _auditSpot(
+      'spot_tioman_island',
+      'Tioman Island',
+      'Malaysia',
+      'Pahang',
+      'Tioman',
+      2.7900,
+      104.1750,
+      'beginner',
+      const ['Nov', 'Dec', 'Jan', 'Feb', 'Mar'],
+      'Seasonal Tioman beachbreak potential on northeast monsoon pulses, usually small with reef and rocks elsewhere around the island.',
+    ),
+    _auditSpot(
+      'spot_cenang_beach',
+      'Cenang Beach',
+      'Malaysia',
+      'Kedah',
+      'Langkawi',
+      6.2890,
+      99.7240,
+      'beginner',
+      const ['Nov', 'Dec', 'Jan', 'Feb', 'Mar'],
+      'Langkawi tourist beach with rare small seasonal windswells, better for novelty soft-top sessions than dependable surf.',
+    ),
+    _auditSpot(
+      'spot_tengah_beach',
+      'Tengah Beach',
+      'Malaysia',
+      'Kedah',
+      'Langkawi',
+      6.2720,
+      99.7260,
+      'beginner',
+      const ['Nov', 'Dec', 'Jan', 'Feb', 'Mar'],
+      'Quieter Langkawi beach near Cenang with small windswells when weather lines up and long flat spells between them.',
+    ),
+    _auditSpot(
+      'spot_kota_belud',
+      'Kota Belud',
+      'Malaysia',
+      'Sabah',
+      'Kota Belud',
+      6.4400,
+      116.4430,
+      'beginner',
+      const ['Nov', 'Dec', 'Jan', 'Feb', 'Mar'],
+      'Sabah west-coast beachbreak zone with mellow seasonal waves, light crowds, and wind-driven consistency rather than real groundswell.',
+    ),
+    _auditSpot(
+      'spot_nexus',
+      'Nexus',
+      'Malaysia',
+      'Sabah',
+      'Kota Kinabalu',
+      6.1740,
+      116.1950,
+      'beginner',
+      const ['Nov', 'Dec', 'Jan', 'Feb', 'Mar'],
+      'Karambunai resort-area beachbreak with soft Borneo windswells, sand-bottom practice waves, and plenty of flat days.',
+    ),
+    _auditSpot(
+      'spot_tanjung_aru',
+      'Tanjung Aru Beach',
+      'Malaysia',
+      'Sabah',
+      'Kota Kinabalu',
+      5.9460,
+      116.0430,
+      'beginner',
+      const ['Nov', 'Dec', 'Jan', 'Feb', 'Mar'],
+      'Kota Kinabalu city beach with tiny seasonal surf for practice, sunset crowds, and wind chop more often than clean lines.',
+    ),
+    _auditSpot(
+      'spot_ngapali',
+      'Ngapali Beach',
+      'Myanmar',
+      'Rakhine',
+      'Ngapali',
+      18.4380,
+      94.3220,
+      'beginner',
+      const ['May', 'Jun', 'Jul', 'Aug', 'Sep'],
+      'Myanmar west-coast resort beach with mostly soft, fickle Bay of Bengal surf and long sandy stretches between fishing villages.',
+    ),
+    _auditSpot(
+      'spot_gwa',
+      'Gwa',
+      'Myanmar',
+      'Rakhine',
+      'Gwa',
+      17.6040,
+      94.5830,
+      'beginner',
+      const ['May', 'Jun', 'Jul', 'Aug', 'Sep'],
+      'Undeveloped southern Rakhine coast with empty Bay of Bengal beaches, exploration appeal, and very limited surf infrastructure.',
+    ),
+    _auditSpot(
+      'spot_digger',
+      'Digger',
+      'Timor-Leste',
+      'Timor Sea',
+      'South Coast',
+      -9.2000,
+      125.7000,
+      'advanced',
+      const ['Dec', 'Jan', 'Feb', 'Mar'],
+      'Exposed Timor Sea reef that rarely works but can be uncrowded on southwest swell, with shark risk noted by local guides.',
     ),
   ];
+
+  static SpotModel _auditSpot(
+    String id,
+    String name,
+    String country,
+    String region,
+    String area,
+    double latitude,
+    double longitude,
+    String difficulty,
+    List<String> bestMonths,
+    String summary, {
+    double? waveHeightM,
+  }) => SpotModel(
+    id: id,
+    name: name,
+    country: country,
+    region: region,
+    area: area,
+    latitude: latitude,
+    longitude: longitude,
+    difficulty: difficulty,
+    bestMonths: bestMonths,
+    waveHeightM: waveHeightM ?? _auditWaveHeight(difficulty),
+    waterTempC: _auditWaterTemp(country),
+    imageUrl: _auditImageUrl(difficulty),
+    summary: summary,
+  );
+
+  static double _auditWaveHeight(String difficulty) => switch (difficulty) {
+    'beginner' => 0.9,
+    'advanced' => 1.8,
+    _ => 1.3,
+  };
+
+  static double _auditWaterTemp(String country) => switch (country) {
+    'Australia' => 20,
+    'Indonesia' => 28,
+    'Sri Lanka' => 29,
+    'Philippines' => 28,
+    'Thailand' => 29,
+    'Vietnam' => 27,
+    'Malaysia' => 28,
+    'Myanmar' => 28,
+    'Timor-Leste' => 29,
+    _ => 27,
+  };
+
+  static String _auditImageUrl(String difficulty) => switch (difficulty) {
+    'beginner' =>
+      'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429',
+    'advanced' =>
+      'https://images.unsplash.com/photo-1473116763249-2faaef81ccda',
+    _ => 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21',
+  };
 
   static final forecasts = [
     for (final spot in spots) ..._estimatedForecastsForSpot(spot),
@@ -4268,14 +5567,187 @@ class DemoSeed {
       avatarEmoji: 'J',
       vibe: 'Looking for reef buddies and cheap eats.',
     ),
+    FriendProfileModel(
+      id: 'friend_maya',
+      displayName: 'Maya Surfer',
+      homeRegion: 'Uluwatu',
+      avatarEmoji: 'M',
+      vibe: 'Photos, reef notes, and mellow dawn missions.',
+    ),
+    FriendProfileModel(
+      id: 'friend_kai',
+      displayName: 'Kai Glass',
+      homeRegion: 'Byron Bay',
+      avatarEmoji: 'K',
+      vibe: 'Point-break addict, usually chasing clean runners.',
+    ),
+    FriendProfileModel(
+      id: 'friend_noa',
+      displayName: 'Noa Current',
+      homeRegion: 'Arugam Bay',
+      avatarEmoji: 'N',
+      vibe: 'Learner-friendly missions and beach hangouts.',
+    ),
+    FriendProfileModel(
+      id: 'friend_sam',
+      displayName: 'Sam Lines',
+      homeRegion: 'Gold Coast',
+      avatarEmoji: 'S',
+      vibe: 'Early windows, coffee after, knows the banks.',
+    ),
   ];
+
+  static const _mediaBase = 'http://127.0.0.1:8000/media';
+
+  static SocialMediaAttachmentModel _photo(
+    String mediaId, {
+    String extension = 'jpg',
+    String? altText,
+  }) {
+    return SocialMediaAttachmentModel(
+      id: mediaId,
+      mediaType: 'photo',
+      url: '$_mediaBase/$mediaId.$extension',
+      thumbnailUrl: '$_mediaBase/${mediaId}_thumb.$extension',
+      width: null,
+      height: null,
+      altText: altText,
+    );
+  }
+
+  static SocialMediaAttachmentModel _video(String mediaId, {String? altText}) {
+    return SocialMediaAttachmentModel(
+      id: mediaId,
+      mediaType: 'video',
+      url: '$_mediaBase/$mediaId.mov',
+      thumbnailUrl: '$_mediaBase/$mediaId.mov',
+      width: null,
+      height: null,
+      altText: altText,
+    );
+  }
 
   static final posts = [
     SocialPostModel(
-      id: 'post_uluwatu_dawn',
-      userId: 'usr_demo',
+      id: 'post_lina_canggu_photo',
+      userId: 'friend_lina',
+      authorName: 'Lina Reef',
+      authorHandle: 'linareef',
+      authorAvatarUrl: null,
+      authorPremium: false,
+      spotId: 'spot_echo_beach',
+      postType: 'general',
+      visibility: 'public',
+      body:
+          'Little Canggu glass-off before the crowd filled in. Coffee run after if anyone is around.',
+      media: [_photo('media_25395879a2', altText: 'Canggu session photo')],
+      meetupDate: null,
+      createdAt: '2026-04-30T06:40:00Z',
+    ),
+    SocialPostModel(
+      id: 'post_ari_balangan_event',
+      userId: 'friend_ari',
+      authorName: 'Ari Dawn',
+      authorHandle: 'aridawn',
+      authorAvatarUrl: null,
+      authorPremium: false,
+      spotId: 'spot_balangan',
+      postType: 'surf_plan',
+      visibility: 'public',
+      body:
+          'Sunset Balangan session tomorrow. Easy paddle, then warung dinner if it lines up.',
+      media: const [],
+      meetupDate: '2026-05-01',
+      createdAt: '2026-04-30T05:55:00Z',
+    ),
+    SocialPostModel(
+      id: 'post_kai_byron_clip',
+      userId: 'friend_kai',
+      authorName: 'Kai Glass',
+      authorHandle: 'kaiglass',
+      authorAvatarUrl: null,
+      authorPremium: false,
+      spotId: 'spot_byron',
+      postType: 'general',
+      visibility: 'public',
+      body:
+          'The Pass was slow but had a couple long runners if you waited your turn.',
+      media: [_video('media_115e1f73fe', altText: 'Byron point clip')],
+      meetupDate: null,
+      createdAt: '2026-04-30T04:20:00Z',
+    ),
+    SocialPostModel(
+      id: 'post_noa_arugam_event',
+      userId: 'friend_noa',
+      authorName: 'Noa Current',
+      authorHandle: 'noacurrent',
+      authorAvatarUrl: null,
+      authorPremium: false,
+      spotId: 'spot_arugam',
+      postType: 'looking_for_buddy',
+      visibility: 'public',
+      body:
+          'Beginner-friendly sunset paddle at Main Point, then beach food after. First timers welcome.',
+      media: const [],
+      meetupDate: '2026-05-02',
+      createdAt: '2026-04-30T03:15:00Z',
+    ),
+    SocialPostModel(
+      id: 'post_sam_snapper_photos',
+      userId: 'friend_sam',
+      authorName: 'Sam Lines',
+      authorHandle: 'samlines',
+      authorAvatarUrl: null,
+      authorPremium: false,
+      spotId: 'spot_snapper',
+      postType: 'general',
+      visibility: 'public',
+      body:
+          'Goldie had little runners this morning. Not pumping, but fun enough for a before-work slide.',
+      media: [
+        _photo('media_f602be0152', altText: 'Gold Coast wave photo'),
+        _photo('media_36f6ae8f63', altText: 'Beach lineup photo'),
+      ],
+      meetupDate: null,
+      createdAt: '2026-04-30T01:10:00Z',
+    ),
+    SocialPostModel(
+      id: 'post_maya_uluwatu_party',
+      userId: 'friend_maya',
       authorName: 'Maya Surfer',
-      authorHandle: 'maya',
+      authorHandle: 'mayasurfer',
+      authorAvatarUrl: null,
+      authorPremium: false,
+      spotId: 'spot_uluwatu_peak',
+      postType: 'surf_plan',
+      visibility: 'followers',
+      body:
+          'Small Uluwatu crew hang Friday night. Bring a story from your best or worst reef entry.',
+      media: [_photo('media_ba729993a2', altText: 'Uluwatu hangout photo')],
+      meetupDate: '2026-05-04',
+      createdAt: '2026-04-29T23:35:00Z',
+    ),
+    SocialPostModel(
+      id: 'post_jo_cloud9_event',
+      userId: 'friend_jo',
+      authorName: 'Jo Tide',
+      authorHandle: 'jotide',
+      authorAvatarUrl: null,
+      authorPremium: false,
+      spotId: 'spot_siargao',
+      postType: 'surf_plan',
+      visibility: 'public',
+      body:
+          'Cloud 9 watch mission at high tide. Probably just spectating if it gets spicy.',
+      media: const [],
+      meetupDate: '2026-05-03',
+      createdAt: '2026-04-29T21:45:00Z',
+    ),
+    SocialPostModel(
+      id: 'post_uluwatu_dawn',
+      userId: 'friend_maya',
+      authorName: 'Maya Surfer',
+      authorHandle: 'mayasurfer',
       authorAvatarUrl: null,
       authorPremium: false,
       spotId: 'spot_uluwatu_peak',
@@ -4291,12 +5763,12 @@ class DemoSeed {
       id: 'post_balangan_friends',
       userId: 'friend_ari',
       authorName: 'Ari Dawn',
-      authorHandle: 'ari',
+      authorHandle: 'aridawn',
       authorAvatarUrl: null,
       authorPremium: false,
       spotId: 'spot_balangan',
       postType: 'general',
-      visibility: 'friends',
+      visibility: 'followers',
       body:
           'Looking for someone to split a scooter ride to Balangan this week.',
       media: const [],
@@ -4343,7 +5815,6 @@ class DemoSeed {
   );
 
   static List<ForecastModel> _estimatedForecastsForSpot(SpotModel spot) {
-    final (waveMin, waveMax) = _waveBandForSpot(spot);
     final (windMin, windMax) = _windBandForDifficulty(spot.difficulty);
     final quality = spot.difficulty == 'beginner' ? 'fair' : 'good';
 
@@ -4353,9 +5824,9 @@ class DemoSeed {
         id: 'est_${spot.id}_${index + 1}',
         spotId: spot.id,
         day: '2026-04-${(15 + index).toString().padLeft(2, '0')}',
-        waveHeightM: null,
-        waveHeightMinM: waveMin,
-        waveHeightMaxM: waveMax,
+        waveHeightM: _roundBandValue(spot.waveHeightM),
+        waveHeightMinM: null,
+        waveHeightMaxM: null,
         periodS: null,
         windKts: null,
         windKtsMin: windMin,
@@ -4367,45 +5838,9 @@ class DemoSeed {
         source: 'estimated',
         confidence: 'estimated',
         confidenceNote:
-            'Estimated surf band based on the spot profile while live marine data is unavailable.',
+            'Estimated surf height based on the spot profile while live marine data is unavailable.',
       ),
     );
-  }
-
-  static (double, double) _waveBandForSpot(SpotModel spot) {
-    final baseline = spot.waveHeightM < 0.2 ? 0.2 : spot.waveHeightM;
-    final multiplier = _regionalEstimateMultiplier(spot);
-
-    if (spot.difficulty == 'beginner') {
-      final lower = _roundBandValue(
-        ((baseline * 0.2) < 0.2 ? 0.2 : baseline * 0.2) * multiplier,
-      );
-      final gentleUpper = baseline * 0.65;
-      final protectedUpper = baseline * 0.9;
-      final upper = gentleUpper < (lower + 0.2) ? (lower + 0.2) : gentleUpper;
-      return (
-        lower,
-        _roundBandValue(
-          (upper > protectedUpper ? protectedUpper : upper) * multiplier,
-        ),
-      );
-    }
-
-    if (spot.difficulty == 'advanced') {
-      final lower = _roundBandValue(
-        ((baseline * 0.65) < 0.8 ? 0.8 : baseline * 0.65) * multiplier,
-      );
-      final upper = baseline * 1.15 < (lower + 0.4)
-          ? (lower + 0.4)
-          : baseline * 1.15;
-      return (lower, _roundBandValue(upper * multiplier));
-    }
-
-    final lower = _roundBandValue(
-      ((baseline * 0.55) < 0.4 ? 0.4 : baseline * 0.55) * multiplier,
-    );
-    final upper = baseline < (lower + 0.3) ? (lower + 0.3) : baseline;
-    return (lower, _roundBandValue(upper * multiplier));
   }
 
   static (double, double) _windBandForDifficulty(String difficulty) {
@@ -4420,11 +5855,4 @@ class DemoSeed {
   }
 
   static double _roundBandValue(double value) => (value * 10).round() / 10;
-
-  static double _regionalEstimateMultiplier(SpotModel spot) {
-    if (spot.country == 'Thailand') {
-      return 0.65;
-    }
-    return 1.0;
-  }
 }

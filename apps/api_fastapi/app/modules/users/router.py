@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+import re
 
 from app.core.store import store
 
@@ -19,6 +20,7 @@ class UpdateProfileRequest(BaseModel):
     handle: str
     bio: str
     surf_skill: str
+    home_region: str
     avatar_url: str | None = None
 
 
@@ -32,6 +34,7 @@ def update_me(payload: UpdateProfileRequest):
     display_name = payload.display_name.strip()
     handle = payload.handle.strip().lower().replace(" ", "")
     bio = payload.bio.strip()
+    home_region = payload.home_region.strip()
 
     if not display_name:
         raise HTTPException(status_code=400, detail="Display name is required")
@@ -41,16 +44,28 @@ def update_me(payload: UpdateProfileRequest):
         handle = handle[1:]
     if len(handle) < 2:
         raise HTTPException(status_code=400, detail="Handle is too short")
+    if len(handle) > 20:
+        raise HTTPException(status_code=400, detail="Handle is too long")
+    if not re.fullmatch(r"[a-z0-9_]+", handle):
+        raise HTTPException(
+            status_code=400,
+            detail="Handle can only use letters, numbers, and underscores",
+        )
+    if store.handle_exists(handle):
+        raise HTTPException(status_code=400, detail="That @tag is already taken")
     if len(bio) > 180:
         raise HTTPException(status_code=400, detail="Bio is too long")
-    if payload.surf_skill not in {"beginner", "intermediate", "pro"}:
+    if payload.surf_skill not in {"", "beginner", "intermediate", "pro"}:
         raise HTTPException(status_code=400, detail="Surf skill is invalid")
+    if len(home_region) > 40:
+        raise HTTPException(status_code=400, detail="Location is too long")
 
     return store.update_profile(
         display_name=display_name,
         handle=handle,
         bio=bio,
         surf_skill=payload.surf_skill,
+        home_region=home_region,
         avatar_url=payload.avatar_url,
     )
 

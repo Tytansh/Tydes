@@ -27,7 +27,7 @@ class TideCheckProvider:
         self._station_cache: dict[str, _CacheItem] = {}
         self._tide_cache: dict[str, _CacheItem] = {}
 
-    def fetch_spot_tides(self, spot: Spot, start_day: date, days: int = 2) -> TideForecast:
+    def fetch_spot_tides(self, spot: Spot, start_day: date, days: int = 3) -> TideForecast:
         if not self._api_key:
             return TideForecast(
                 spot_id=spot.id,
@@ -58,18 +58,25 @@ class TideCheckProvider:
             status_code = error.response.status_code
             if status_code == 429:
                 internal_note = "TideCheck daily limit reached."
+                user_note = (
+                    "TideCheck daily rate limit exceeded. Live tides will work "
+                    "again when the plan resets or the TideCheck plan is upgraded."
+                )
             elif status_code == 401:
                 internal_note = "TideCheck API key is invalid."
+                user_note = "TideCheck API key is invalid."
             elif status_code == 403:
                 internal_note = "TideCheck plan does not allow this request."
+                user_note = "TideCheck plan does not allow this tide request."
             else:
                 internal_note = f"TideCheck returned HTTP {status_code}."
+                user_note = "TideCheck is unavailable right now."
             print(f"Tide data unavailable for {spot.id}: {internal_note}")
             forecast = TideForecast(
                 spot_id=spot.id,
                 available=False,
                 source="tidecheck",
-                note="Tide data is unavailable right now.",
+                note=user_note,
             )
         except Exception as error:
             print(f"Tide data unavailable for {spot.id}: {error}")
@@ -131,7 +138,7 @@ class TideCheckProvider:
             station_name=station_payload.get("name") or station.get("name"),
             station_distance_km=_as_float(station.get("distanceKm")),
             source="tidecheck",
-            events=events[:8],
+            events=events[:16],
             note=(
                 "Tide times are estimates for surf planning, not navigation."
                 if events

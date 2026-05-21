@@ -9,24 +9,44 @@ import '../spots/spot_picker.dart';
 const _tideOffsets = <int>[-3, -2, -1, 0, 1, 2, 3];
 
 class CreateAlertSheet extends ConsumerStatefulWidget {
-  const CreateAlertSheet({super.key, required this.spots});
+  const CreateAlertSheet({super.key, required this.spots, this.alert});
 
   final List<SpotModel> spots;
+  final AlertModel? alert;
 
   @override
   ConsumerState<CreateAlertSheet> createState() => _CreateAlertSheetState();
 }
 
 class _CreateAlertSheetState extends ConsumerState<CreateAlertSheet> {
-  late String _spotId = widget.spots.first.id;
-  bool _waveEnabled = true;
-  double _minWaveHeightM = 1.2;
-  bool _windEnabled = true;
-  double _maxWindKts = 14;
-  bool _tideEnabled = false;
-  String _tideType = 'high';
-  int _tideOffsetHours = 0;
+  late String _spotId;
+  late bool _waveEnabled;
+  late double _minWaveHeightM;
+  late bool _windEnabled;
+  late double _maxWindKts;
+  late bool _tideEnabled;
+  late String _tideType;
+  late int _tideOffsetHours;
   bool _submitting = false;
+
+  bool get _editing => widget.alert != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final alert = widget.alert;
+    _spotId = alert?.spotId ?? widget.spots.first.id;
+    _waveEnabled = alert?.waveEnabled ?? true;
+    _minWaveHeightM = (alert?.minWaveHeightM ?? 1.2).clamp(0.5, 3.0).toDouble();
+    _windEnabled = alert?.windEnabled ?? true;
+    _maxWindKts = (alert?.maxWindKts ?? 14)
+        .toDouble()
+        .clamp(6.0, 24.0)
+        .toDouble();
+    _tideEnabled = alert?.tideEnabled ?? false;
+    _tideType = alert?.tideType ?? 'high';
+    _tideOffsetHours = alert?.tideOffsetHours ?? 0;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,7 +66,7 @@ class _CreateAlertSheetState extends ConsumerState<CreateAlertSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Create alert',
+              _editing ? 'Edit alert' : 'Create alert',
               style: Theme.of(context).textTheme.headlineMedium,
             ),
             const SizedBox(height: 12),
@@ -161,7 +181,11 @@ class _CreateAlertSheetState extends ConsumerState<CreateAlertSheet> {
               width: double.infinity,
               child: FilledButton(
                 onPressed: _submitting ? null : _saveAlert,
-                child: Text(_submitting ? 'Creating...' : 'Save alert'),
+                child: Text(
+                  _submitting
+                      ? (_editing ? 'Saving...' : 'Creating...')
+                      : (_editing ? 'Save changes' : 'Save alert'),
+                ),
               ),
             ),
           ],
@@ -174,23 +198,45 @@ class _CreateAlertSheetState extends ConsumerState<CreateAlertSheet> {
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _submitting = true);
-    final alert = await ref.read(surfRepositoryProvider).createAlert(
-          spotId: _spotId,
-          waveEnabled: _waveEnabled,
-          minWaveHeightM: _waveEnabled ? _minWaveHeightM : null,
-          windEnabled: _windEnabled,
-          maxWindKts: _windEnabled ? _maxWindKts.round() : null,
-          tideEnabled: _tideEnabled,
-          tideType: _tideEnabled ? _tideType : null,
-          tideOffsetHours: _tideEnabled ? _tideOffsetHours : null,
-        );
+    final existing = widget.alert;
+    final alert = existing == null
+        ? await ref
+              .read(surfRepositoryProvider)
+              .createAlert(
+                spotId: _spotId,
+                waveEnabled: _waveEnabled,
+                minWaveHeightM: _waveEnabled ? _minWaveHeightM : null,
+                windEnabled: _windEnabled,
+                maxWindKts: _windEnabled ? _maxWindKts.round() : null,
+                tideEnabled: _tideEnabled,
+                tideType: _tideEnabled ? _tideType : null,
+                tideOffsetHours: _tideEnabled ? _tideOffsetHours : null,
+              )
+        : await ref
+              .read(surfRepositoryProvider)
+              .updateAlert(
+                alertId: existing.id,
+                spotId: _spotId,
+                waveEnabled: _waveEnabled,
+                minWaveHeightM: _waveEnabled ? _minWaveHeightM : null,
+                windEnabled: _windEnabled,
+                maxWindKts: _windEnabled ? _maxWindKts.round() : null,
+                tideEnabled: _tideEnabled,
+                tideType: _tideEnabled ? _tideType : null,
+                tideOffsetHours: _tideEnabled ? _tideOffsetHours : null,
+                enabled: existing.enabled,
+              );
     ref.read(alertsRefreshKeyProvider.notifier).state++;
     await ref.read(alertMonitorProvider).checkNow();
     if (!mounted) return;
     if (alert.status == 'triggered') {
       messenger.showSnackBar(
-        const SnackBar(
-          content: Text('Alert is live now. Notification check sent.'),
+        SnackBar(
+          content: Text(
+            _editing
+                ? 'Alert updated and live now.'
+                : 'Alert is live now. Notification check sent.',
+          ),
         ),
       );
     }
@@ -227,19 +273,13 @@ class _AlertRuleCard extends StatelessWidget {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
-                Switch(
-                  value: enabled,
-                  onChanged: onChanged,
-                ),
+                Switch(value: enabled, onChanged: onChanged),
               ],
             ),
             const SizedBox(height: 8),
             Opacity(
               opacity: enabled ? 1 : 0.45,
-              child: IgnorePointer(
-                ignoring: !enabled,
-                child: child,
-              ),
+              child: IgnorePointer(ignoring: !enabled, child: child),
             ),
           ],
         ),

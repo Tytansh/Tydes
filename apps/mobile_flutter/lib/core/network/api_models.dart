@@ -10,6 +10,7 @@ class UserProfile {
     required this.homeRegion,
     required this.locale,
     required this.premium,
+    this.emailVerified = false,
     required this.freeLiveSpotId,
     required this.adsEnabled,
     required this.favoriteSpotIds,
@@ -25,6 +26,7 @@ class UserProfile {
   final String homeRegion;
   final String locale;
   final bool premium;
+  final bool emailVerified;
   final String? freeLiveSpotId;
   final bool adsEnabled;
   final List<String> favoriteSpotIds;
@@ -44,6 +46,7 @@ class UserProfile {
     String? homeRegion,
     String? locale,
     bool? premium,
+    bool? emailVerified,
     String? freeLiveSpotId,
     bool clearFreeLiveSpotId = false,
     bool? adsEnabled,
@@ -59,6 +62,7 @@ class UserProfile {
     homeRegion: homeRegion ?? this.homeRegion,
     locale: locale ?? this.locale,
     premium: premium ?? this.premium,
+    emailVerified: emailVerified ?? this.emailVerified,
     freeLiveSpotId: clearFreeLiveSpotId
         ? null
         : (freeLiveSpotId ?? this.freeLiveSpotId),
@@ -70,15 +74,15 @@ class UserProfile {
     id: json['id'] as String,
     email: json['email'] as String,
     displayName: json['display_name'] as String,
-    handle: json['handle'] as String? ?? (json['email'] as String).split('@').first,
-    bio:
-        json['bio'] as String? ??
-        'Looking for clean waves, easy travel days, and people to paddle out with.',
-    surfSkill: json['surf_skill'] as String? ?? 'intermediate',
+    handle:
+        json['handle'] as String? ?? (json['email'] as String).split('@').first,
+    bio: json['bio'] as String? ?? '',
+    surfSkill: json['surf_skill'] as String? ?? '',
     avatarUrl: json['avatar_url'] as String?,
     homeRegion: json['home_region'] as String,
     locale: json['locale'] as String,
     premium: json['premium'] as bool? ?? false,
+    emailVerified: json['email_verified'] as bool? ?? false,
     freeLiveSpotId: json['free_live_spot_id'] as String?,
     adsEnabled: json['ads_enabled'] as bool? ?? true,
     favoriteSpotIds: List<String>.from(
@@ -118,6 +122,8 @@ class SpotModel {
   final String imageUrl;
   final String summary;
 
+  String get waveLevel => waveLevelForHeight(waveHeightM);
+
   factory SpotModel.fromJson(Map<String, dynamic> json) => SpotModel(
     id: json['id'] as String,
     name: json['name'] as String,
@@ -133,6 +139,13 @@ class SpotModel {
     imageUrl: json['image_url'] as String,
     summary: json['summary'] as String,
   );
+}
+
+String waveLevelForHeight(double waveHeightM) {
+  final roundedWaveHeightM = double.parse(waveHeightM.toStringAsFixed(1));
+  if (roundedWaveHeightM <= 1.4) return 'beginner';
+  if (roundedWaveHeightM < 2.0) return 'intermediate';
+  return 'advanced';
 }
 
 class ForecastModel {
@@ -176,14 +189,43 @@ class ForecastModel {
 
   bool get isLive => confidence == 'live';
 
+  double? get representativeWaveHeightM {
+    if (waveHeightM != null) return waveHeightM;
+    if (waveHeightMinM != null && waveHeightMaxM != null) {
+      return (waveHeightMinM! + waveHeightMaxM!) / 2;
+    }
+    return waveHeightMaxM ?? waveHeightMinM;
+  }
+
+  String? get waveLevel {
+    final waveHeightM = representativeWaveHeightM;
+    if (waveHeightM == null) return null;
+    return waveLevelForHeight(waveHeightM);
+  }
+
   String get waveDisplay {
     if (waveHeightMinM != null && waveHeightMaxM != null) {
       return '${_formatDecimal(waveHeightMinM!)}-${_formatDecimal(waveHeightMaxM!)}m';
     }
     if (waveHeightM != null) {
+      if (!isLive) {
+        final min = source == 'open-meteo'
+            ? (waveHeightM! - 0.1).clamp(0.0, double.infinity)
+            : waveHeightM!;
+        final max = source == 'open-meteo'
+            ? waveHeightM! + 0.1
+            : waveHeightM! + 0.2;
+        return '${_formatDecimal(min)}-${_formatDecimal(max)}m';
+      }
       return '${_formatDecimal(waveHeightM!)}m';
     }
     return 'Unavailable';
+  }
+
+  String get waveSummaryDisplay {
+    final waveHeightM = representativeWaveHeightM;
+    if (waveHeightM == null) return 'Unavailable';
+    return '${_formatDecimal(waveHeightM)}m';
   }
 
   String? get windDisplay {
@@ -290,6 +332,84 @@ class TideEventModel {
     localDate: json['local_date'] as String,
     heightM: (json['height_m'] as num?)?.toDouble(),
   );
+}
+
+class SurfWindowModel {
+  SurfWindowModel({
+    required this.spotId,
+    required this.available,
+    required this.day,
+    required this.bestStartLabel,
+    required this.bestEndLabel,
+    required this.rating,
+    required this.summary,
+    required this.hours,
+    required this.source,
+    required this.confidence,
+    required this.note,
+  });
+
+  final String spotId;
+  final bool available;
+  final String? day;
+  final String? bestStartLabel;
+  final String? bestEndLabel;
+  final String rating;
+  final String? summary;
+  final List<SurfWindowHourModel> hours;
+  final String source;
+  final String confidence;
+  final String? note;
+
+  bool get isLive => confidence == 'live';
+
+  factory SurfWindowModel.fromJson(Map<String, dynamic> json) =>
+      SurfWindowModel(
+        spotId: json['spot_id'] as String,
+        available: json['available'] as bool? ?? false,
+        day: json['day'] as String?,
+        bestStartLabel: json['best_start_label'] as String?,
+        bestEndLabel: json['best_end_label'] as String?,
+        rating: json['rating'] as String? ?? 'poor',
+        summary: json['summary'] as String?,
+        hours: (json['hours'] as List<dynamic>? ?? const [])
+            .map(
+              (item) =>
+                  SurfWindowHourModel.fromJson(item as Map<String, dynamic>),
+            )
+            .toList(),
+        source: json['source'] as String? ?? 'open-meteo',
+        confidence: json['confidence'] as String? ?? 'estimated',
+        note: json['note'] as String?,
+      );
+}
+
+class SurfWindowHourModel {
+  SurfWindowHourModel({
+    required this.time,
+    required this.label,
+    required this.waveHeightM,
+    required this.periodS,
+    required this.windKts,
+    required this.score,
+  });
+
+  final String time;
+  final String label;
+  final double waveHeightM;
+  final int periodS;
+  final double windKts;
+  final double score;
+
+  factory SurfWindowHourModel.fromJson(Map<String, dynamic> json) =>
+      SurfWindowHourModel(
+        time: json['time'] as String,
+        label: json['label'] as String,
+        waveHeightM: (json['wave_height_m'] as num).toDouble(),
+        periodS: json['period_s'] as int,
+        windKts: (json['wind_kts'] as num).toDouble(),
+        score: (json['score'] as num).toDouble(),
+      );
 }
 
 String _formatDecimal(double value) {
@@ -425,6 +545,7 @@ class SocialPostModel {
     required this.body,
     required this.media,
     required this.meetupDate,
+    this.meetupEndDate,
     required this.createdAt,
   });
 
@@ -440,6 +561,7 @@ class SocialPostModel {
   final String body;
   final List<SocialMediaAttachmentModel> media;
   final String? meetupDate;
+  final String? meetupEndDate;
   final String createdAt;
 
   factory SocialPostModel.fromJson(
@@ -462,6 +584,7 @@ class SocialPostModel {
         )
         .toList(),
     meetupDate: json['meetup_date'] as String?,
+    meetupEndDate: json['meetup_end_date'] as String?,
     createdAt: json['created_at'] as String,
   );
 }
@@ -504,6 +627,105 @@ class SocialMediaAttachmentModel {
         width: json['width'] as int?,
         height: json['height'] as int?,
         altText: json['alt_text'] as String?,
+      );
+}
+
+class SocialCommentModel {
+  SocialCommentModel({
+    required this.id,
+    required this.postId,
+    required this.userId,
+    required this.authorName,
+    required this.authorHandle,
+    required this.authorAvatarUrl,
+    required this.authorPremium,
+    required this.text,
+    required this.replyToCommentId,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String postId;
+  final String userId;
+  final String authorName;
+  final String? authorHandle;
+  final String? authorAvatarUrl;
+  final bool authorPremium;
+  final String text;
+  final String? replyToCommentId;
+  final String createdAt;
+
+  factory SocialCommentModel.fromJson(Map<String, dynamic> json) =>
+      SocialCommentModel(
+        id: json['id'] as String,
+        postId: json['post_id'] as String,
+        userId: json['user_id'] as String,
+        authorName: json['author_name'] as String,
+        authorHandle: json['author_handle'] as String?,
+        authorAvatarUrl: json['author_avatar_url'] as String?,
+        authorPremium: json['author_premium'] as bool? ?? false,
+        text: json['text'] as String,
+        replyToCommentId: json['reply_to_comment_id'] as String?,
+        createdAt: json['created_at'] as String,
+      );
+}
+
+class SocialEngagementModel {
+  SocialEngagementModel({
+    required this.likedPostIds,
+    required this.repostedPostIds,
+    required this.reposts,
+    required this.likedCommentIds,
+    required this.rsvpPostIds,
+    required this.comments,
+  });
+
+  final Set<String> likedPostIds;
+  final List<String> repostedPostIds;
+  final List<SocialRepostModel> reposts;
+  final Set<String> likedCommentIds;
+  final Set<String> rsvpPostIds;
+  final List<SocialCommentModel> comments;
+
+  factory SocialEngagementModel.fromJson(Map<String, dynamic> json) =>
+      SocialEngagementModel(
+        likedPostIds: Set<String>.from(
+          json['liked_post_ids'] as List<dynamic>? ?? const [],
+        ),
+        repostedPostIds: List<String>.from(
+          json['reposted_post_ids'] as List<dynamic>? ?? const [],
+        ),
+        reposts: (json['reposts'] as List<dynamic>? ?? const [])
+            .map(
+              (item) =>
+                  SocialRepostModel.fromJson(item as Map<String, dynamic>),
+            )
+            .toList(),
+        likedCommentIds: Set<String>.from(
+          json['liked_comment_ids'] as List<dynamic>? ?? const [],
+        ),
+        rsvpPostIds: Set<String>.from(
+          json['rsvp_post_ids'] as List<dynamic>? ?? const [],
+        ),
+        comments: (json['comments'] as List<dynamic>? ?? const [])
+            .map(
+              (item) =>
+                  SocialCommentModel.fromJson(item as Map<String, dynamic>),
+            )
+            .toList(),
+      );
+}
+
+class SocialRepostModel {
+  SocialRepostModel({required this.postId, required this.createdAt});
+
+  final String postId;
+  final String createdAt;
+
+  factory SocialRepostModel.fromJson(Map<String, dynamic> json) =>
+      SocialRepostModel(
+        postId: json['post_id'] as String,
+        createdAt: json['created_at'] as String,
       );
 }
 

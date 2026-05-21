@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: tydes-api
+    runtime: python
+    rootDir: apps/api_fastapi
+    region: oregon
+    plan: starter
+    buildCommand: 'pip install -r requirements.txt'
+    startCommand: 'uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers'
+    healthCheckPath: /health
+    domains:
+      - api.tydes.io
+    disk:
+      name: tydes-api-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5
+      - key: APP_NAME
+        value: Tydes
+      - key: AUTH_EMAIL_FROM
+        value: 'Tydes <verify@send.tydes.io>'
+      - key: PUBLIC_BACKEND_URL
+        value: 'https://api.tydes.io'
+      - key: ALLOWED_ORIGINS
+        value: 'https://tydes.io,https://www.tydes.io,http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:8080'
+      - key: TYDES_DATA_DIR
+        value: /var/data
+      - key: RESEND_API_KEY
+        sync: false
+      - key: TIDECHECK_API_KEY
+        sync: false

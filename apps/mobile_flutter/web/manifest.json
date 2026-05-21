@@ -1,11 +1,11 @@
 {
-    "name": "mobile_flutter",
-    "short_name": "mobile_flutter",
+    "name": "Tydes",
+    "short_name": "Tydes",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#F8F7F2",
+    "theme_color": "#079CA3",
+    "description": "Live surf forecasts, tide-aware alerts, and travel planning for surfers.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

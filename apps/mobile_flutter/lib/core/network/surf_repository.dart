@@ -8,13 +8,26 @@ import 'demo_persistence.dart';
 import 'demo_seed.dart';
 
 final dioProvider = Provider<Dio>((ref) {
-  return Dio(
+  final persistence = ref.watch(demoPersistenceProvider);
+  final dio = Dio(
     BaseOptions(
       baseUrl: ApiConfig.baseUrl,
       connectTimeout: const Duration(seconds: 6),
       receiveTimeout: const Duration(seconds: 18),
     ),
   );
+  dio.interceptors.add(
+    InterceptorsWrapper(
+      onRequest: (options, handler) async {
+        final token = await persistence.loadAccessToken();
+        if (token != null) {
+          options.headers['Authorization'] = 'Bearer $token';
+        }
+        handler.next(options);
+      },
+    ),
+  );
+  return dio;
 });
 
 final surfRepositoryProvider = Provider<SurfRepository>((ref) {
@@ -36,31 +49,202 @@ final favoriteSpotIdsProvider =
 final alertsRefreshKeyProvider = StateProvider<int>((ref) => 0);
 final socialRefreshKeyProvider = StateProvider<int>((ref) => 0);
 
+enum ForecastFreshness {
+  fresh('fresh'),
+  preview('preview');
+
+  const ForecastFreshness(this.apiValue);
+
+  final String apiValue;
+}
+
+class SignupResult {
+  const SignupResult({
+    required this.user,
+    required this.verificationRequired,
+    required this.verificationSentTo,
+    required this.verificationHint,
+  });
+
+  final UserProfile user;
+  final bool verificationRequired;
+  final String? verificationSentTo;
+  final String? verificationHint;
+}
+
 class SurfRepository {
   SurfRepository(this._dio, this._demoPersistence);
 
   final Dio _dio;
   final DemoPersistence _demoPersistence;
 
-  Future<UserProfile> login(String email, String locale) async {
+  Future<UserProfile> login(
+    String email,
+    String locale, {
+    String? password,
+  }) async {
     try {
+      final payload = {'email': email, 'locale': locale};
+      if (password != null) {
+        payload['password'] = password;
+      }
       final response = await _dio.post<Map<String, dynamic>>(
         '/auth/login',
-        data: {'email': email, 'locale': locale},
+        data: payload,
       );
-      return UserProfile.fromJson(
-        response.data!['user'] as Map<String, dynamic>,
+      final data = response.data!;
+      final token = data['access_token'] as String?;
+      if (token != null) {
+        await _demoPersistence.saveAccessToken(token);
+      }
+      final profile = UserProfile.fromJson(
+        data['user'] as Map<String, dynamic>,
       );
-    } catch (_) {
+      DemoSeed.me = profile;
+      return profile;
+    } on DioException catch (error) {
+      final detail = error.response?.data;
+      if (detail is Map<String, dynamic> && detail['detail'] is String) {
+        throw StateError(detail['detail'] as String);
+      }
+      DemoSeed.me = DemoSeed.me.copyWith(email: email, emailVerified: true);
       return DemoSeed.me;
+    } catch (_) {
+      DemoSeed.me = DemoSeed.me.copyWith(email: email, emailVerified: true);
+      return DemoSeed.me;
+    }
+  }
+
+  Future<SignupResult> signup({
+    required String email,
+    required String password,
+    required String locale,
+  }) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/auth/signup',
+        data: {'email': email, 'password': password, 'locale': locale},
+      );
+      final data = response.data!;
+      final session = data['session'] as Map<String, dynamic>;
+      final profile = UserProfile.fromJson(
+        session['user'] as Map<String, dynamic>,
+      );
+      final token = session['access_token'] as String?;
+      if (token != null) {
+        await _demoPersistence.saveAccessToken(token);
+      }
+      DemoSeed.me = profile;
+      return SignupResult(
+        user: profile,
+        verificationRequired: data['verification_required'] as bool? ?? false,
+        verificationSentTo: data['verification_sent_to'] as String?,
+        verificationHint: data['verification_hint'] as String?,
+      );
+    } on DioException catch (error) {
+      final detail = error.response?.data;
+      if (detail is Map<String, dynamic> && detail['detail'] is String) {
+        throw StateError(detail['detail'] as String);
+      }
+      throw StateError('Could not create account right now.');
+    } catch (_) {
+      DemoSeed.me = DemoSeed.me.copyWith(email: email, emailVerified: true);
+      return SignupResult(
+        user: DemoSeed.me,
+        verificationRequired: false,
+        verificationSentTo: email,
+        verificationHint: null,
+      );
+    }
+  }
+
+  Future<UserProfile> verifyEmail({
+    required String email,
+    required String code,
+  }) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/auth/verify-email',
+        data: {'email': email, 'code': code},
+      );
+      final profile = UserProfile.fromJson(response.data!);
+      DemoSeed.me = profile;
+      return profile;
+    } on DioException catch (error) {
+      final detail = error.response?.data;
+      if (detail is Map<String, dynamic> && detail['detail'] is String) {
+        throw StateError(detail['detail'] as String);
+      }
+      throw StateError('Could not verify that code right now.');
+    } catch (_) {
+      DemoSeed.me = DemoSeed.me.copyWith(emailVerified: true);
+      return DemoSeed.me;
+    }
+  }
+
+  Future<String?> requestPasswordReset({required String email}) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/auth/password-reset/request',
+        data: {'email': email},
+      );
+      return response.data!['reset_hint'] as String?;
+    } on DioException catch (error) {
+      final detail = error.response?.data;
+      if (detail is Map<String, dynamic> && detail['detail'] is String) {
+        throw StateError(detail['detail'] as String);
+      }
+      throw StateError('Could not send password reset email right now.');
+    }
+  }
+
+  Future<UserProfile> confirmPasswordReset({
+    required String email,
+    required String code,
+    required String password,
+  }) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/auth/password-reset/confirm',
+        data: {'email': email, 'code': code, 'password': password},
+      );
+      final data = response.data!;
+      final token = data['access_token'] as String?;
+      if (token != null) {
+        await _demoPersistence.saveAccessToken(token);
+      }
+      final profile = UserProfile.fromJson(
+        data['user'] as Map<String, dynamic>,
+      );
+      DemoSeed.me = profile;
+      return profile;
+    } on DioException catch (error) {
+      final detail = error.response?.data;
+      if (detail is Map<String, dynamic> && detail['detail'] is String) {
+        throw StateError(detail['detail'] as String);
+      }
+      throw StateError('Could not reset password right now.');
     }
   }
 
   Future<UserProfile> logout() async {
     try {
       final response = await _dio.post<Map<String, dynamic>>('/auth/logout');
+      await _demoPersistence.clearAccessToken();
       return UserProfile.fromJson(response.data!);
     } catch (_) {
+      await _demoPersistence.clearAccessToken();
+      return DemoSeed.me;
+    }
+  }
+
+  Future<UserProfile> deleteAccount() async {
+    try {
+      final response = await _dio.delete<Map<String, dynamic>>('/auth/account');
+      await _demoPersistence.clearAccessToken();
+      return UserProfile.fromJson(response.data!);
+    } catch (_) {
+      await _demoPersistence.clearAccessToken();
       return DemoSeed.me;
     }
   }
@@ -68,8 +252,18 @@ class SurfRepository {
   Future<UserProfile> fetchMe() async {
     try {
       final response = await _dio.get<Map<String, dynamic>>('/users/me');
-      return UserProfile.fromJson(response.data!);
+      final profile = UserProfile.fromJson(response.data!);
+      DemoSeed.me = profile;
+      await _demoPersistence.saveFavoriteSpotIds(profile.favoriteSpotIds);
+      return profile;
     } catch (_) {
+      final persistedFavoriteSpotIds = await _demoPersistence
+          .loadFavoriteSpotIds();
+      if (persistedFavoriteSpotIds.isNotEmpty) {
+        DemoSeed.me = DemoSeed.me.copyWith(
+          favoriteSpotIds: persistedFavoriteSpotIds,
+        );
+      }
       return DemoSeed.me;
     }
   }
@@ -79,6 +273,7 @@ class SurfRepository {
     required String handle,
     required String bio,
     required String surfSkill,
+    required String homeRegion,
     String? avatarUrl,
   }) async {
     try {
@@ -89,6 +284,7 @@ class SurfRepository {
           'handle': handle,
           'bio': bio,
           'surf_skill': surfSkill,
+          'home_region': homeRegion,
           'avatar_url': avatarUrl,
         },
       );
@@ -107,6 +303,7 @@ class SurfRepository {
         handle: handle,
         bio: bio,
         surfSkill: surfSkill,
+        homeRegion: homeRegion,
         avatarUrl: avatarUrl,
       );
       return DemoSeed.me;
@@ -168,11 +365,20 @@ class SurfRepository {
     }
   }
 
-  Future<List<ForecastModel>> fetchForecasts([String? spotId]) async {
+  Future<List<ForecastModel>> fetchForecasts({
+    String? spotId,
+    ForecastFreshness freshness = ForecastFreshness.fresh,
+  }) async {
     try {
+      final queryParameters = <String, dynamic>{
+        'freshness': freshness.apiValue,
+      };
+      if (spotId != null) {
+        queryParameters['spot_id'] = spotId;
+      }
       final response = await _dio.get<List<dynamic>>(
         '/forecasts',
-        queryParameters: spotId == null ? null : {'spot_id': spotId},
+        queryParameters: queryParameters,
       );
       return response.data!
           .map((item) => ForecastModel.fromJson(item as Map<String, dynamic>))
@@ -193,6 +399,30 @@ class SurfRepository {
       return TideForecastModel.fromJson(response.data!);
     } catch (_) {
       return TideForecastModel.unavailable(spotId);
+    }
+  }
+
+  Future<SurfWindowModel> fetchSurfWindow(String spotId) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/forecasts/surf-window',
+        queryParameters: {'spot_id': spotId},
+      );
+      return SurfWindowModel.fromJson(response.data!);
+    } catch (_) {
+      return SurfWindowModel(
+        spotId: spotId,
+        available: false,
+        day: null,
+        bestStartLabel: null,
+        bestEndLabel: null,
+        rating: 'poor',
+        summary: null,
+        hours: const [],
+        source: 'unavailable',
+        confidence: 'estimated',
+        note: 'Best Time Today is unavailable right now.',
+      );
     }
   }
 
@@ -324,6 +554,65 @@ class SurfRepository {
     }
   }
 
+  Future<AlertModel> updateAlert({
+    required String alertId,
+    required String spotId,
+    required bool waveEnabled,
+    double? minWaveHeightM,
+    required bool windEnabled,
+    int? maxWindKts,
+    required bool tideEnabled,
+    String? tideType,
+    int? tideOffsetHours,
+    required bool enabled,
+  }) async {
+    try {
+      final response = await _dio.patch<Map<String, dynamic>>(
+        '/alerts/$alertId',
+        data: {
+          'spot_id': spotId,
+          'wave_enabled': waveEnabled,
+          'min_wave_height_m': minWaveHeightM,
+          'wind_enabled': windEnabled,
+          'max_wind_kts': maxWindKts,
+          'tide_enabled': tideEnabled,
+          'tide_type': tideType,
+          'tide_offset_hours': tideOffsetHours,
+          'enabled': enabled,
+        },
+      );
+      final updated = AlertModel.fromJson(response.data!);
+      final index = DemoSeed.alerts.indexWhere((item) => item.id == alertId);
+      if (index != -1) {
+        DemoSeed.alerts[index] = updated;
+      }
+      await _demoPersistence.saveAlerts(DemoSeed.alerts);
+      return updated;
+    } catch (_) {
+      final index = DemoSeed.alerts.indexWhere((item) => item.id == alertId);
+      if (index == -1) {
+        throw StateError('Alert not found');
+      }
+      final existing = DemoSeed.alerts[index];
+      final updated = AlertModel(
+        id: existing.id,
+        spotId: spotId,
+        waveEnabled: waveEnabled,
+        minWaveHeightM: minWaveHeightM,
+        windEnabled: windEnabled,
+        maxWindKts: maxWindKts,
+        tideEnabled: tideEnabled,
+        tideType: tideType,
+        tideOffsetHours: tideOffsetHours,
+        enabled: enabled,
+        nextCheckAt: existing.nextCheckAt,
+      );
+      DemoSeed.alerts[index] = updated;
+      await _demoPersistence.saveAlerts(DemoSeed.alerts);
+      return updated;
+    }
+  }
+
   Future<void> deleteAlert(String alertId) async {
     try {
       await _dio.delete<Map<String, dynamic>>('/alerts/$alertId');
@@ -377,9 +666,11 @@ class SurfRepository {
   Future<SocialPostModel> createSocialPost({
     required String body,
     String? spotId,
+    String postType = 'general',
     String visibility = 'public',
     List<SocialMediaAttachmentModel> media = const [],
     String? meetupDate,
+    String? meetupEndDate,
   }) async {
     try {
       final response = await _dio.post<Map<String, dynamic>>(
@@ -387,10 +678,11 @@ class SurfRepository {
         data: {
           'body': body,
           'spot_id': spotId,
-          'post_type': 'general',
+          'post_type': postType,
           'visibility': visibility,
           'media': media.map((item) => item.toJson()).toList(),
           'meetup_date': meetupDate,
+          'meetup_end_date': meetupEndDate,
         },
       );
       final post = SocialPostModel.fromJson(response.data!);
@@ -405,16 +697,106 @@ class SurfRepository {
         authorAvatarUrl: DemoSeed.me.avatarUrl,
         authorPremium: DemoSeed.me.premium,
         spotId: spotId,
-        postType: 'general',
+        postType: postType,
         visibility: visibility,
         body: body,
         media: media,
         meetupDate: meetupDate,
+        meetupEndDate: meetupEndDate,
         createdAt: DateTime.now().toUtc().toIso8601String(),
       );
       DemoSeed.posts.insert(0, post);
       return post;
     }
+  }
+
+  Future<SocialEngagementModel> fetchSocialEngagement() async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/social/engagement',
+      );
+      return SocialEngagementModel.fromJson(response.data!);
+    } catch (_) {
+      return SocialEngagementModel(
+        likedPostIds: const {},
+        repostedPostIds: const [],
+        reposts: const [],
+        likedCommentIds: const {},
+        rsvpPostIds: const {},
+        comments: const [],
+      );
+    }
+  }
+
+  Future<SocialEngagementModel> setPostLike({
+    required String postId,
+    required bool liked,
+  }) async {
+    final response = liked
+        ? await _dio.post<Map<String, dynamic>>('/social/posts/$postId/likes')
+        : await _dio.delete<Map<String, dynamic>>(
+            '/social/posts/$postId/likes',
+          );
+    return SocialEngagementModel.fromJson(response.data!);
+  }
+
+  Future<SocialEngagementModel> setPostRepost({
+    required String postId,
+    required bool reposted,
+  }) async {
+    final response = reposted
+        ? await _dio.post<Map<String, dynamic>>('/social/posts/$postId/reposts')
+        : await _dio.delete<Map<String, dynamic>>(
+            '/social/posts/$postId/reposts',
+          );
+    return SocialEngagementModel.fromJson(response.data!);
+  }
+
+  Future<SocialEngagementModel> setEventRsvp({
+    required String postId,
+    required bool joined,
+  }) async {
+    final response = joined
+        ? await _dio.post<Map<String, dynamic>>('/social/posts/$postId/rsvp')
+        : await _dio.delete<Map<String, dynamic>>('/social/posts/$postId/rsvp');
+    return SocialEngagementModel.fromJson(response.data!);
+  }
+
+  Future<SocialEngagementModel> createComment({
+    required String postId,
+    required String text,
+    String? replyToCommentId,
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/social/comments',
+      data: {
+        'post_id': postId,
+        'text': text,
+        'reply_to_comment_id': replyToCommentId,
+      },
+    );
+    return SocialEngagementModel.fromJson(response.data!);
+  }
+
+  Future<SocialEngagementModel> deleteComment(String commentId) async {
+    final response = await _dio.delete<Map<String, dynamic>>(
+      '/social/comments/$commentId',
+    );
+    return SocialEngagementModel.fromJson(response.data!);
+  }
+
+  Future<SocialEngagementModel> setCommentLike({
+    required String commentId,
+    required bool liked,
+  }) async {
+    final response = liked
+        ? await _dio.post<Map<String, dynamic>>(
+            '/social/comments/$commentId/likes',
+          )
+        : await _dio.delete<Map<String, dynamic>>(
+            '/social/comments/$commentId/likes',
+          );
+    return SocialEngagementModel.fromJson(response.data!);
   }
 
   Future<SocialMediaAttachmentModel> uploadPostPhoto({
@@ -483,14 +865,20 @@ class SurfRepository {
         '/users/favorites',
         data: {'spot_id': spotId},
       );
-      return List<String>.from(
+      final favoriteSpotIds = List<String>.from(
         response.data!['favorite_spot_ids'] as List<dynamic>,
       );
+      DemoSeed.me = DemoSeed.me.copyWith(favoriteSpotIds: favoriteSpotIds);
+      await _demoPersistence.saveFavoriteSpotIds(favoriteSpotIds);
+      return favoriteSpotIds;
     } catch (_) {
-      if (!DemoSeed.me.favoriteSpotIds.contains(spotId)) {
-        DemoSeed.me.favoriteSpotIds.add(spotId);
+      final favoriteSpotIds = [...DemoSeed.me.favoriteSpotIds];
+      if (!favoriteSpotIds.contains(spotId)) {
+        favoriteSpotIds.add(spotId);
       }
-      return DemoSeed.me.favoriteSpotIds;
+      DemoSeed.me = DemoSeed.me.copyWith(favoriteSpotIds: favoriteSpotIds);
+      await _demoPersistence.saveFavoriteSpotIds(favoriteSpotIds);
+      return favoriteSpotIds;
     }
   }
 
@@ -499,12 +887,20 @@ class SurfRepository {
       final response = await _dio.delete<Map<String, dynamic>>(
         '/users/favorites/$spotId',
       );
-      return List<String>.from(
+      final favoriteSpotIds = List<String>.from(
         response.data!['favorite_spot_ids'] as List<dynamic>,
       );
+      DemoSeed.me = DemoSeed.me.copyWith(favoriteSpotIds: favoriteSpotIds);
+      await _demoPersistence.saveFavoriteSpotIds(favoriteSpotIds);
+      return favoriteSpotIds;
     } catch (_) {
-      DemoSeed.me.favoriteSpotIds.remove(spotId);
-      return DemoSeed.me.favoriteSpotIds;
+      final favoriteSpotIds = [
+        for (final favoriteSpotId in DemoSeed.me.favoriteSpotIds)
+          if (favoriteSpotId != spotId) favoriteSpotId,
+      ];
+      DemoSeed.me = DemoSeed.me.copyWith(favoriteSpotIds: favoriteSpotIds);
+      await _demoPersistence.saveFavoriteSpotIds(favoriteSpotIds);
+      return favoriteSpotIds;
     }
   }
 }

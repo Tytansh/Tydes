@@ -11,11 +11,24 @@ const _favoriteAccent = Color(0xFF2AA7A1);
 final spotsProvider = FutureProvider(
   (ref) => ref.watch(surfRepositoryProvider).fetchSpots(),
 );
+
+final spotForecastsBySpotProvider =
+    FutureProvider.autoDispose<Map<String, ForecastModel>>((ref) async {
+      final forecasts = await ref
+          .watch(surfRepositoryProvider)
+          .fetchForecasts();
+      final firstForecastBySpot = <String, ForecastModel>{};
+      for (final forecast in forecasts) {
+        firstForecastBySpot.putIfAbsent(forecast.spotId, () => forecast);
+      }
+      return firstForecastBySpot;
+    });
+
 final spotCardForecastProvider = FutureProvider.autoDispose
     .family<ForecastModel?, String>((ref, spotId) async {
       final forecasts = await ref
           .watch(surfRepositoryProvider)
-          .fetchForecasts(spotId);
+          .fetchForecasts(spotId: spotId);
       if (forecasts.isEmpty) return null;
       return forecasts.first;
     });
@@ -83,7 +96,9 @@ class _SpotsPageState extends ConsumerState<SpotsPage> {
             final filteredItems = _searchQuery.isEmpty
                 ? items
                 : _sortSpots(
-                    items.where((spot) => _matchesSpot(spot, _searchQuery)).toList(),
+                    items
+                        .where((spot) => _matchesSpot(spot, _searchQuery))
+                        .toList(),
                   );
             final favoriteSpots = _sortSpots(
               items.where((spot) => favoriteSpotIds.contains(spot.id)).toList(),
@@ -237,10 +252,7 @@ class _SpotsSearchBar extends StatelessWidget {
         prefixIcon: const Icon(Icons.search),
         suffixIcon: controller.text.isEmpty
             ? null
-            : IconButton(
-                onPressed: onCleared,
-                icon: const Icon(Icons.close),
-              ),
+            : IconButton(onPressed: onCleared, icon: const Icon(Icons.close)),
         filled: true,
         fillColor: Colors.white,
         border: OutlineInputBorder(
@@ -265,7 +277,7 @@ class _SpotsHero extends StatelessWidget {
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF113D3B), Color(0xFF5AA89A)],
+          colors: [Color(0xFF064D63), Color(0xFF0AAFB3), Color(0xFFE9B872)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -607,7 +619,9 @@ class _BaliRegionSection extends StatelessWidget {
           tilePadding: const EdgeInsets.symmetric(horizontal: 16),
           childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
           title: const Text('Bali'),
-          subtitle: Text('${spots.length} breaks • ${orderedAreas.length} surf areas'),
+          subtitle: Text(
+            '${spots.length} breaks • ${orderedAreas.length} surf areas',
+          ),
           children: orderedAreas
               .map(
                 (area) => Padding(
@@ -722,9 +736,10 @@ class _SpotCard extends ConsumerWidget {
     final location = includeCountry
         ? '${spot.area}, ${spot.region}, ${spot.country}'
         : '${spot.area}, ${spot.region}';
-    final forecast = isPremium
-        ? ref.watch(spotCardForecastProvider(spot.id))
-        : const AsyncValue<ForecastModel?>.data(null);
+    final forecast = ref.watch(spotCardForecastProvider(spot.id));
+    final forecastTextStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      color: isPremium ? null : const Color(0xFF5D686B),
+    );
 
     return Card(
       margin: EdgeInsets.zero,
@@ -741,22 +756,17 @@ class _SpotCard extends ConsumerWidget {
         ),
         subtitle: Text('$location\n${spot.summary}'),
         isThreeLine: true,
-        trailing: isPremium
-            ? forecast.when(
-                data: (row) => row == null
-                    ? const SizedBox.shrink()
-                    : Text(
-                        row.waveDisplay,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                loading: () => const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                error: (_, _) => const SizedBox.shrink(),
-              )
-            : null,
+        trailing: forecast.when(
+          data: (row) => row == null
+              ? const SizedBox.shrink()
+              : Text(row.waveDisplay, style: forecastTextStyle),
+          loading: () => const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          error: (_, _) => const SizedBox.shrink(),
+        ),
         onTap: () => context.push('/spot/${spot.id}'),
       ),
     );

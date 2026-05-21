@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/router.dart';
 import '../../core/l10n/app_strings.dart';
+import '../social/social_profile.dart';
 
 class AppScaffold extends ConsumerWidget {
   const AppScaffold({super.key});
@@ -10,6 +11,7 @@ class AppScaffold extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tab = ref.watch(currentTabProvider);
+    ref.watch(socialRelationshipHydrationProvider);
     final strings = AppStrings.of(context);
 
     return Scaffold(

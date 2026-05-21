@@ -8,18 +8,18 @@ import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import 'spots_page.dart';
 
-const _mapMarkerBlue = Color(0xFF3E9FA3);
-const _mapMarkerBlueDark = Color(0xFF0B6E6E);
+const _difficultyBeginnerColor = Color(0xFF4BAF74);
+const _difficultyIntermediateColor = Color(0xFF2E8FE8);
+const _difficultyAdvancedColor = Color(0xFFD75A4A);
+const _mapMarkerColor = Color(0xFF2AA7A1);
+const _mapMarkerSelectedColor = Color(0xFF0B6E6E);
 const _favoriteAccent = Color(0xFF2AA7A1);
 const _allCountriesLabel = 'All Southeast Asia';
 const _allRegionsLabel = 'All regions';
 const _allAreasLabel = 'All areas';
 
 class SpotsMapPage extends ConsumerStatefulWidget {
-  const SpotsMapPage({
-    super.key,
-    this.initialSpotId,
-  });
+  const SpotsMapPage({super.key, this.initialSpotId});
 
   final String? initialSpotId;
 
@@ -90,10 +90,20 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
             );
           }
 
-          final visibleSpots = _visibleSpotsFor(sourceItems);
-          final selectedSpot = visibleSpots.where((spot) => spot.id == _selectedSpotId).isEmpty
+          const profileForecastBySpotId = <String, ForecastModel?>{};
+          final visibleSpots = _visibleSpotsFor(
+            sourceItems,
+            profileForecastBySpotId,
+          );
+          final displayedVisibleSpots = visibleSpots;
+          final selectedSpot =
+              displayedVisibleSpots
+                  .where((spot) => spot.id == _selectedSpotId)
+                  .isEmpty
               ? null
-              : visibleSpots.firstWhere((spot) => spot.id == _selectedSpotId);
+              : displayedVisibleSpots.firstWhere(
+                  (spot) => spot.id == _selectedSpotId,
+                );
 
           return ListView(
             padding: const EdgeInsets.only(bottom: 16),
@@ -125,16 +135,22 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                                   _selectedArea = _allAreasLabel;
                                   _selectedSpotId = null;
                                 });
-                                WidgetsBinding.instance.addPostFrameCallback((_) {
-                                  _showSpots(_visibleSpotsFor(value
-                                      ? items
-                                            .where(
-                                              (spot) => favoriteSpotIds.contains(
-                                                spot.id,
-                                              ),
-                                            )
-                                            .toList()
-                                      : items));
+                                WidgetsBinding.instance.addPostFrameCallback((
+                                  _,
+                                ) {
+                                  _showSpots(
+                                    _visibleSpotsFor(
+                                      value
+                                          ? items
+                                                .where(
+                                                  (spot) => favoriteSpotIds
+                                                      .contains(spot.id),
+                                                )
+                                                .toList()
+                                          : items,
+                                      profileForecastBySpotId,
+                                    ),
+                                  );
                                 });
                               },
                             ),
@@ -174,6 +190,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                     const SizedBox(height: 10),
                     _LocationPickerField(
                       sourceItems: sourceItems,
+                      forecastBySpotId: profileForecastBySpotId,
                       favoriteSpotIds: favoriteSpotIds,
                       selectedCountry: _selectedCountry,
                       selectedRegion: _selectedRegion,
@@ -187,7 +204,10 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                           _selectedSpotId = selection.spotId;
                         });
                         WidgetsBinding.instance.addPostFrameCallback((_) {
-                          final nextVisible = _visibleSpotsFor(sourceItems);
+                          final nextVisible = _visibleSpotsFor(
+                            sourceItems,
+                            profileForecastBySpotId,
+                          );
                           if (selection.spotId != null &&
                               nextVisible.any(
                                 (spot) => spot.id == selection.spotId,
@@ -203,16 +223,39 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                         });
                       },
                     ),
+                    if (_hasMapDrilldown) ...[
+                      const SizedBox(height: 10),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _stepBackOnMap(
+                            sourceItems,
+                            profileForecastBySpotId,
+                          ),
+                          icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                          label: Text(_mapBackLabel),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Theme.of(
+                              context,
+                            ).colorScheme.primary,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
-              if (visibleSpots.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 4, 16, 10),
+              if (displayedVisibleSpots.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
                   child: Card(
                     child: Padding(
-                      padding: EdgeInsets.all(18),
-                      child: Text(
+                      padding: const EdgeInsets.all(18),
+                      child: const Text(
                         'No spots match that search in this location. Try another break, another area, or clear the search.',
                       ),
                     ),
@@ -234,8 +277,8 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                       borderRadius: BorderRadius.circular(28),
                       child: _MapCanvas(
                         mapController: _mapController,
-                        spots: visibleSpots,
-                        initialCenter: _centerOf(visibleSpots),
+                        spots: displayedVisibleSpots,
+                        initialCenter: _centerOf(displayedVisibleSpots),
                         initialZoom:
                             _selectedCountry == _allCountriesLabel &&
                                 _selectedRegion == _allRegionsLabel &&
@@ -256,61 +299,14 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                 if (selectedSpot != null)
                   Padding(
                     padding: const EdgeInsets.all(16),
-                    child: Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 10,
-                              height: 56,
-                              decoration: BoxDecoration(
-                                color: _difficultyColor(selectedSpot.difficulty),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    selectedSpot.name,
-                                    style: Theme.of(context).textTheme.titleLarge,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${selectedSpot.area}, ${selectedSpot.region}, ${selectedSpot.country}',
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    '${selectedSpot.waveHeightM}m waves • ${selectedSpot.difficulty}',
-                                  ),
-                                ],
-                              ),
-                            ),
-                            IconButton(
-                              onPressed: () => ref
-                                  .read(favoriteSpotIdsProvider.notifier)
-                                  .toggle(selectedSpot.id),
-                              icon: Icon(
-                                favoriteSpotIds.contains(selectedSpot.id)
-                                    ? Icons.favorite
-                                    : Icons.favorite_border,
-                                color: favoriteSpotIds.contains(selectedSpot.id)
-                                    ? _favoriteAccent
-                                    : const Color(0xFF81949A),
-                              ),
-                            ),
-                            FilledButton(
-                              onPressed: () =>
-                                  context.push('/spot/${selectedSpot.id}'),
-                              child: const Text('Open'),
-                            ),
-                          ],
-                        ),
-                      ),
+                    child: _SelectedMapSpotCard(
+                      spot: selectedSpot,
+                      isFavorite: favoriteSpotIds.contains(selectedSpot.id),
+                      onFavoritePressed: () => ref
+                          .read(favoriteSpotIdsProvider.notifier)
+                          .toggle(selectedSpot.id),
+                      onOpenPressed: () =>
+                          context.push('/spot/${selectedSpot.id}'),
                     ),
                   )
                 else
@@ -327,7 +323,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                   ),
                 ..._buildResultList(
                   context: context,
-                  visibleSpots: visibleSpots,
+                  visibleSpots: displayedVisibleSpots,
                   favoriteSpotIds: favoriteSpotIds,
                   selectedSpot: selectedSpot,
                 ),
@@ -341,6 +337,19 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
     );
   }
 
+  bool get _hasMapDrilldown =>
+      _selectedSpotId != null ||
+      _selectedArea != _allAreasLabel ||
+      _selectedRegion != _allRegionsLabel ||
+      _selectedCountry != _allCountriesLabel;
+
+  String get _mapBackLabel {
+    if (_selectedSpotId != null) return 'Back to $_selectedArea';
+    if (_selectedArea != _allAreasLabel) return 'Back to $_selectedRegion';
+    if (_selectedRegion != _allRegionsLabel) return 'Back to $_selectedCountry';
+    return 'Back to full map';
+  }
+
   void _focusSpot(SpotModel spot, {double zoom = 9.2}) {
     _mapController.move(LatLng(spot.latitude, spot.longitude), zoom);
     setState(() {
@@ -349,6 +358,27 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
       _selectedCountry = spot.country;
       _selectedRegion = spot.region;
       _selectedArea = _locationAreaForSpot(spot);
+    });
+  }
+
+  void _stepBackOnMap(
+    List<SpotModel> sourceItems,
+    Map<String, ForecastModel?> forecastBySpotId,
+  ) {
+    setState(() {
+      if (_selectedSpotId != null) {
+        _selectedSpotId = null;
+      } else if (_selectedArea != _allAreasLabel) {
+        _selectedArea = _allAreasLabel;
+      } else if (_selectedRegion != _allRegionsLabel) {
+        _selectedRegion = _allRegionsLabel;
+      } else {
+        _selectedCountry = _allCountriesLabel;
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _showSpots(_visibleSpotsFor(sourceItems, forecastBySpotId));
     });
   }
 
@@ -369,12 +399,17 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
     });
   }
 
-  List<SpotModel> _visibleSpotsFor(List<SpotModel> items) {
+  List<SpotModel> _visibleSpotsFor(
+    List<SpotModel> items,
+    Map<String, ForecastModel?> forecastBySpotId,
+  ) {
     final countrySpots = filteredForCountry(items, _selectedCountry);
     final regionSpots = filteredForRegion(countrySpots, _selectedRegion);
     final areaSpots = filteredForArea(regionSpots, _selectedArea);
     if (_searchQuery.isEmpty) return areaSpots;
-    return areaSpots.where((spot) => _matchesSpot(spot, _searchQuery)).toList();
+    return areaSpots
+        .where((spot) => _matchesSpot(spot, _searchQuery, forecastBySpotId))
+        .toList();
   }
 
   List<SpotModel> filteredForCountry(List<SpotModel> items, String country) {
@@ -392,12 +427,19 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
     return items.where((spot) => _locationAreaForSpot(spot) == area).toList();
   }
 
-  bool _matchesSpot(SpotModel spot, String query) {
+  bool _matchesSpot(
+    SpotModel spot,
+    String query,
+    Map<String, ForecastModel?> forecastBySpotId,
+  ) {
     final q = query.toLowerCase();
     return spot.name.toLowerCase().contains(q) ||
         spot.area.toLowerCase().contains(q) ||
         spot.region.toLowerCase().contains(q) ||
-        spot.country.toLowerCase().contains(q);
+        spot.country.toLowerCase().contains(q) ||
+        _difficultyLabel(
+          _spotWaveLevel(spot, forecastBySpotId[spot.id]),
+        ).toLowerCase().contains(q);
   }
 
   LatLng _centerOf(List<SpotModel> spots) {
@@ -408,19 +450,6 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
         spots.map((spot) => spot.longitude).reduce((a, b) => a + b) /
         spots.length;
     return LatLng(lat, lng);
-  }
-
-  Color _difficultyColor(String difficulty) {
-    switch (difficulty) {
-      case 'beginner':
-        return const Color(0xFF4BAF74);
-      case 'intermediate':
-        return const Color(0xFFF1A24B);
-      case 'advanced':
-        return _mapMarkerBlue;
-      default:
-        return _mapMarkerBlueDark;
-    }
   }
 
   List<Widget> _buildResultList({
@@ -434,14 +463,13 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
       for (final spot in visibleSpots) {
         countries.putIfAbsent(spot.country, () => []).add(spot);
       }
-      final entries = countries.entries.toList()
-        ..sort(_compareGroupedEntries);
+      final entries = countries.entries.toList()..sort(_compareGroupedEntries);
       return entries
           .map(
             (entry) => _ResultGroupCard(
               title: entry.key,
               subtitle: _groupSubtitle(entry.value.length, 'break'),
-              children: _buildRegionGroups(
+              childrenBuilder: () => _buildRegionGroups(
                 context: context,
                 spots: entry.value,
                 favoriteSpotIds: favoriteSpotIds,
@@ -457,14 +485,13 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
       for (final spot in visibleSpots) {
         regions.putIfAbsent(spot.region, () => []).add(spot);
       }
-      final entries = regions.entries.toList()
-        ..sort(_compareGroupedEntries);
+      final entries = regions.entries.toList()..sort(_compareGroupedEntries);
       return entries
           .map(
             (entry) => _ResultGroupCard(
               title: entry.key,
               subtitle: _groupSubtitle(entry.value.length, 'break'),
-              children: _buildAreaGroups(
+              childrenBuilder: () => _buildAreaGroups(
                 context: context,
                 spots: entry.value,
                 favoriteSpotIds: favoriteSpotIds,
@@ -480,15 +507,14 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
       for (final spot in visibleSpots) {
         areas.putIfAbsent(_locationAreaForSpot(spot), () => []).add(spot);
       }
-      final entries = areas.entries.toList()
-        ..sort(_compareGroupedEntries);
+      final entries = areas.entries.toList()..sort(_compareGroupedEntries);
       if (entries.length > 1) {
         return entries
             .map(
               (entry) => _ResultGroupCard(
                 title: entry.key,
                 subtitle: _groupSubtitle(entry.value.length, 'break'),
-                children: _buildSpotTiles(
+                childrenBuilder: () => _buildSpotTiles(
                   context: context,
                   spots: entry.value,
                   favoriteSpotIds: favoriteSpotIds,
@@ -524,7 +550,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
           (entry) => _NestedResultGroupCard(
             title: entry.key,
             subtitle: _groupSubtitle(entry.value.length, 'break'),
-            children: _buildAreaGroups(
+            childrenBuilder: () => _buildAreaGroups(
               context: context,
               spots: entry.value,
               favoriteSpotIds: favoriteSpotIds,
@@ -559,7 +585,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
           (entry) => _NestedResultGroupCard(
             title: entry.key,
             subtitle: _groupSubtitle(entry.value.length, 'break'),
-            children: _buildSpotTiles(
+            childrenBuilder: () => _buildSpotTiles(
               context: context,
               spots: entry.value,
               favoriteSpotIds: favoriteSpotIds,
@@ -578,29 +604,167 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
   }) {
     return spots.map((spot) {
       final isSelected = spot.id == selectedSpot?.id;
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-        child: Card(
-          color: isSelected ? const Color(0xFFE6F3F1) : null,
-          child: ListTile(
-            title: Text(spot.name),
-            subtitle: Text(
-              '${spot.area}, ${spot.region}\n${spot.waveHeightM}m • ${spot.difficulty}',
-            ),
-            isThreeLine: true,
-            trailing: Icon(
-              favoriteSpotIds.contains(spot.id)
-                  ? Icons.favorite
-                  : Icons.chevron_right,
-              color: favoriteSpotIds.contains(spot.id) ? _favoriteAccent : null,
-            ),
-            onTap: () => context.push('/spot/${spot.id}'),
-            onLongPress: () => _focusSpot(spot),
-          ),
-        ),
+      return _MapSpotTile(
+        spot: spot,
+        isSelected: isSelected,
+        isFavorite: favoriteSpotIds.contains(spot.id),
+        onTap: () => context.push('/spot/${spot.id}'),
+        onLongPress: () => _focusSpot(spot),
       );
     }).toList();
   }
+}
+
+class _SelectedMapSpotCard extends ConsumerWidget {
+  const _SelectedMapSpotCard({
+    required this.spot,
+    required this.isFavorite,
+    required this.onFavoritePressed,
+    required this.onOpenPressed,
+  });
+
+  final SpotModel spot;
+  final bool isFavorite;
+  final VoidCallback onFavoritePressed;
+  final VoidCallback onOpenPressed;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final forecastState = ref.watch(spotCardForecastProvider(spot.id));
+    final forecast = forecastState.valueOrNull;
+    final isLoadingForecast =
+        forecastState.isLoading && !forecastState.hasValue;
+    final waveLevel = forecast?.waveLevel ?? spot.waveLevel;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 10,
+              height: 56,
+              decoration: BoxDecoration(
+                color: _difficultyColor(waveLevel),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    spot.name,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 4),
+                  Text('${spot.area}, ${spot.region}, ${spot.country}'),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _DifficultyBadge(difficulty: waveLevel),
+                      Text(
+                        _spotWaveLabel(
+                          spot,
+                          forecast,
+                          isLoading: isLoadingForecast,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              onPressed: onFavoritePressed,
+              icon: Icon(
+                isFavorite ? Icons.favorite : Icons.favorite_border,
+                color: isFavorite ? _favoriteAccent : const Color(0xFF81949A),
+              ),
+            ),
+            FilledButton(onPressed: onOpenPressed, child: const Text('Open')),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MapSpotTile extends ConsumerWidget {
+  const _MapSpotTile({
+    required this.spot,
+    required this.isSelected,
+    required this.isFavorite,
+    required this.onTap,
+    required this.onLongPress,
+  });
+
+  final SpotModel spot;
+  final bool isSelected;
+  final bool isFavorite;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final forecastState = ref.watch(spotCardForecastProvider(spot.id));
+    final forecast = forecastState.valueOrNull;
+    final isLoadingForecast =
+        forecastState.isLoading && !forecastState.hasValue;
+    final waveLevel = forecast?.waveLevel ?? spot.waveLevel;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: Card(
+        color: isSelected ? const Color(0xFFE6F3F1) : null,
+        child: ListTile(
+          title: Row(
+            children: [
+              Expanded(child: Text(spot.name)),
+              const SizedBox(width: 10),
+              _DifficultyBadge(difficulty: waveLevel, compact: true),
+            ],
+          ),
+          subtitle: Text(
+            '${spot.area}, ${spot.region}\n${_spotWaveLabel(spot, forecast, isLoading: isLoadingForecast)}',
+          ),
+          isThreeLine: true,
+          trailing: Icon(
+            isFavorite ? Icons.favorite : Icons.chevron_right,
+            color: isFavorite ? _favoriteAccent : null,
+          ),
+          onTap: onTap,
+          onLongPress: onLongPress,
+        ),
+      ),
+    );
+  }
+}
+
+String _spotWaveLevel(SpotModel spot, ForecastModel? forecast) {
+  return forecast?.waveLevel ?? spot.waveLevel;
+}
+
+String _spotWaveLabel(
+  SpotModel spot,
+  ForecastModel? forecast, {
+  bool isLoading = false,
+}) {
+  if (forecast != null) return 'Today: ${forecast.waveDisplay}';
+  if (isLoading) return 'Loading today...';
+  return 'Typical: ${_formatMapWave(spot.waveHeightM)}m';
+}
+
+String _formatMapWave(double value) {
+  final rounded = value.toStringAsFixed(1);
+  return rounded.endsWith('.0')
+      ? rounded.substring(0, rounded.length - 2)
+      : rounded;
 }
 
 String _groupSubtitle(int count, String label) {
@@ -664,6 +828,37 @@ class _LocationSelection {
   final String region;
   final String area;
   final String? spotId;
+}
+
+class _DifficultyBadge extends StatelessWidget {
+  const _DifficultyBadge({required this.difficulty, this.compact = false});
+
+  final String difficulty;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _difficultyColor(difficulty);
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 10,
+        vertical: compact ? 5 : 6,
+      ),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.24)),
+      ),
+      child: Text(
+        _difficultyLabel(difficulty),
+        style: TextStyle(
+          color: color,
+          fontSize: compact ? 11 : 12,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
 }
 
 class _MapCanvas extends StatelessWidget {
@@ -730,6 +925,7 @@ class _MapCanvas extends StatelessWidget {
 class _LocationPickerField extends StatelessWidget {
   const _LocationPickerField({
     required this.sourceItems,
+    required this.forecastBySpotId,
     required this.favoriteSpotIds,
     required this.selectedCountry,
     required this.selectedRegion,
@@ -739,6 +935,7 @@ class _LocationPickerField extends StatelessWidget {
   });
 
   final List<SpotModel> sourceItems;
+  final Map<String, ForecastModel?> forecastBySpotId;
   final Set<String> favoriteSpotIds;
   final String selectedCountry;
   final String selectedRegion;
@@ -754,7 +951,9 @@ class _LocationPickerField extends StatelessWidget {
       if (selectedArea != _allAreasLabel) selectedArea,
     ];
     if (selectedSpotId != null) {
-      final selectedSpot = sourceItems.where((spot) => spot.id == selectedSpotId);
+      final selectedSpot = sourceItems.where(
+        (spot) => spot.id == selectedSpotId,
+      );
       if (selectedSpot.isNotEmpty) {
         path.add(selectedSpot.first.name);
       }
@@ -765,8 +964,12 @@ class _LocationPickerField extends StatelessWidget {
         final selection = await showModalBottomSheet<_LocationSelection>(
           context: context,
           isScrollControlled: true,
+          enableDrag: true,
+          isDismissible: true,
+          backgroundColor: Colors.transparent,
           builder: (context) => _LocationPickerSheet(
             sourceItems: sourceItems,
+            forecastBySpotId: forecastBySpotId,
             favoriteSpotIds: favoriteSpotIds,
             selectedCountry: selectedCountry,
             selectedRegion: selectedRegion,
@@ -802,6 +1005,7 @@ class _LocationPickerField extends StatelessWidget {
 class _LocationPickerSheet extends StatelessWidget {
   const _LocationPickerSheet({
     required this.sourceItems,
+    required this.forecastBySpotId,
     required this.favoriteSpotIds,
     required this.selectedCountry,
     required this.selectedRegion,
@@ -810,6 +1014,7 @@ class _LocationPickerSheet extends StatelessWidget {
   });
 
   final List<SpotModel> sourceItems;
+  final Map<String, ForecastModel?> forecastBySpotId;
   final Set<String> favoriteSpotIds;
   final String selectedCountry;
   final String selectedRegion;
@@ -824,65 +1029,78 @@ class _LocationPickerSheet extends StatelessWidget {
     }
     final countries = <String>[
       _allCountriesLabel,
-      ...countryGroups.keys.toList()..sort(_compareGroupedKeysByCount(countryGroups)),
+      ...countryGroups.keys.toList()
+        ..sort(_compareGroupedKeysByCount(countryGroups)),
     ];
+    final theme = Theme.of(context);
 
     return SafeArea(
-      child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.82,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-          children: [
-            Center(
-              child: Container(
-                width: 42,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFD5D0C6),
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
+      top: false,
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.82,
+        minChildSize: 0.32,
+        maxChildSize: 0.94,
+        builder: (context, scrollController) {
+          return Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFFF2F6F7),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
             ),
-            const SizedBox(height: 18),
-            Text(
-              'Choose location',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 12),
-            _LocationActionTile(
-              title: _allCountriesLabel,
-              subtitle: '${sourceItems.length} breaks across the map',
-              selected:
-                  selectedCountry == _allCountriesLabel &&
-                  selectedRegion == _allRegionsLabel &&
-                  selectedArea == _allAreasLabel &&
-                  selectedSpotId == null,
-              onTap: () => Navigator.of(context).pop(
-                const _LocationSelection(
-                  country: _allCountriesLabel,
-                  region: _allRegionsLabel,
-                  area: _allAreasLabel,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            ...countries
-                .where((country) => country != _allCountriesLabel)
-                .map(
-                  (country) => _CountryLocationSection(
-                    country: country,
-                    spots: sourceItems
-                        .where((spot) => spot.country == country)
-                        .toList(),
-                    favoriteSpotIds: favoriteSpotIds,
-                    selectedCountry: selectedCountry,
-                    selectedRegion: selectedRegion,
-                    selectedArea: selectedArea,
-                    selectedSpotId: selectedSpotId,
+            child: ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.outlineVariant,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
                   ),
                 ),
-          ],
-        ),
+                const SizedBox(height: 18),
+                Text('Choose location', style: theme.textTheme.titleLarge),
+                const SizedBox(height: 12),
+                _LocationActionTile(
+                  title: _allCountriesLabel,
+                  subtitle: '${sourceItems.length} breaks across the map',
+                  selected:
+                      selectedCountry == _allCountriesLabel &&
+                      selectedRegion == _allRegionsLabel &&
+                      selectedArea == _allAreasLabel &&
+                      selectedSpotId == null,
+                  onTap: () => Navigator.of(context).pop(
+                    const _LocationSelection(
+                      country: _allCountriesLabel,
+                      region: _allRegionsLabel,
+                      area: _allAreasLabel,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ...countries
+                    .where((country) => country != _allCountriesLabel)
+                    .map(
+                      (country) => _CountryLocationSection(
+                        country: country,
+                        spots: sourceItems
+                            .where((spot) => spot.country == country)
+                            .toList(),
+                        forecastBySpotId: forecastBySpotId,
+                        favoriteSpotIds: favoriteSpotIds,
+                        selectedCountry: selectedCountry,
+                        selectedRegion: selectedRegion,
+                        selectedArea: selectedArea,
+                        selectedSpotId: selectedSpotId,
+                      ),
+                    ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -892,6 +1110,7 @@ class _CountryLocationSection extends StatelessWidget {
   const _CountryLocationSection({
     required this.country,
     required this.spots,
+    required this.forecastBySpotId,
     required this.favoriteSpotIds,
     required this.selectedCountry,
     required this.selectedRegion,
@@ -901,6 +1120,7 @@ class _CountryLocationSection extends StatelessWidget {
 
   final String country;
   final List<SpotModel> spots;
+  final Map<String, ForecastModel?> forecastBySpotId;
   final Set<String> favoriteSpotIds;
   final String selectedCountry;
   final String selectedRegion;
@@ -943,6 +1163,7 @@ class _CountryLocationSection extends StatelessWidget {
               country: country,
               region: entry.key,
               spots: entry.value,
+              forecastBySpotId: forecastBySpotId,
               favoriteSpotIds: favoriteSpotIds,
               selectedCountry: selectedCountry,
               selectedRegion: selectedRegion,
@@ -961,6 +1182,7 @@ class _RegionLocationSection extends StatelessWidget {
     required this.country,
     required this.region,
     required this.spots,
+    required this.forecastBySpotId,
     required this.favoriteSpotIds,
     required this.selectedCountry,
     required this.selectedRegion,
@@ -971,6 +1193,7 @@ class _RegionLocationSection extends StatelessWidget {
   final String country;
   final String region;
   final List<SpotModel> spots;
+  final Map<String, ForecastModel?> forecastBySpotId;
   final Set<String> favoriteSpotIds;
   final String selectedCountry;
   final String selectedRegion;
@@ -1020,6 +1243,7 @@ class _RegionLocationSection extends StatelessWidget {
                 region: region,
                 area: entry.key,
                 spots: entry.value,
+                forecastBySpotId: forecastBySpotId,
                 favoriteSpotIds: favoriteSpotIds,
                 selectedCountry: selectedCountry,
                 selectedRegion: selectedRegion,
@@ -1040,6 +1264,7 @@ class _AreaLocationSection extends StatelessWidget {
     required this.region,
     required this.area,
     required this.spots,
+    required this.forecastBySpotId,
     required this.favoriteSpotIds,
     required this.selectedCountry,
     required this.selectedRegion,
@@ -1051,6 +1276,7 @@ class _AreaLocationSection extends StatelessWidget {
   final String region;
   final String area;
   final List<SpotModel> spots;
+  final Map<String, ForecastModel?> forecastBySpotId;
   final Set<String> favoriteSpotIds;
   final String selectedCountry;
   final String selectedRegion;
@@ -1059,7 +1285,9 @@ class _AreaLocationSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final favorites = spots.where((spot) => favoriteSpotIds.contains(spot.id)).toList();
+    final favorites = spots
+        .where((spot) => favoriteSpotIds.contains(spot.id))
+        .toList();
     final nonFavorites = spots
         .where((spot) => !favoriteSpotIds.contains(spot.id))
         .toList();
@@ -1107,6 +1335,7 @@ class _AreaLocationSection extends StatelessWidget {
               ...favorites.map(
                 (spot) => _SpotLocationTile(
                   spot: spot,
+                  forecast: forecastBySpotId[spot.id],
                   selected: selectedSpotId == spot.id,
                 ),
               ),
@@ -1114,6 +1343,7 @@ class _AreaLocationSection extends StatelessWidget {
             ...nonFavorites.map(
               (spot) => _SpotLocationTile(
                 spot: spot,
+                forecast: forecastBySpotId[spot.id],
                 selected: selectedSpotId == spot.id,
               ),
             ),
@@ -1152,18 +1382,30 @@ class _LocationActionTile extends StatelessWidget {
 class _SpotLocationTile extends StatelessWidget {
   const _SpotLocationTile({
     required this.spot,
+    required this.forecast,
     required this.selected,
   });
 
   final SpotModel spot;
+  final ForecastModel? forecast;
   final bool selected;
 
   @override
   Widget build(BuildContext context) {
+    final waveLevel = spot.waveLevel;
+
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      title: Text(spot.name),
-      subtitle: Text('${spot.area}, ${spot.region}'),
+      title: Row(
+        children: [
+          Expanded(child: Text(spot.name)),
+          const SizedBox(width: 10),
+          _DifficultyBadge(difficulty: waveLevel, compact: true),
+        ],
+      ),
+      subtitle: Text(
+        '${spot.area}, ${spot.region} • ${_spotWaveLabel(spot, forecast)}',
+      ),
       trailing: selected ? const Icon(Icons.check_circle) : null,
       onTap: () => Navigator.of(context).pop(
         _LocationSelection(
@@ -1177,16 +1419,23 @@ class _SpotLocationTile extends StatelessWidget {
   }
 }
 
-class _ResultGroupCard extends StatelessWidget {
+class _ResultGroupCard extends StatefulWidget {
   const _ResultGroupCard({
     required this.title,
     required this.subtitle,
-    required this.children,
+    required this.childrenBuilder,
   });
 
   final String title;
   final String subtitle;
-  final List<Widget> children;
+  final List<Widget> Function() childrenBuilder;
+
+  @override
+  State<_ResultGroupCard> createState() => _ResultGroupCardState();
+}
+
+class _ResultGroupCardState extends State<_ResultGroupCard> {
+  bool _isExpanded = false;
 
   @override
   Widget build(BuildContext context) {
@@ -1195,26 +1444,34 @@ class _ResultGroupCard extends StatelessWidget {
       child: Card(
         clipBehavior: Clip.antiAlias,
         child: ExpansionTile(
-          title: Text(title),
-          subtitle: Text(subtitle),
+          onExpansionChanged: (value) => setState(() => _isExpanded = value),
+          title: Text(widget.title),
+          subtitle: Text(widget.subtitle),
           childrenPadding: const EdgeInsets.only(bottom: 6),
-          children: children,
+          children: _isExpanded ? widget.childrenBuilder() : const [],
         ),
       ),
     );
   }
 }
 
-class _NestedResultGroupCard extends StatelessWidget {
+class _NestedResultGroupCard extends StatefulWidget {
   const _NestedResultGroupCard({
     required this.title,
     required this.subtitle,
-    required this.children,
+    required this.childrenBuilder,
   });
 
   final String title;
   final String subtitle;
-  final List<Widget> children;
+  final List<Widget> Function() childrenBuilder;
+
+  @override
+  State<_NestedResultGroupCard> createState() => _NestedResultGroupCardState();
+}
+
+class _NestedResultGroupCardState extends State<_NestedResultGroupCard> {
+  bool _isExpanded = false;
 
   @override
   Widget build(BuildContext context) {
@@ -1226,10 +1483,11 @@ class _NestedResultGroupCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
         ),
         child: ExpansionTile(
-          title: Text(title),
-          subtitle: Text(subtitle),
+          onExpansionChanged: (value) => setState(() => _isExpanded = value),
+          title: Text(widget.title),
+          subtitle: Text(widget.subtitle),
           childrenPadding: const EdgeInsets.only(bottom: 6),
-          children: children,
+          children: _isExpanded ? widget.childrenBuilder() : const [],
         ),
       ),
     );
@@ -1249,10 +1507,14 @@ class _SpotMarker extends StatelessWidget {
         child: Container(
           width: 10,
           height: 10,
-          decoration: const BoxDecoration(
-            color: _mapMarkerBlue,
+          decoration: BoxDecoration(
+            color: _mapMarkerColor,
             shape: BoxShape.circle,
-            boxShadow: [
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.72),
+              width: 1.3,
+            ),
+            boxShadow: const [
               BoxShadow(
                 color: Color(0x22000000),
                 blurRadius: 6,
@@ -1271,7 +1533,7 @@ class _SpotMarker extends StatelessWidget {
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            color: _mapMarkerBlueDark,
+            color: _mapMarkerSelectedColor,
             borderRadius: BorderRadius.circular(16),
             boxShadow: const [
               BoxShadow(
@@ -1291,12 +1553,30 @@ class _SpotMarker extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        const Icon(
-          Icons.place_rounded,
-          color: _mapMarkerBlue,
-          size: 40,
-        ),
+        const Icon(Icons.place_rounded, color: _mapMarkerColor, size: 40),
       ],
     );
+  }
+}
+
+String _difficultyLabel(String difficulty) {
+  switch (difficulty) {
+    case 'beginner':
+      return 'Beginner';
+    case 'advanced':
+      return 'Advanced';
+    default:
+      return 'Intermediate';
+  }
+}
+
+Color _difficultyColor(String difficulty) {
+  switch (difficulty) {
+    case 'beginner':
+      return _difficultyBeginnerColor;
+    case 'advanced':
+      return _difficultyAdvancedColor;
+    default:
+      return _difficultyIntermediateColor;
   }
 }

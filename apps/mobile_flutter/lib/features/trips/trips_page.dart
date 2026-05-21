@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 
 final tripsProvider = FutureProvider(
   (ref) => ref.watch(surfRepositoryProvider).fetchTrips(),
+);
+final travelSpotsProvider = FutureProvider(
+  (ref) => ref.watch(surfRepositoryProvider).fetchSpots(),
 );
 
 class TripsPage extends ConsumerStatefulWidget {
@@ -16,95 +20,236 @@ class TripsPage extends ConsumerStatefulWidget {
 }
 
 class _TripsPageState extends ConsumerState<TripsPage> {
-  String _selectedCountryId = _travelCountries.first.id;
-  String _selectedAreaId = _travelCountries.first.areas.first.id;
+  String? _selectedCountryId;
+  String? _selectedRegionId;
+  String? _selectedAreaId;
 
   @override
   Widget build(BuildContext context) {
-    final selectedCountry = _travelCountries.firstWhere(
-      (country) => country.id == _selectedCountryId,
-      orElse: () => _travelCountries.first,
-    );
-    final selectedArea = selectedCountry.areas.firstWhere(
-      (area) => area.id == _selectedAreaId,
-      orElse: () => selectedCountry.areas.first,
-    );
-
     return Scaffold(
       appBar: AppBar(title: const Text('Travel')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          const _TravelHero(),
-          const SizedBox(height: 18),
-          Text('Countries', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 64,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: _travelCountries.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 10),
-              itemBuilder: (context, index) {
-                final country = _travelCountries[index];
-                final selected = country.id == _selectedCountryId;
-                return _CountryChip(
-                  country: country,
-                  selected: selected,
-                  onTap: () {
-                    setState(() {
-                      _selectedCountryId = country.id;
-                      _selectedAreaId = country.areas.first.id;
-                    });
-                  },
-                );
+      body: ref
+          .watch(travelSpotsProvider)
+          .when(
+            data: (spots) => _TravelLoadedBody(
+              spots: spots,
+              selectedCountryId: _selectedCountryId,
+              selectedRegionId: _selectedRegionId,
+              selectedAreaId: _selectedAreaId,
+              onCountryChanged: (country) {
+                setState(() {
+                  _selectedCountryId = country.id;
+                  _selectedRegionId = null;
+                  _selectedAreaId = null;
+                });
+              },
+              onLocationChanged: (selection) {
+                setState(() {
+                  _selectedRegionId = selection.regionId;
+                  _selectedAreaId = selection.areaId;
+                });
               },
             ),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (_, _) => const _TravelLoadError(),
           ),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${selectedCountry.name} areas',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
+    );
+  }
+}
+
+class _TravelLoadedBody extends StatelessWidget {
+  const _TravelLoadedBody({
+    required this.spots,
+    required this.selectedCountryId,
+    required this.selectedRegionId,
+    required this.selectedAreaId,
+    required this.onCountryChanged,
+    required this.onLocationChanged,
+  });
+
+  final List<SpotModel> spots;
+  final String? selectedCountryId;
+  final String? selectedRegionId;
+  final String? selectedAreaId;
+  final ValueChanged<_TravelCountryView> onCountryChanged;
+  final ValueChanged<_TravelLocationSelection> onLocationChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final countries = _buildTravelCountries(spots);
+    if (countries.isEmpty) {
+      return const _TravelLoadError();
+    }
+    final selectedCountry = selectedCountryId == null
+        ? null
+        : _firstWhereOrNull(
+            countries,
+            (country) => country.id == selectedCountryId,
+          );
+    final selectedRegion = selectedCountry == null || selectedRegionId == null
+        ? null
+        : _firstWhereOrNull(
+            selectedCountry.regions,
+            (region) => region.id == selectedRegionId,
+          );
+    final selectedArea = selectedRegion == null || selectedAreaId == null
+        ? null
+        : _firstWhereOrNull(
+            selectedRegion.areas,
+            (area) => area.id == selectedAreaId,
+          );
+
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        const _TravelHero(),
+        const SizedBox(height: 18),
+        Text('Countries', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 64,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: countries.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            itemBuilder: (context, index) {
+              final country = countries[index];
+              final selected = country.id == selectedCountry?.id;
+              return _CountryChip(
+                country: country,
+                selected: selected,
+                onTap: () => onCountryChanged(country),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 18),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Where to stay',
+                style: Theme.of(context).textTheme.titleLarge,
               ),
-              _StatusPill(label: selectedCountry.isLive ? 'Live' : 'Soon'),
-            ],
+            ),
+            if (selectedCountry != null)
+              _StatusPill(label: '${selectedCountry.breakCount} breaks'),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (selectedCountry == null)
+          const _PickCountryCard()
+        else
+          _TravelLocationButton(
+            country: selectedCountry,
+            region: selectedRegion,
+            area: selectedArea,
+            onChanged: onLocationChanged,
           ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 44,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: selectedCountry.areas.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final area = selectedCountry.areas[index];
-                return ChoiceChip(
-                  label: Text(area.name),
-                  selected: area.id == _selectedAreaId,
-                  onSelected: (_) => setState(() => _selectedAreaId = area.id),
-                );
-              },
+        const SizedBox(height: 18),
+        if (selectedCountry == null)
+          const SizedBox.shrink()
+        else if (selectedArea == null)
+          _PickTravelAreaCard(country: selectedCountry)
+        else
+          ...selectedArea.listings.map(
+            (listing) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _TravelListingCard(listing: listing),
             ),
           ),
-          const SizedBox(height: 18),
-          if (selectedCountry.isLive) ...[
-            ...selectedArea.listings.map(
-              (listing) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _TravelListingCard(listing: listing),
+        const SizedBox(height: 12),
+        Text('Saved living', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 10),
+        const _EmptyTripPlan(),
+      ],
+    );
+  }
+}
+
+class _TravelLoadError extends StatelessWidget {
+  const _TravelLoadError();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.all(20),
+        child: Text('Could not load travel areas right now.'),
+      ),
+    );
+  }
+}
+
+class _PickCountryCard extends StatelessWidget {
+  const _PickCountryCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD7EFEC),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(
+                Icons.public_outlined,
+                color: Color(0xFF087E7A),
               ),
             ),
-          ] else
-            _ComingSoonCountry(country: selectedCountry, area: selectedArea),
-          const SizedBox(height: 12),
-          Text('Saved living', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 10),
-          const _EmptyTripPlan(),
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Choose a country to see surf regions and stay options.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PickTravelAreaCard extends StatelessWidget {
+  const _PickTravelAreaCard({required this.country});
+
+  final _TravelCountryView country;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD7EFEC),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: Color(0xFF087E7A),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Choose a ${country.name} region and local area to see stay options.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -119,7 +264,7 @@ class _TravelHero extends StatelessWidget {
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF1A3A36), Color(0xFFD99E57)],
+          colors: [Color(0xFF064D63), Color(0xFF0AAFB3), Color(0xFFE9B872)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -138,7 +283,7 @@ class _TravelHero extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Find the right place to stay in each Bali area, then build the surf trip around where you want to live.',
+            'Find places to stay by country, surf region, and local break zone across the app.',
             style: TextStyle(color: Colors.white70),
           ),
         ],
@@ -154,7 +299,7 @@ class _CountryChip extends StatelessWidget {
     required this.onTap,
   });
 
-  final _TravelCountry country;
+  final _TravelCountryView country;
   final bool selected;
   final VoidCallback onTap;
 
@@ -194,9 +339,7 @@ class _CountryChip extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  country.isLive
-                      ? '${country.areas.length} areas'
-                      : 'coming soon',
+                  '${country.regions.length} regions',
                   style: TextStyle(
                     color: selected ? Colors.white70 : const Color(0xFF6B6760),
                     fontSize: 11,
@@ -212,40 +355,236 @@ class _CountryChip extends StatelessWidget {
   }
 }
 
-class _ComingSoonCountry extends StatelessWidget {
-  const _ComingSoonCountry({required this.country, required this.area});
+class _TravelLocationButton extends StatelessWidget {
+  const _TravelLocationButton({
+    required this.country,
+    required this.region,
+    required this.area,
+    required this.onChanged,
+  });
 
-  final _TravelCountry country;
-  final _TravelArea area;
+  final _TravelCountryView country;
+  final _TravelRegionView? region;
+  final _TravelAreaView? area;
+  final ValueChanged<_TravelLocationSelection> onChanged;
+
+  Future<void> _openSelector(BuildContext context) async {
+    final selection = await showModalBottomSheet<_TravelLocationSelection>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _TravelLocationSheet(
+        country: country,
+        selectedRegionId: region?.id,
+        selectedAreaId: area?.id,
+      ),
+    );
+    if (selection != null) {
+      onChanged(selection);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return InkWell(
+      borderRadius: BorderRadius.circular(24),
+      onTap: () => _openSelector(context),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFFE0D8CA)),
+        ),
+        child: Row(
           children: [
-            Text(
-              '${country.name} travel listings are next',
-              style: Theme.of(context).textTheme.titleLarge,
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD7EFEC),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(Icons.place_outlined, color: Color(0xFF087E7A)),
             ),
-            const SizedBox(height: 8),
-            Text(area.summary),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: area.nearSpots
-                  .map((spot) => Chip(label: Text(spot)))
-                  .toList(),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    area?.name ?? 'Choose travel area',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    area == null || region == null
+                        ? '${country.name} • ${country.breakCount} breaks'
+                        : '${region!.name}, ${country.name} • ${area!.breakCountLabel}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 12),
-            const Text(
-              'We can add hostels, rentals, schools, scooters, and affiliate links here once Bali is polished.',
-            ),
+            const Icon(Icons.keyboard_arrow_down_rounded),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _TravelLocationSheet extends StatelessWidget {
+  const _TravelLocationSheet({
+    required this.country,
+    required this.selectedRegionId,
+    required this.selectedAreaId,
+  });
+
+  final _TravelCountryView country;
+  final String? selectedRegionId;
+  final String? selectedAreaId;
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.72,
+      minChildSize: 0.45,
+      maxChildSize: 0.92,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFFF8F7F2),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+          ),
+          child: ListView(
+            controller: scrollController,
+            padding: const EdgeInsets.fromLTRB(18, 10, 18, 28),
+            children: [
+              Center(
+                child: Container(
+                  width: 42,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 18),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFC9D0CC),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+              Text(
+                'Choose travel area',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${country.name} • ${country.regions.length} surf regions',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 14),
+              ...country.regions.map(
+                (region) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _TravelRegionTile(
+                    country: country,
+                    region: region,
+                    selectedRegionId: selectedRegionId,
+                    selectedAreaId: selectedAreaId,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _TravelRegionTile extends StatelessWidget {
+  const _TravelRegionTile({
+    required this.country,
+    required this.region,
+    required this.selectedRegionId,
+    required this.selectedAreaId,
+  });
+
+  final _TravelCountryView country;
+  final _TravelRegionView region;
+  final String? selectedRegionId;
+  final String? selectedAreaId;
+
+  @override
+  Widget build(BuildContext context) {
+    final expanded = selectedRegionId != null && region.id == selectedRegionId;
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF2EEE6),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: ExpansionTile(
+        initiallyExpanded: expanded,
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        collapsedShape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
+        ),
+        title: Text(
+          region.name,
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+        subtitle: Text(
+          '${region.areas.length} areas • ${region.breakCountLabel}',
+        ),
+        children: region.areas
+            .map(
+              (area) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _TravelAreaTile(
+                  country: country,
+                  region: region,
+                  area: area,
+                  selected:
+                      region.id == selectedRegionId &&
+                      area.id == selectedAreaId,
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+}
+
+class _TravelAreaTile extends StatelessWidget {
+  const _TravelAreaTile({
+    required this.country,
+    required this.region,
+    required this.area,
+    required this.selected,
+  });
+
+  final _TravelCountryView country;
+  final _TravelRegionView region;
+  final _TravelAreaView area;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: ListTile(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Text(area.name),
+        subtitle: Text('${area.breakCountLabel} • ${area.nearSpotsLabel}'),
+        trailing: selected
+            ? const Icon(Icons.check_circle, color: Color(0xFF087E7A))
+            : const Icon(Icons.chevron_right),
+        onTap: () => Navigator.of(
+          context,
+        ).pop(_TravelLocationSelection(regionId: region.id, areaId: area.id)),
       ),
     );
   }
@@ -622,22 +961,6 @@ class _EmptyTripPlan extends StatelessWidget {
   }
 }
 
-class _TravelCountry {
-  const _TravelCountry({
-    required this.id,
-    required this.name,
-    required this.emoji,
-    required this.isLive,
-    required this.areas,
-  });
-
-  final String id;
-  final String name;
-  final String emoji;
-  final bool isLive;
-  final List<_TravelArea> areas;
-}
-
 class _TravelArea {
   const _TravelArea({
     required this.id,
@@ -714,83 +1037,340 @@ class _TravelPlace {
   final String? distanceNote;
 }
 
-const _travelCountries = [
-  _TravelCountry(
-    id: 'indonesia',
-    name: 'Indonesia',
-    emoji: 'ID',
-    isLive: true,
-    areas: _baliAreas,
-  ),
-  _TravelCountry(
-    id: 'philippines',
-    name: 'Philippines',
-    emoji: 'PH',
-    isLive: false,
-    areas: [
-      _TravelArea(
-        id: 'siargao',
-        name: 'Siargao',
-        vibe: 'Soon',
-        summary:
-            'General Luna and Cloud 9 area will be the first Philippines travel directory.',
-        nearSpots: ['Cloud 9', 'Jacking Horse', 'Pacifico'],
-        listings: [],
+class _TravelCountryView {
+  const _TravelCountryView({
+    required this.id,
+    required this.name,
+    required this.emoji,
+    required this.breakCount,
+    required this.regions,
+  });
+
+  final String id;
+  final String name;
+  final String emoji;
+  final int breakCount;
+  final List<_TravelRegionView> regions;
+}
+
+class _TravelRegionView {
+  const _TravelRegionView({
+    required this.id,
+    required this.name,
+    required this.breakCount,
+    required this.areas,
+  });
+
+  final String id;
+  final String name;
+  final int breakCount;
+  final List<_TravelAreaView> areas;
+
+  String get breakCountLabel =>
+      breakCount == 1 ? '1 break' : '$breakCount breaks';
+}
+
+class _TravelAreaView {
+  const _TravelAreaView({
+    required this.id,
+    required this.name,
+    required this.summary,
+    required this.nearSpots,
+    required this.breakCount,
+    required this.listings,
+  });
+
+  final String id;
+  final String name;
+  final String summary;
+  final List<String> nearSpots;
+  final int breakCount;
+  final List<_TravelListing> listings;
+
+  String get breakCountLabel {
+    if (breakCount <= 0) return 'stays directory';
+    return breakCount == 1 ? '1 break nearby' : '$breakCount breaks nearby';
+  }
+
+  String get nearSpotsLabel {
+    if (nearSpots.isEmpty) return 'local surf base';
+    return nearSpots.take(3).join(', ');
+  }
+}
+
+class _TravelLocationSelection {
+  const _TravelLocationSelection({
+    required this.regionId,
+    required this.areaId,
+  });
+
+  final String regionId;
+  final String areaId;
+}
+
+List<_TravelCountryView> _buildTravelCountries(List<SpotModel> spots) {
+  final countryGroups = <String, List<SpotModel>>{};
+  for (final spot in spots) {
+    countryGroups.putIfAbsent(spot.country, () => []).add(spot);
+  }
+
+  final countries = countryGroups.entries
+      .map(
+        (entry) => _TravelCountryView(
+          id: _slug(entry.key),
+          name: entry.key,
+          emoji: _countryCode(entry.key),
+          breakCount: entry.value.length,
+          regions: _buildTravelRegions(entry.key, entry.value),
+        ),
+      )
+      .where((country) => country.regions.isNotEmpty)
+      .toList();
+
+  countries.sort((a, b) {
+    final rankCompare = _countryRank(a.name).compareTo(_countryRank(b.name));
+    if (rankCompare != 0) return rankCompare;
+    final countCompare = b.breakCount.compareTo(a.breakCount);
+    if (countCompare != 0) return countCompare;
+    return a.name.compareTo(b.name);
+  });
+  return countries;
+}
+
+List<_TravelRegionView> _buildTravelRegions(
+  String country,
+  List<SpotModel> countrySpots,
+) {
+  final regionGroups = <String, List<SpotModel>>{};
+  for (final spot in countrySpots) {
+    regionGroups.putIfAbsent(spot.region, () => []).add(spot);
+  }
+
+  final regions = regionGroups.entries
+      .map((entry) {
+        final areas = country == 'Indonesia' && entry.key == 'Bali'
+            ? _buildBaliTravelAreas(entry.value)
+            : _buildDynamicTravelAreas(country, entry.key, entry.value);
+        return _TravelRegionView(
+          id: _slug(entry.key),
+          name: entry.key,
+          breakCount: entry.value.length,
+          areas: areas,
+        );
+      })
+      .where((region) => region.areas.isNotEmpty)
+      .toList();
+
+  regions.sort((a, b) {
+    final rankCompare = _regionRank(
+      country,
+      a.name,
+    ).compareTo(_regionRank(country, b.name));
+    if (rankCompare != 0) return rankCompare;
+    final countCompare = b.breakCount.compareTo(a.breakCount);
+    if (countCompare != 0) return countCompare;
+    return a.name.compareTo(b.name);
+  });
+  return regions;
+}
+
+List<_TravelAreaView> _buildBaliTravelAreas(List<SpotModel> baliSpots) {
+  return _baliAreas
+      .map(
+        (area) => _TravelAreaView(
+          id: area.id,
+          name: area.name,
+          summary: area.summary,
+          nearSpots: area.nearSpots,
+          breakCount: _estimatedBreakCount(area, baliSpots),
+          listings: area.listings.isNotEmpty
+              ? area.listings
+              : [_emptyLivingListing('Indonesia', 'Bali', area.name)],
+        ),
+      )
+      .toList();
+}
+
+List<_TravelAreaView> _buildDynamicTravelAreas(
+  String country,
+  String region,
+  List<SpotModel> regionSpots,
+) {
+  final areaGroups = <String, List<SpotModel>>{};
+  for (final spot in regionSpots) {
+    areaGroups.putIfAbsent(spot.area, () => []).add(spot);
+  }
+
+  final areas = areaGroups.entries.map((entry) {
+    final nearSpots = entry.value.map((spot) => spot.name).take(4).toList();
+    return _TravelAreaView(
+      id: _slug(entry.key),
+      name: entry.key,
+      summary:
+          'Places to stay around ${entry.key} for surfers using $region as a home base.',
+      nearSpots: nearSpots,
+      breakCount: entry.value.length,
+      listings: [_emptyLivingListing(country, region, entry.key)],
+    );
+  }).toList();
+
+  areas.sort((a, b) {
+    final countCompare = b.breakCount.compareTo(a.breakCount);
+    if (countCompare != 0) return countCompare;
+    return a.name.compareTo(b.name);
+  });
+  return areas;
+}
+
+_TravelListing _emptyLivingListing(
+  String country,
+  String region,
+  String areaName,
+) {
+  final description =
+      'Places to stay around $areaName for surfers planning $region sessions in $country.';
+  return _TravelListing(
+    name: '$areaName living',
+    category: 'Living',
+    areaName: areaName,
+    description: description,
+    tags: const ['Hostels', 'Villas', 'Hotels', 'Guesthouses'],
+    primaryAction: 'Find places to stay',
+    status: 'Soon',
+    icon: Icons.bed_outlined,
+    options: [
+      _TravelListingOption(
+        id: 'hostels',
+        label: 'Hostels',
+        description:
+            'Hostels near $areaName for social surf stays, easier budgeting, and meeting people nearby.',
+      ),
+      _TravelListingOption(
+        id: 'villas',
+        label: 'Villas',
+        description:
+            'Villas near $areaName for groups, longer stays, and a more private surf-trip base.',
+      ),
+      _TravelListingOption(
+        id: 'hotels',
+        label: 'Hotels',
+        description:
+            'Hotels near $areaName for private rooms, amenities, and easier travel logistics.',
+      ),
+      _TravelListingOption(
+        id: 'guesthouses',
+        label: 'Guesthouses',
+        description:
+            'Guesthouses near $areaName for simpler private stays with lighter prices.',
       ),
     ],
-  ),
-  _TravelCountry(
-    id: 'australia',
-    name: 'Australia',
-    emoji: 'AU',
-    isLive: false,
-    areas: [
-      _TravelArea(
-        id: 'nsw',
-        name: 'NSW',
-        vibe: 'Soon',
-        summary:
-            'Byron, Manly, Bondi, and other NSW zones can get hostels, rentals, and surf schools next.',
-        nearSpots: ['Byron Bay', 'Manly', 'Bondi'],
-        listings: [],
-      ),
+  );
+}
+
+int _estimatedBreakCount(_TravelArea area, List<SpotModel> spots) {
+  final name = area.name.toLowerCase();
+  final nearSpotNames = area.nearSpots
+      .map((spot) => spot.toLowerCase())
+      .toSet();
+  final matches = spots.where((spot) {
+    final spotArea = spot.area.toLowerCase();
+    final spotName = spot.name.toLowerCase();
+    if (nearSpotNames.contains(spotName)) return true;
+    if (name.contains(spotArea) || spotArea.contains(name)) return true;
+    if (area.id == 'kuta_seminyak') {
+      return spotArea == 'kuta' ||
+          spotName.contains('kuta') ||
+          spotName.contains('legian') ||
+          spotName.contains('seminyak');
+    }
+    if (area.id == 'sanur_nusa_dua') {
+      return spotArea == 'sanur' || spotArea == 'nusa dua';
+    }
+    if (area.id == 'keramas') {
+      return spotArea == 'keramas' || spotArea == 'east bali';
+    }
+    if (area.id == 'medewi') {
+      return spotArea == 'west bali' || spotName.contains('medewi');
+    }
+    if (area.id == 'nusa_lembongan') {
+      return spotArea.contains('lembongan') || spotArea.contains('ceningan');
+    }
+    return false;
+  }).length;
+  return matches == 0 ? area.nearSpots.length : matches;
+}
+
+String _slug(String value) {
+  final slug = value
+      .toLowerCase()
+      .replaceAll(RegExp('[^a-z0-9]+'), '_')
+      .replaceAll(RegExp('^_+|_+\$'), '');
+  return slug.isEmpty ? 'area' : slug;
+}
+
+String _countryCode(String country) {
+  const codes = {
+    'Australia': 'AU',
+    'Indonesia': 'ID',
+    'Malaysia': 'MY',
+    'Myanmar': 'MM',
+    'Philippines': 'PH',
+    'Sri Lanka': 'LK',
+    'Thailand': 'TH',
+    'Timor-Leste': 'TL',
+    'Vietnam': 'VN',
+  };
+  return codes[country] ?? country.characters.take(2).toString().toUpperCase();
+}
+
+int _countryRank(String country) {
+  const order = [
+    'Australia',
+    'Indonesia',
+    'Sri Lanka',
+    'Philippines',
+    'Thailand',
+    'Vietnam',
+    'Malaysia',
+    'Myanmar',
+    'Timor-Leste',
+  ];
+  final index = order.indexOf(country);
+  return index == -1 ? 999 : index;
+}
+
+int _regionRank(String country, String region) {
+  const orders = {
+    'Indonesia': [
+      'Bali',
+      'Lombok',
+      'Java',
+      'Nias',
+      'Mentawai',
+      'Sumbawa',
+      'Sumatra',
+      'Rote',
     ],
-  ),
-  _TravelCountry(
-    id: 'vietnam',
-    name: 'Vietnam',
-    emoji: 'VN',
-    isLive: false,
-    areas: [
-      _TravelArea(
-        id: 'da_nang',
-        name: 'Da Nang',
-        vibe: 'Soon',
-        summary:
-            'Da Nang and My Khe travel listings can cover stays, lessons, cafes, and rentals.',
-        nearSpots: ['My Khe Beach'],
-        listings: [],
-      ),
+    'Australia': [
+      'New South Wales',
+      'Queensland',
+      'Victoria',
+      'Western Australia',
+      'South Australia',
+      'Tasmania',
     ],
-  ),
-  _TravelCountry(
-    id: 'sri_lanka',
-    name: 'Sri Lanka',
-    emoji: 'LK',
-    isLive: false,
-    areas: [
-      _TravelArea(
-        id: 'south_coast',
-        name: 'South Coast',
-        vibe: 'Soon',
-        summary:
-            'Weligama, Mirissa, Ahangama, and Hiriketiya are ideal for a later surf-travel directory.',
-        nearSpots: ['Weligama', 'Ahangama', 'Hiriketiya'],
-        listings: [],
-      ),
-    ],
-  ),
-];
+  };
+  final order = orders[country] ?? const <String>[];
+  final index = order.indexOf(region);
+  return index == -1 ? 999 : index;
+}
+
+T? _firstWhereOrNull<T>(Iterable<T> items, bool Function(T item) test) {
+  for (final item in items) {
+    if (test(item)) return item;
+  }
+  return null;
+}
 
 const _baliAreas = [
   _TravelArea(

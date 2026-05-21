@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/network/api_models.dart';
-import '../../core/notifications/notification_service.dart';
 import '../../core/network/surf_repository.dart';
 import 'create_alert_sheet.dart';
 import '../spots/spots_page.dart';
@@ -24,47 +24,19 @@ class AlertsPage extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Alerts'),
         actions: [
-          IconButton(
-            onPressed: () async {
-              final messenger = ScaffoldMessenger.of(context);
-              final notifications = ref.read(notificationServiceProvider);
-              final granted = await notifications.requestPermissions();
-              if (!granted) {
-                if (!context.mounted) return;
-                messenger.showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Notifications are blocked. Turn them on in macOS Settings.',
-                    ),
-                  ),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: _AddAlertButton(
+              onPressed: () async {
+                final items = spots.valueOrNull;
+                if (!context.mounted || items == null || items.isEmpty) return;
+                await showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (context) => CreateAlertSheet(spots: items),
                 );
-                return;
-              }
-              await notifications.showTestNotification();
-              if (!context.mounted) return;
-              messenger.showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'Test notification sent. If no banner shows, check macOS notification settings for this app.',
-                  ),
-                ),
-              );
-            },
-            icon: const Icon(Icons.campaign_outlined),
-            tooltip: 'Send test notification',
-          ),
-          IconButton(
-            onPressed: () async {
-              final items = spots.valueOrNull;
-              if (!context.mounted || items == null || items.isEmpty) return;
-              await showModalBottomSheet<void>(
-                context: context,
-                isScrollControlled: true,
-                builder: (context) => CreateAlertSheet(spots: items),
-              );
-            },
-            icon: const Icon(Icons.add_alert_outlined),
-            tooltip: 'Create alert',
+              },
+            ),
           ),
         ],
       ),
@@ -103,23 +75,10 @@ class AlertsPage extends ConsumerWidget {
                           .deleteAlert(alert.id);
                       ref.read(alertsRefreshKeyProvider.notifier).state++;
                     },
-                    child: Card(
-                      child: SwitchListTile(
-                        value: alert.enabled,
-                        onChanged: (enabled) async {
-                          await ref
-                              .read(surfRepositoryProvider)
-                              .updateAlertEnabled(
-                                alertId: alert.id,
-                                enabled: enabled,
-                              );
-                          ref.read(alertsRefreshKeyProvider.notifier).state++;
-                        },
-                        title: Text(spot?.name ?? alert.spotId),
-                        subtitle: Text(
-                          '${_alertStatusLine(alert)}\n${_alertSummary(alert)}\nNext check ${_formatAlertTime(alert.nextCheckAt)}',
-                        ),
-                      ),
+                    child: _AlertCard(
+                      alert: alert,
+                      spot: spot,
+                      spots: spotItems,
                     ),
                   );
                 },
@@ -131,6 +90,182 @@ class AlertsPage extends ConsumerWidget {
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) =>
               Center(child: Text('Could not load alerts: $error')),
+        ),
+      ),
+    );
+  }
+}
+
+class _AddAlertButton extends StatelessWidget {
+  const _AddAlertButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        height: 38,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: scheme.primary.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: scheme.primary.withValues(alpha: 0.18)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.add_alert_outlined, size: 17, color: scheme.primary),
+            const SizedBox(width: 6),
+            Text(
+              'Add alert',
+              style: TextStyle(
+                color: scheme.primary,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AlertCard extends ConsumerWidget {
+  const _AlertCard({
+    required this.alert,
+    required this.spot,
+    required this.spots,
+  });
+
+  final AlertModel alert;
+  final SpotModel? spot;
+  final List<SpotModel> spots;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 14, 12, 14),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _AlertSpotButton(
+                    label: spot?.name ?? alert.spotId,
+                    onPressed: spot == null
+                        ? null
+                        : () => context.push('/spot/${spot!.id}'),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${_alertStatusLine(alert)}\n${_alertSummary(alert)}\nNext check ${_formatAlertTime(alert.nextCheckAt)}',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  onPressed: () async {
+                    await showModalBottomSheet<void>(
+                      context: context,
+                      isScrollControlled: true,
+                      builder: (context) =>
+                          CreateAlertSheet(spots: spots, alert: alert),
+                    );
+                  },
+                  icon: const Icon(Icons.edit_outlined),
+                  tooltip: 'Edit alert',
+                ),
+                Switch(
+                  value: alert.enabled,
+                  onChanged: (enabled) async {
+                    await ref
+                        .read(surfRepositoryProvider)
+                        .updateAlertEnabled(
+                          alertId: alert.id,
+                          enabled: enabled,
+                        );
+                    ref.read(alertsRefreshKeyProvider.notifier).state++;
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AlertSpotButton extends StatelessWidget {
+  const _AlertSpotButton({required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final enabled = onPressed != null;
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(9),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 220),
+            child: Ink(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: theme.cardColor,
+                borderRadius: BorderRadius.circular(9),
+                border: Border.all(
+                  color: enabled
+                      ? scheme.outline.withValues(alpha: 0.55)
+                      : scheme.outlineVariant,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.location_on_outlined,
+                    size: 18,
+                    color: enabled ? scheme.primary : scheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: enabled
+                            ? scheme.onSurface
+                            : scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -160,7 +295,9 @@ String _alertSummary(AlertModel alert) {
   if (alert.windEnabled && alert.maxWindKts != null) {
     parts.add('Wind less than ${alert.maxWindKts}kts');
   }
-  if (alert.tideEnabled && alert.tideType != null && alert.tideOffsetHours != null) {
+  if (alert.tideEnabled &&
+      alert.tideType != null &&
+      alert.tideOffsetHours != null) {
     final tideLabel = alert.tideType == 'high' ? 'high tide' : 'low tide';
     final offset = alert.tideOffsetHours!;
     if (offset == 0) {

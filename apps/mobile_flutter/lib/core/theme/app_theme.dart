@@ -4,10 +4,10 @@ class AppTheme {
   static ThemeData light() {
     final scheme =
         ColorScheme.fromSeed(
-          seedColor: const Color(0xFF0B6E6E),
+          seedColor: const Color(0xFF079CA3),
           brightness: Brightness.light,
         ).copyWith(
-          primary: const Color(0xFF0B6E6E),
+          primary: const Color(0xFF079CA3),
           secondary: const Color(0xFFF1A24B),
           surface: const Color(0xFFF6F4EE),
         );

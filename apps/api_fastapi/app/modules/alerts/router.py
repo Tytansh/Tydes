@@ -23,7 +23,15 @@ class AlertCreateRequest(BaseModel):
 
 
 class AlertUpdateRequest(BaseModel):
-    enabled: bool
+    spot_id: str | None = None
+    wave_enabled: bool | None = None
+    min_wave_height_m: float | None = None
+    wind_enabled: bool | None = None
+    max_wind_kts: int | None = None
+    tide_enabled: bool | None = None
+    tide_type: str | None = None
+    tide_offset_hours: int | None = None
+    enabled: bool | None = None
 
 
 @router.get("")
@@ -52,7 +60,7 @@ def create_alert(payload: AlertCreateRequest):
 
 @router.patch("/{alert_id}")
 def update_alert(alert_id: str, payload: AlertUpdateRequest):
-    alert = store.update_alert_enabled(alert_id, payload.enabled)
+    alert = store.update_alert(alert_id, payload.model_dump(exclude_unset=True))
     if alert is None:
         raise HTTPException(status_code=404, detail="Alert not found")
     return alert

@@ -4,13 +4,14 @@ from typing import Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from app.core.runtime import media_dir_path, public_backend_url
 from app.core.models import SocialMediaAttachment, SocialPost
 from app.core.store import store
 
 router = APIRouter(prefix="/social", tags=["social"])
-MEDIA_DIR = Path(__file__).resolve().parents[3] / "data" / "media"
+MEDIA_DIR = media_dir_path()
 ALLOWED_IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 ALLOWED_VIDEO_TYPES = {
@@ -29,9 +30,21 @@ class SocialPostCreateRequest(BaseModel):
     body: str
     spot_id: str | None = None
     post_type: Literal["looking_for_buddy", "surf_plan", "general"] = "general"
-    visibility: Literal["public", "friends"] = "public"
+    visibility: Literal["public", "followers"] = "public"
     media: list[SocialMediaAttachment] = Field(default_factory=list)
     meetup_date: date | None = None
+    meetup_end_date: date | None = None
+
+    @field_validator("visibility", mode="before")
+    @classmethod
+    def normalize_legacy_visibility(cls, value: str) -> str:
+        return "followers" if value == "friends" else value
+
+
+class SocialCommentCreateRequest(BaseModel):
+    post_id: str
+    text: str = Field(min_length=1, max_length=600)
+    reply_to_comment_id: str | None = None
 
 
 @router.get("/friends")
@@ -42,6 +55,96 @@ def list_friends():
 @router.get("/posts")
 def list_posts():
     return list(store.list_posts())
+
+
+@router.get("/engagement")
+def get_engagement():
+    return store.social_engagement_state()
+
+
+@router.post("/posts/{post_id}/likes")
+def like_post(post_id: str):
+    state = store.set_post_like(post_id, True)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Post not found.")
+    return state
+
+
+@router.delete("/posts/{post_id}/likes")
+def unlike_post(post_id: str):
+    state = store.set_post_like(post_id, False)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Post not found.")
+    return state
+
+
+@router.post("/posts/{post_id}/reposts")
+def repost_post(post_id: str):
+    state = store.set_post_repost(post_id, True)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Post not found.")
+    return state
+
+
+@router.delete("/posts/{post_id}/reposts")
+def unrepost_post(post_id: str):
+    state = store.set_post_repost(post_id, False)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Post not found.")
+    return state
+
+
+@router.post("/posts/{post_id}/rsvp")
+def join_event(post_id: str):
+    state = store.set_event_rsvp(post_id, True)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Event post not found.")
+    return state
+
+
+@router.delete("/posts/{post_id}/rsvp")
+def leave_event(post_id: str):
+    state = store.set_event_rsvp(post_id, False)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Event post not found.")
+    return state
+
+
+@router.post("/comments")
+def create_comment(payload: SocialCommentCreateRequest):
+    state = store.add_comment(
+        post_id=payload.post_id,
+        comment_id=f"comment_{uuid4().hex[:10]}",
+        text=payload.text.strip(),
+        reply_to_comment_id=payload.reply_to_comment_id,
+    )
+    if state is None:
+        raise HTTPException(status_code=404, detail="Post or parent comment not found.")
+    return state
+
+
+@router.delete("/comments/{comment_id}")
+def delete_comment(comment_id: str):
+    state = store.delete_comment(comment_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Comment not found.")
+    return state
+
+
+@router.post("/comments/{comment_id}/likes")
+def like_comment(comment_id: str):
+    state = store.set_comment_like(comment_id, True)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Comment not found.")
+    return state
+
+
+@router.delete("/comments/{comment_id}/likes")
+def unlike_comment(comment_id: str):
+    state = store.set_comment_like(comment_id, False)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Comment not found.")
+    return state
 
 
 @router.post("/media")
@@ -71,9 +174,9 @@ async def upload_media(
             raise HTTPException(status_code=400, detail="Thumbnail must be a photo.")
         thumb_path = MEDIA_DIR / f"{media_id}_thumb{extension}"
         _write_upload_with_limit(thumbnail, thumb_path, MAX_PHOTO_BYTES)
-        thumb_url = f"{str(request.base_url).rstrip('/')}/media/{thumb_path.name}"
+        thumb_url = f"{_request_public_base_url(request)}/media/{thumb_path.name}"
 
-    base_url = str(request.base_url).rstrip("/")
+    base_url = _request_public_base_url(request)
     media_url = f"{base_url}/media/{full_path.name}"
     return SocialMediaAttachment(
         id=media_id,
@@ -119,6 +222,13 @@ def _video_extension(file: UploadFile) -> str | None:
     return None
 
 
+def _request_public_base_url(request: Request) -> str:
+    configured_url = public_backend_url()
+    if configured_url != "http://127.0.0.1:8000":
+        return configured_url
+    return str(request.base_url).rstrip("/")
+
+
 @router.post("/posts")
 def create_post(payload: SocialPostCreateRequest):
     photos = [item for item in payload.media if item.media_type == "photo"][:MAX_PHOTOS_PER_POST]
@@ -137,6 +247,7 @@ def create_post(payload: SocialPostCreateRequest):
         body=payload.body,
         media=media,
         meetup_date=payload.meetup_date,
+        meetup_end_date=payload.meetup_end_date,
         created_at=datetime.now(timezone.utc),
     )
     return store.add_post(post)

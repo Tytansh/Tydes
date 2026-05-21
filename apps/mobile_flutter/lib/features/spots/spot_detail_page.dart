@@ -6,8 +6,11 @@ import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../alerts/create_alert_sheet.dart';
 import '../home/home_page.dart';
+import 'spots_page.dart';
 
 const _favoriteAccent = Color(0xFF2AA7A1);
+const _surfSafetyDisclaimer =
+    'Check local hazards and tide before paddling out.';
 
 final spotDetailProvider = FutureProvider.autoDispose.family((
   ref,
@@ -19,8 +22,12 @@ final spotDetailProvider = FutureProvider.autoDispose.family((
 final spotForecastProvider = FutureProvider.autoDispose.family((
   ref,
   String spotId,
-) {
-  return ref.watch(surfRepositoryProvider).fetchForecasts(spotId);
+) async {
+  final forecasts = await ref
+      .watch(surfRepositoryProvider)
+      .fetchForecasts(spotId: spotId);
+  ref.invalidate(spotCardForecastProvider(spotId));
+  return forecasts;
 });
 
 final spotTideProvider = FutureProvider.autoDispose.family((
@@ -28,6 +35,13 @@ final spotTideProvider = FutureProvider.autoDispose.family((
   String spotId,
 ) {
   return ref.watch(surfRepositoryProvider).fetchTides(spotId);
+});
+
+final spotSurfWindowProvider = FutureProvider.autoDispose.family((
+  ref,
+  String spotId,
+) {
+  return ref.watch(surfRepositoryProvider).fetchSurfWindow(spotId);
 });
 
 final unlockingLiveSpotProvider = StateProvider.family<bool, String>((
@@ -44,7 +58,7 @@ final spotDetailBundleProvider = FutureProvider.autoDispose.family((
   final repository = ref.watch(surfRepositoryProvider);
   final results = await Future.wait<Object>([
     repository.fetchSpot(spotId),
-    repository.fetchForecasts(spotId),
+    ref.watch(spotForecastProvider(spotId).future),
     repository.fetchTides(spotId),
   ]);
   return _SpotDetailBundle(
@@ -76,6 +90,7 @@ class SpotDetailPage extends ConsumerWidget {
     final detail = ref.watch(spotDetailBundleProvider(spotId));
     final me = ref.watch(meProvider);
     final favoriteSpotIds = ref.watch(favoriteSpotIdsProvider);
+    final surfWindow = ref.watch(spotSurfWindowProvider(spotId));
 
     return Scaffold(
       appBar: AppBar(
@@ -93,9 +108,7 @@ class SpotDetailPage extends ConsumerWidget {
               favoriteSpotIds.contains(spotId)
                   ? Icons.favorite
                   : Icons.favorite_border,
-              color: favoriteSpotIds.contains(spotId)
-                  ? _favoriteAccent
-                  : null,
+              color: favoriteSpotIds.contains(spotId) ? _favoriteAccent : null,
             ),
           ),
         ],
@@ -111,6 +124,9 @@ class SpotDetailPage extends ConsumerWidget {
                 : forecastRows.first;
             final waveValue =
                 currentForecast?.waveDisplay ?? '${item.waveHeightM}m';
+            final waveLevelValue = _waveLevelLabel(
+              currentForecast?.waveLevel ?? item.waveLevel,
+            );
             final waterValue = currentForecast?.seaSurfaceTemperatureC != null
                 ? '${currentForecast!.seaSurfaceTemperatureC!.toStringAsFixed(1)}C'
                 : '${item.waterTempC}C';
@@ -125,12 +141,14 @@ class SpotDetailPage extends ConsumerWidget {
                 Text('${item.area}, ${item.region}, ${item.country}'),
                 const SizedBox(height: 14),
                 Text(item.summary),
+                const SizedBox(height: 12),
+                const _SurfSafetyDisclaimer(),
                 const SizedBox(height: 16),
                 Wrap(
                   spacing: 10,
                   runSpacing: 10,
                   children: [
-                    _StatChip(label: 'Skill', value: item.difficulty),
+                    _StatChip(label: 'Wave level', value: waveLevelValue),
                     _StatChip(label: 'Wave', value: waveValue),
                     _StatChip(label: 'Water', value: waterValue),
                   ],
@@ -143,6 +161,10 @@ class SpotDetailPage extends ConsumerWidget {
                     onUnlocked: () {
                       ref.invalidate(meProvider);
                       ref.invalidate(dashboardProvider);
+                      ref.invalidate(spotForecastsBySpotProvider);
+                      ref.invalidate(spotCardForecastProvider(spotId));
+                      ref.invalidate(spotForecastProvider(spotId));
+                      ref.invalidate(spotSurfWindowProvider(spotId));
                       ref.invalidate(spotDetailBundleProvider(spotId));
                     },
                   ),
@@ -161,6 +183,8 @@ class SpotDetailPage extends ConsumerWidget {
                 ),
                 const SizedBox(height: 24),
                 _TideCard(tide: bundle.tide),
+                const SizedBox(height: 24),
+                _BestSurfWindowCard(window: surfWindow),
                 const SizedBox(height: 24),
                 Text(
                   'Forecast window',
@@ -243,7 +267,7 @@ class _ForecastCard extends StatelessWidget {
             _ForecastSummary(row: row),
             const SizedBox(height: 12),
             Text(
-              _qualityLabel(row.quality),
+              _qualityLabel(row.waveLevel),
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
@@ -262,6 +286,187 @@ class _ForecastCard extends StatelessWidget {
   }
 }
 
+class _BestSurfWindowCard extends StatelessWidget {
+  const _BestSurfWindowCard({required this.window});
+
+  final AsyncValue<SurfWindowModel> window;
+
+  @override
+  Widget build(BuildContext context) {
+    return window.when(
+      loading: () => const Card(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ),
+      error: (_, _) => const Card(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Text('Best Time Today is unavailable right now.'),
+        ),
+      ),
+      data: (data) {
+        if (!data.available) {
+          return Card(
+            color: const Color(0xFFFFF4E4),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(data.note ?? 'Premium unlocks Best Time Today.'),
+            ),
+          );
+        }
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Best Time Today',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const Spacer(),
+                    _WindowRatingChip(rating: data.rating),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${data.bestStartLabel} - ${data.bestEndLabel}',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                if (data.summary != null) ...[
+                  const SizedBox(height: 8),
+                  Text(data.summary!),
+                ],
+                const SizedBox(height: 14),
+                _HourlySurfGraph(hours: data.hours),
+                if (data.note != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    data.note!,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SurfSafetyDisclaimer extends StatelessWidget {
+  const _SurfSafetyDisclaimer();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF4E4),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.warning_amber_rounded, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _surfSafetyDisclaimer,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HourlySurfGraph extends StatelessWidget {
+  const _HourlySurfGraph({required this.hours});
+
+  final List<SurfWindowHourModel> hours;
+
+  @override
+  Widget build(BuildContext context) {
+    if (hours.isEmpty) return const SizedBox.shrink();
+    final maxScore = hours
+        .map((hour) => hour.score)
+        .reduce((value, next) => value > next ? value : next)
+        .clamp(0.1, 1.25);
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          for (final hour in hours)
+            Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${hour.waveHeightM.toStringAsFixed(1)}m',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 5),
+                  Container(
+                    width: 24,
+                    height: 18 + ((hour.score / maxScore) * 54),
+                    decoration: BoxDecoration(
+                      color: _windowScoreColor(hour.score),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    hour.label,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WindowRatingChip extends StatelessWidget {
+  const _WindowRatingChip({required this.rating});
+
+  final String rating;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _windowRatingColor(rating);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        _windowRatingLabel(rating),
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
 class _TideCard extends StatelessWidget {
   const _TideCard({required this.tide});
 
@@ -269,7 +474,7 @@ class _TideCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final events = tide.events.take(4).toList();
+    final groupedEvents = _groupTideEventsByDay(tide.events);
 
     return Card(
       child: Padding(
@@ -311,27 +516,36 @@ class _TideCard extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 12),
-            if (events.isEmpty)
-              const Text('Tide unavailable')
+            if (groupedEvents.isEmpty)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Tide unavailable'),
+                  if (tide.note != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      tide.note!,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ],
+              )
             else
-              ...events.map(
-                (event) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 48,
-                        child: Text(
-                          event.label,
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                      Expanded(child: Text(event.localTime)),
-                    ],
-                  ),
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (
+                    var index = 0;
+                    index < groupedEvents.length;
+                    index++
+                  ) ...[
+                    Expanded(child: _TideDayGroup(group: groupedEvents[index])),
+                    if (index != groupedEvents.length - 1)
+                      const SizedBox(width: 16),
+                  ],
+                ],
               ),
-            if (tide.available && tide.note != null) ...[
+            if (groupedEvents.isNotEmpty && tide.note != null) ...[
               const SizedBox(height: 8),
               Text(
                 _safeTideNote(tide),
@@ -343,6 +557,92 @@ class _TideCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _TideDayGroup extends StatelessWidget {
+  const _TideDayGroup({required this.group});
+
+  final _TideDayEvents group;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          group.label,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 6),
+        ...group.events.map(
+          (event) => Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              children: [
+                Flexible(
+                  flex: 0,
+                  child: Text(
+                    event.label,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Flexible(child: Text(event.localTime)),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+List<_TideDayEvents> _groupTideEventsByDay(List<TideEventModel> events) {
+  if (events.isEmpty) return const [];
+
+  final sortedEvents = [...events]
+    ..sort((a, b) => DateTime.parse(a.time).compareTo(DateTime.parse(b.time)));
+  final today = DateTime.now();
+  final tomorrow = today.add(const Duration(days: 1));
+  final wantedDates = [_dateKey(today), _dateKey(tomorrow)];
+
+  return wantedDates
+      .map((dateKey) {
+        final eventDate = DateTime.parse(dateKey);
+        return _TideDayEvents(
+          label: _tideDayLabel(eventDate, today, tomorrow),
+          events: sortedEvents
+              .where((event) => event.localDate == dateKey)
+              .toList(),
+        );
+      })
+      .where((group) => group.events.isNotEmpty)
+      .toList();
+}
+
+String _tideDayLabel(DateTime date, DateTime today, DateTime tomorrow) {
+  if (_sameDay(date, today)) return 'Today';
+  if (_sameDay(date, tomorrow)) return 'Tomorrow';
+  return '${date.month}/${date.day}';
+}
+
+bool _sameDay(DateTime a, DateTime b) {
+  return a.year == b.year && a.month == b.month && a.day == b.day;
+}
+
+String _dateKey(DateTime date) {
+  final month = date.month.toString().padLeft(2, '0');
+  final day = date.day.toString().padLeft(2, '0');
+  return '${date.year}-$month-$day';
+}
+
+class _TideDayEvents {
+  const _TideDayEvents({required this.label, required this.events});
+
+  final String label;
+  final List<TideEventModel> events;
 }
 
 String _safeTideNote(TideForecastModel tide) {
@@ -623,13 +923,42 @@ String _friendlyPeriod(int periodS) {
   return 'strong (${periodS}s)';
 }
 
-String _qualityLabel(String quality) {
-  return switch (quality) {
-    'good' => 'Quality: good',
-    'fair' => 'Quality: fair',
-    'poor' => 'Quality: poor',
-    _ => 'Quality: $quality',
+String _qualityLabel(String? waveLevel) {
+  if (waveLevel == null) return 'Quality: unavailable';
+  return 'Quality: ${_waveLevelLabel(waveLevel)}';
+}
+
+String _waveLevelLabel(String waveLevel) {
+  return switch (waveLevel) {
+    'beginner' => 'Beginner',
+    'advanced' => 'Advanced',
+    _ => 'Intermediate',
   };
+}
+
+String _windowRatingLabel(String rating) {
+  return switch (rating) {
+    'epic' => 'Epic',
+    'good' => 'Good',
+    'fair' => 'Fair',
+    _ => 'Poor',
+  };
+}
+
+Color _windowRatingColor(String rating) {
+  return switch (rating) {
+    'epic' => const Color(0xFF0F8F75),
+    'good' => const Color(0xFF2E8FE8),
+    'fair' => const Color(0xFFE29A2D),
+    _ => const Color(0xFF8A6F63),
+  };
+}
+
+Color _windowScoreColor(double score) {
+  if (score >= 0.95) return const Color(0xFF0F8F75);
+  if (score >= 0.78) return const Color(0xFF2E8FE8);
+  if (score >= 0.58) return const Color(0xFFE29A2D);
+  return const Color(0xFFB8AAA2);
 }
 
 class _StatChip extends StatelessWidget {
