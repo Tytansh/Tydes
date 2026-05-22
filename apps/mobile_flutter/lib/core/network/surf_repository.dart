@@ -805,6 +805,10 @@ class SurfRepository {
   }) async {
     final response = await _dio.post<Map<String, dynamic>>(
       '/social/media',
+      options: Options(
+        sendTimeout: const Duration(seconds: 45),
+        receiveTimeout: const Duration(seconds: 45),
+      ),
       data: FormData.fromMap({
         'file': await MultipartFile.fromFile(image.path, filename: image.name),
         'thumbnail': await MultipartFile.fromFile(
@@ -822,8 +826,8 @@ class SurfRepository {
     final response = await _dio.post<Map<String, dynamic>>(
       '/social/media',
       options: Options(
-        sendTimeout: const Duration(minutes: 5),
-        receiveTimeout: const Duration(minutes: 2),
+        sendTimeout: const Duration(minutes: 2),
+        receiveTimeout: const Duration(seconds: 45),
       ),
       data: FormData.fromMap({
         'file': await MultipartFile.fromFile(video.path, filename: video.name),

@@ -2305,6 +2305,7 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
   DateTime? _inviteDate;
   DateTime? _inviteEndDate;
   bool _submitting = false;
+  String? _submitStatus;
 
   @override
   void dispose() {
@@ -2470,13 +2471,30 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
                 ),
                 const SizedBox(height: 12),
                 if (_submitting)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(99),
-                    child: LinearProgressIndicator(
-                      color: scheme.primary,
-                      backgroundColor: scheme.primary.withValues(alpha: 0.12),
-                      minHeight: 4,
-                    ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(99),
+                        child: LinearProgressIndicator(
+                          color: scheme.primary,
+                          backgroundColor: scheme.primary.withValues(
+                            alpha: 0.12,
+                          ),
+                          minHeight: 4,
+                        ),
+                      ),
+                      if (_submitStatus != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          _submitStatus!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
               ],
             ),
@@ -2528,7 +2546,33 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     );
     if (picked == null || !mounted) return;
 
-    if (_isVideoDraft(picked)) {
+    final isVideo = _isVideoDraft(picked);
+    final mediaSize = await picked.length();
+    if (!mounted) return;
+
+    if (isVideo && mediaSize > _maxPostVideoBytes) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Videos need to be under ${_formatFileSize(_maxPostVideoBytes)} for now. Try trimming this clip.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (!isVideo && mediaSize > _maxPostPhotoBytes) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Photos need to be under ${_formatFileSize(_maxPostPhotoBytes)}.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (isVideo) {
       setState(() => _media.add(_PostMediaDraft.video(picked)));
       return;
     }
@@ -2578,15 +2622,22 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     }
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
-    setState(() => _submitting = true);
+    setState(() {
+      _submitting = true;
+      _submitStatus = _media.isEmpty ? 'Posting...' : 'Preparing upload...';
+    });
 
     try {
       final repository = ref.read(surfRepositoryProvider);
       final media = <SocialMediaAttachmentModel>[];
-      for (final draft in _media) {
+      for (var index = 0; index < _media.length; index++) {
+        final draft = _media[index];
         final photo = draft.photo;
         final video = draft.video;
         if (photo != null) {
+          _setSubmitStatus(
+            'Uploading photo ${index + 1} of ${_media.length}...',
+          );
           media.add(
             await repository.uploadPostPhoto(
               image: photo.fullImage,
@@ -2594,10 +2645,20 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
             ),
           );
         } else if (video != null) {
+          final videoSize = await video.length();
+          if (videoSize > _maxPostVideoBytes) {
+            throw StateError(
+              'Videos need to be under ${_formatFileSize(_maxPostVideoBytes)} for now. Try trimming this clip.',
+            );
+          }
+          _setSubmitStatus(
+            'Uploading video ${index + 1} of ${_media.length}...',
+          );
           media.add(await repository.uploadPostVideo(video: video));
         }
       }
 
+      _setSubmitStatus('Posting...');
       await repository.createSocialPost(
         body: body,
         spotId: _spotId,
@@ -2616,11 +2677,19 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
       navigator.pop();
     } catch (error) {
       if (!mounted) return;
-      setState(() => _submitting = false);
+      setState(() {
+        _submitting = false;
+        _submitStatus = null;
+      });
       messenger.showSnackBar(
         SnackBar(content: Text(_uploadErrorMessage(error))),
       );
     }
+  }
+
+  void _setSubmitStatus(String status) {
+    if (!mounted) return;
+    setState(() => _submitStatus = status);
   }
 }
 
@@ -4005,6 +4074,8 @@ class _PostMediaDraft {
 }
 
 const _maxPostMediaItems = 3;
+const _maxPostPhotoBytes = 15 * 1024 * 1024;
+const _maxPostVideoBytes = 75 * 1024 * 1024;
 
 bool _isSurfInvite(SocialPostModel post) {
   return post.postType == 'surf_plan' || post.postType == 'looking_for_buddy';
@@ -4112,13 +4183,29 @@ String _labelForVisibility(String visibility) {
 }
 
 String _uploadErrorMessage(Object error) {
+  if (error is StateError) {
+    return error.message;
+  }
   if (error is DioException) {
+    if (error.type == DioExceptionType.sendTimeout ||
+        error.type == DioExceptionType.receiveTimeout ||
+        error.type == DioExceptionType.connectionTimeout) {
+      return 'Upload timed out. Try a shorter video or stronger Wi-Fi.';
+    }
     final data = error.response?.data;
     if (data is Map<String, dynamic> && data['detail'] is String) {
       return data['detail'] as String;
     }
+    if (error.response?.statusCode == 413) {
+      return 'That file is too large. Try a shorter video or smaller photo.';
+    }
   }
   return 'Upload failed. Try again.';
+}
+
+String _formatFileSize(int bytes) {
+  final mb = bytes / (1024 * 1024);
+  return '${mb.round()}MB';
 }
 
 SpotModel? _spotForId(List<SpotModel> spots, String? spotId) {
