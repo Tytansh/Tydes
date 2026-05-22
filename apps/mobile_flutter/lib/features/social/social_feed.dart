@@ -2541,11 +2541,100 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
       return;
     }
 
-    final picked = await _imagePicker.pickMultipleMedia(
-      imageQuality: 78,
-      limit: remainingSlots,
-      requestFullMetadata: false,
+    final mode = await _chooseMediaPickMode(remainingSlots);
+    if (!mounted || mode == null) return;
+
+    switch (mode) {
+      case _ComposerMediaPickMode.mixed:
+        final picked = await _imagePicker.pickMultipleMedia(
+          imageQuality: 78,
+          limit: remainingSlots,
+          requestFullMetadata: false,
+        );
+        if (!mounted) return;
+        await _addPickedMedia(picked, remainingSlots, messenger);
+      case _ComposerMediaPickMode.photos:
+        final picked = await _imagePicker.pickMultiImage(
+          imageQuality: 78,
+          limit: remainingSlots,
+          requestFullMetadata: false,
+        );
+        if (!mounted) return;
+        await _addPickedMedia(picked, remainingSlots, messenger);
+      case _ComposerMediaPickMode.video:
+        final picked = await _imagePicker.pickVideo(
+          source: ImageSource.gallery,
+        );
+        if (!mounted || picked == null) return;
+        await _addPickedMedia([picked], 1, messenger);
+    }
+  }
+
+  Future<_ComposerMediaPickMode?> _chooseMediaPickMode(
+    int remainingSlots,
+  ) async {
+    return showModalBottomSheet<_ComposerMediaPickMode>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        final theme = Theme.of(context);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 4, 18, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Add media',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '$remainingSlots ${remainingSlots == 1 ? 'spot' : 'spots'} left on this post.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  leading: const Icon(Icons.perm_media_outlined),
+                  title: const Text('Photos and videos'),
+                  subtitle: const Text(
+                    'Pick multiple if your gallery allows it.',
+                  ),
+                  onTap: () =>
+                      Navigator.pop(context, _ComposerMediaPickMode.mixed),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('Photos'),
+                  subtitle: const Text('Reliable picker for photo-only posts.'),
+                  onTap: () =>
+                      Navigator.pop(context, _ComposerMediaPickMode.photos),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.videocam_outlined),
+                  title: const Text('Video'),
+                  subtitle: const Text('Best for adding one clip.'),
+                  onTap: () =>
+                      Navigator.pop(context, _ComposerMediaPickMode.video),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
+  }
+
+  Future<void> _addPickedMedia(
+    List<XFile> picked,
+    int remainingSlots,
+    ScaffoldMessengerState messenger,
+  ) async {
     if (picked.isEmpty || !mounted) return;
 
     final warnings = <String>[];
@@ -2566,6 +2655,12 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     }
     if (warnings.isNotEmpty && mounted) {
       messenger.showSnackBar(SnackBar(content: Text(warnings.first)));
+    } else if (drafts.isEmpty && mounted) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Could not add that media. Try a shorter MP4/MOV.'),
+        ),
+      );
     }
   }
 
@@ -2594,17 +2689,19 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
       return _PostMediaDraft.video(picked);
     }
 
-    final draft = _PostPhotoDraft(
-      fullImage: picked,
-      thumbnail: await _createThumbnail(picked),
-    );
+    final thumbnail = await _createThumbnail(picked);
+    if (thumbnail == null) {
+      return _PostMediaDraft.video(picked);
+    }
+
+    final draft = _PostPhotoDraft(fullImage: picked, thumbnail: thumbnail);
     return _PostMediaDraft.photo(draft);
   }
 
-  Future<XFile> _createThumbnail(XFile source) async {
+  Future<XFile?> _createThumbnail(XFile source) async {
     final bytes = await source.readAsBytes();
     final decoded = image_tools.decodeImage(bytes);
-    if (decoded == null) return source;
+    if (decoded == null) return null;
 
     final resized = image_tools.copyResize(decoded, width: 700);
     final encoded = image_tools.encodeJpg(resized, quality: 68);
@@ -2623,11 +2720,17 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     final mimeType = media.mimeType?.toLowerCase();
     if (mimeType != null) return mimeType.startsWith('video/');
     final path = media.path.toLowerCase();
+    final name = media.name.toLowerCase();
     return path.endsWith('.mov') ||
         path.endsWith('.mp4') ||
         path.endsWith('.m4v') ||
         path.endsWith('.avi') ||
-        path.endsWith('.webm');
+        path.endsWith('.webm') ||
+        name.endsWith('.mov') ||
+        name.endsWith('.mp4') ||
+        name.endsWith('.m4v') ||
+        name.endsWith('.avi') ||
+        name.endsWith('.webm');
   }
 
   Future<void> _submitPost() async {
@@ -4088,6 +4191,8 @@ class _PostMediaDraft {
   final _PostPhotoDraft? photo;
   final XFile? video;
 }
+
+enum _ComposerMediaPickMode { mixed, photos, video }
 
 const _maxPostMediaItems = 3;
 const _maxPostPhotoBytes = 15 * 1024 * 1024;
