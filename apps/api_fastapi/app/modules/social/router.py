@@ -20,10 +20,9 @@ ALLOWED_VIDEO_TYPES = {
     "video/x-m4v": ".m4v",
 }
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v"}
-MAX_PHOTOS_PER_POST = 3
-MAX_VIDEOS_PER_POST = 1
+MAX_MEDIA_PER_POST = 3
 MAX_PHOTO_BYTES = 15 * 1024 * 1024
-MAX_VIDEO_BYTES = 500 * 1024 * 1024
+MAX_VIDEO_BYTES = 150 * 1024 * 1024
 
 
 class SocialPostCreateRequest(BaseModel):
@@ -231,9 +230,11 @@ def _request_public_base_url(request: Request) -> str:
 
 @router.post("/posts")
 def create_post(payload: SocialPostCreateRequest):
-    photos = [item for item in payload.media if item.media_type == "photo"][:MAX_PHOTOS_PER_POST]
-    videos = [item for item in payload.media if item.media_type == "video"][:MAX_VIDEOS_PER_POST]
-    media = photos + videos
+    media = [
+        item
+        for item in payload.media
+        if item.media_type in {"photo", "video"}
+    ][:MAX_MEDIA_PER_POST]
     post = SocialPost(
         id=f"post_{uuid4().hex[:8]}",
         user_id=store.user.id,

@@ -2298,8 +2298,7 @@ class _CreatePostSheet extends ConsumerStatefulWidget {
 class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
   final _bodyController = TextEditingController();
   final _imagePicker = ImagePicker();
-  final List<_PostPhotoDraft> _photos = [];
-  XFile? _video;
+  final List<_PostMediaDraft> _media = [];
   String _postType = 'general';
   String _visibility = 'public';
   String? _spotId;
@@ -2323,8 +2322,7 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     final canPost =
         !_submitting &&
         (_bodyController.text.trim().isNotEmpty ||
-            _photos.isNotEmpty ||
-            _video != null ||
+            _media.isNotEmpty ||
             (isSurfInvite && _spotId != null));
     final captionHint = isSurfInvite
         ? 'What’s happening, who should come, and what should people know?'
@@ -2384,12 +2382,10 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
                 _ComposerTypeSwitch(value: _postType, onChanged: _setPostType),
                 const SizedBox(height: 14),
                 _ComposerMediaStage(
-                  photos: _photos,
-                  video: _video,
+                  media: _media,
                   onAddMedia: _pickMedia,
-                  onRemovePhoto: (photo) =>
-                      setState(() => _photos.remove(photo)),
-                  onRemoveVideo: () => setState(() => _video = null),
+                  onRemoveMedia: (media) =>
+                      setState(() => _media.remove(media)),
                 ),
                 const SizedBox(height: 12),
                 Wrap(
@@ -2518,8 +2514,13 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
   }
 
   Future<void> _pickMedia() async {
-    if (_video != null && _photos.length >= 3) return;
     final messenger = ScaffoldMessenger.of(context);
+    if (_media.length >= _maxPostMediaItems) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('You can add up to 3 photos or videos.')),
+      );
+      return;
+    }
 
     final picked = await _imagePicker.pickMedia(
       imageQuality: 78,
@@ -2528,20 +2529,7 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     if (picked == null || !mounted) return;
 
     if (_isVideoDraft(picked)) {
-      if (_video != null) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Only one video can be added for now.')),
-        );
-        return;
-      }
-      setState(() => _video = picked);
-      return;
-    }
-
-    if (_photos.length >= 3) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('You can add up to 3 photos.')),
-      );
+      setState(() => _media.add(_PostMediaDraft.video(picked)));
       return;
     }
 
@@ -2550,7 +2538,7 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
       thumbnail: await _createThumbnail(picked),
     );
     if (!mounted) return;
-    setState(() => _photos.add(draft));
+    setState(() => _media.add(_PostMediaDraft.photo(draft)));
   }
 
   Future<XFile> _createThumbnail(XFile source) async {
@@ -2585,10 +2573,7 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
   Future<void> _submitPost() async {
     final body = _bodyController.text.trim();
     final isSurfInvite = _postType == 'surf_plan';
-    if (body.isEmpty &&
-        _photos.isEmpty &&
-        _video == null &&
-        !(isSurfInvite && _spotId != null)) {
+    if (body.isEmpty && _media.isEmpty && !(isSurfInvite && _spotId != null)) {
       return;
     }
     final navigator = Navigator.of(context);
@@ -2598,17 +2583,19 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     try {
       final repository = ref.read(surfRepositoryProvider);
       final media = <SocialMediaAttachmentModel>[];
-      for (final photo in _photos) {
-        media.add(
-          await repository.uploadPostPhoto(
-            image: photo.fullImage,
-            thumbnail: photo.thumbnail,
-          ),
-        );
-      }
-      final video = _video;
-      if (video != null) {
-        media.add(await repository.uploadPostVideo(video: video));
+      for (final draft in _media) {
+        final photo = draft.photo;
+        final video = draft.video;
+        if (photo != null) {
+          media.add(
+            await repository.uploadPostPhoto(
+              image: photo.fullImage,
+              thumbnail: photo.thumbnail,
+            ),
+          );
+        } else if (video != null) {
+          media.add(await repository.uploadPostVideo(video: video));
+        }
       }
 
       await repository.createSocialPost(
@@ -2729,18 +2716,14 @@ class _ComposerTypeOption extends StatelessWidget {
 
 class _ComposerMediaStage extends StatefulWidget {
   const _ComposerMediaStage({
-    required this.photos,
-    required this.video,
+    required this.media,
     required this.onAddMedia,
-    required this.onRemovePhoto,
-    required this.onRemoveVideo,
+    required this.onRemoveMedia,
   });
 
-  final List<_PostPhotoDraft> photos;
-  final XFile? video;
+  final List<_PostMediaDraft> media;
   final VoidCallback onAddMedia;
-  final ValueChanged<_PostPhotoDraft> onRemovePhoto;
-  final VoidCallback onRemoveVideo;
+  final ValueChanged<_PostMediaDraft> onRemoveMedia;
 
   @override
   State<_ComposerMediaStage> createState() => _ComposerMediaStageState();
@@ -2780,7 +2763,7 @@ class _ComposerMediaStageState extends State<_ComposerMediaStage> {
     final scheme = Theme.of(context).colorScheme;
     final itemCount = _mediaItemCount;
     final hasMedia = itemCount > 0;
-    final canAddMedia = widget.photos.length < 3 || widget.video == null;
+    final canAddMedia = itemCount < _maxPostMediaItems;
 
     return Container(
       width: double.infinity,
@@ -2829,7 +2812,7 @@ class _ComposerMediaStageState extends State<_ComposerMediaStage> {
             ),
             if (hasMedia && canAddMedia)
               _ComposerMediaFooter(
-                label: 'Add more media ($itemCount/4)',
+                label: 'Add more media ($itemCount/3)',
                 icon: Icons.add_photo_alternate_outlined,
                 onTap: widget.onAddMedia,
               ),
@@ -2839,12 +2822,12 @@ class _ComposerMediaStageState extends State<_ComposerMediaStage> {
     );
   }
 
-  int get _mediaItemCount =>
-      widget.photos.length + (widget.video == null ? 0 : 1);
+  int get _mediaItemCount => widget.media.length;
 
   Widget _buildMediaPage(BuildContext context, int index) {
-    if (index < widget.photos.length) {
-      final photo = widget.photos[index];
+    final media = widget.media[index];
+    final photo = media.photo;
+    if (photo != null) {
       return Image.file(
         File(photo.thumbnail.path),
         fit: BoxFit.cover,
@@ -2853,7 +2836,7 @@ class _ComposerMediaStageState extends State<_ComposerMediaStage> {
       );
     }
 
-    final video = widget.video;
+    final video = media.video;
     if (video == null) return const SizedBox.shrink();
     return Stack(
       children: [Positioned.fill(child: _ComposerVideoPreview(video: video))],
@@ -2861,11 +2844,7 @@ class _ComposerMediaStageState extends State<_ComposerMediaStage> {
   }
 
   void _removeCurrentMedia() {
-    if (_index < widget.photos.length) {
-      widget.onRemovePhoto(widget.photos[_index]);
-      return;
-    }
-    widget.onRemoveVideo();
+    widget.onRemoveMedia(widget.media[_index]);
   }
 }
 
@@ -4015,6 +3994,17 @@ class _PostPhotoDraft {
   final XFile fullImage;
   final XFile thumbnail;
 }
+
+class _PostMediaDraft {
+  const _PostMediaDraft.photo(this.photo) : video = null;
+
+  const _PostMediaDraft.video(this.video) : photo = null;
+
+  final _PostPhotoDraft? photo;
+  final XFile? video;
+}
+
+const _maxPostMediaItems = 3;
 
 bool _isSurfInvite(SocialPostModel post) {
   return post.postType == 'surf_plan' || post.postType == 'looking_for_buddy';
