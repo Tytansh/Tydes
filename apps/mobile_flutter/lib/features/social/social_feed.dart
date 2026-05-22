@@ -2542,30 +2542,13 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     }
 
     try {
-      final picked = await _imagePicker.pickMedia(
+      final picked = await _imagePicker.pickMultipleMedia(
         imageQuality: 78,
+        limit: remainingSlots,
         requestFullMetadata: false,
       );
-      if (!mounted || picked == null) return;
-      if (_looksLikeVideo(picked)) {
-        await _addPickedVideo(picked, messenger);
-        return;
-      }
-
-      final warnings = <String>[];
-      final draft = await _draftForPickedPhoto(picked, warnings);
-      if (!mounted) return;
-      if (draft != null) {
-        setState(() => _media.add(draft));
-        return;
-      }
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            warnings.isNotEmpty ? warnings.first : 'Could not add that media.',
-          ),
-        ),
-      );
+      if (!mounted || picked.isEmpty) return;
+      await _addPickedMedia(picked, remainingSlots, messenger);
     } catch (_) {
       if (!mounted) return;
       messenger.showSnackBar(
@@ -2574,24 +2557,44 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     }
   }
 
-  Future<void> _addPickedVideo(
-    XFile picked,
+  Future<void> _addPickedMedia(
+    List<XFile> picked,
+    int remainingSlots,
     ScaffoldMessengerState messenger,
   ) async {
-    final videoSize = await _pickedVideoSize(picked);
-    if (!mounted) return;
+    final warnings = <String>[];
+    final drafts = <_PostMediaDraft>[];
+    final selected = picked.take(remainingSlots).toList();
 
-    setState(() => _media.add(_PostMediaDraft.video(picked)));
-    final isLarge = videoSize != null && videoSize > _maxPostVideoBytes;
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          isLarge
-              ? 'Video added. It may need trimming before posting.'
-              : 'Video added to your post.',
-        ),
-      ),
-    );
+    for (final item in selected) {
+      if (_looksLikeVideo(item)) {
+        final videoSize = await _pickedVideoSize(item);
+        if (!mounted) return;
+        if (videoSize != null && videoSize > _maxPostVideoBytes) {
+          warnings.add('Video added. It may need trimming before posting.');
+        }
+        drafts.add(_PostMediaDraft.video(item));
+        continue;
+      }
+
+      final draft = await _draftForPickedPhoto(item, warnings);
+      if (!mounted) return;
+      if (draft != null) drafts.add(draft);
+    }
+
+    if (drafts.isNotEmpty) {
+      setState(() => _media.addAll(drafts));
+    }
+    if (picked.length > remainingSlots) {
+      warnings.insert(0, 'Only the first 3 media items were added.');
+    }
+    if (warnings.isNotEmpty && mounted) {
+      messenger.showSnackBar(SnackBar(content: Text(warnings.first)));
+    } else if (drafts.isEmpty && mounted) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not add that media.')),
+      );
+    }
   }
 
   Future<int?> _pickedVideoSize(XFile picked) async {
