@@ -2569,8 +2569,17 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     }
 
     try {
-      final picked = await _imagePicker.pickVideo(source: ImageSource.gallery);
+      final picked = await _imagePicker.pickMedia(
+        imageQuality: 78,
+        requestFullMetadata: false,
+      );
       if (!mounted || picked == null) return;
+      if (!_looksLikeVideo(picked)) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Pick a video from this button.')),
+        );
+        return;
+      }
       await _addPickedVideo(picked, messenger);
     } catch (_) {
       if (!mounted) return;
@@ -2616,28 +2625,20 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     XFile picked,
     ScaffoldMessengerState messenger,
   ) async {
-    final tooLarge = await _isPickedVideoTooLarge(picked);
+    final videoSize = await _pickedVideoSize(picked);
     if (!mounted) return;
-    if (tooLarge) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Videos need to be under ${_formatFileSize(_maxPostVideoBytes)} for now. Try trimming this clip.',
-          ),
-        ),
-      );
-      return;
-    }
 
     setState(() => _media.add(_PostMediaDraft.video(picked)));
+    final isLarge = videoSize != null && videoSize > _maxPostVideoBytes;
     messenger.showSnackBar(
-      const SnackBar(content: Text('Video added to your post.')),
+      SnackBar(
+        content: Text(
+          isLarge
+              ? 'Video added. It may need trimming before posting.'
+              : 'Video added to your post.',
+        ),
+      ),
     );
-  }
-
-  Future<bool> _isPickedVideoTooLarge(XFile picked) async {
-    final size = await _pickedVideoSize(picked);
-    return size != null && size > _maxPostVideoBytes;
   }
 
   Future<int?> _pickedVideoSize(XFile picked) async {
@@ -2646,6 +2647,23 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     } catch (_) {
       return null;
     }
+  }
+
+  bool _looksLikeVideo(XFile media) {
+    final mimeType = media.mimeType?.toLowerCase();
+    if (mimeType != null) return mimeType.startsWith('video/');
+    final path = media.path.toLowerCase();
+    final name = media.name.toLowerCase();
+    return path.endsWith('.mov') ||
+        path.endsWith('.mp4') ||
+        path.endsWith('.m4v') ||
+        path.endsWith('.avi') ||
+        path.endsWith('.webm') ||
+        name.endsWith('.mov') ||
+        name.endsWith('.mp4') ||
+        name.endsWith('.m4v') ||
+        name.endsWith('.avi') ||
+        name.endsWith('.webm');
   }
 
   Future<_PostMediaDraft?> _draftForPickedPhoto(
@@ -2897,6 +2915,18 @@ class _ComposerMediaStageState extends State<_ComposerMediaStage> {
     final itemCount = _mediaItemCount;
     if (itemCount == 0) {
       _index = 0;
+      return;
+    }
+    if (oldWidget.media.length < itemCount) {
+      _index = itemCount - 1;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_controller.hasClients) return;
+        _controller.animateToPage(
+          _index,
+          duration: const Duration(milliseconds: 240),
+          curve: Curves.easeOutCubic,
+        );
+      });
       return;
     }
     if (_index >= itemCount) {
