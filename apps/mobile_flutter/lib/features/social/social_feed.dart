@@ -2384,8 +2384,7 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
                 const SizedBox(height: 14),
                 _ComposerMediaStage(
                   media: _media,
-                  onAddPhotos: _pickPhotos,
-                  onAddVideo: _pickVideo,
+                  onAddMedia: _openMediaPickerOptions,
                   onRemoveMedia: (media) =>
                       setState(() => _media.remove(media)),
                 ),
@@ -2530,6 +2529,73 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     );
     if (!mounted || value == null) return;
     setState(() => _spotId = value == _noSpotValue ? null : value);
+  }
+
+  Future<void> _openMediaPickerOptions() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final remainingSlots = _maxPostMediaItems - _media.length;
+    if (remainingSlots <= 0) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('You can add up to 3 photos or videos.')),
+      );
+      return;
+    }
+
+    final source = await showModalBottomSheet<_ComposerMediaSource>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        final theme = Theme.of(context);
+        final slotLabel = remainingSlots == 1 ? 'spot' : 'spots';
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 4, 18, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Add media',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '$remainingSlots $slotLabel left on this post.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('Photos'),
+                  subtitle: const Text('Choose one or more photos.'),
+                  onTap: () =>
+                      Navigator.pop(context, _ComposerMediaSource.photos),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.videocam_outlined),
+                  title: const Text('Video'),
+                  subtitle: const Text('Choose one clip.'),
+                  onTap: () =>
+                      Navigator.pop(context, _ComposerMediaSource.video),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted || source == null) return;
+
+    switch (source) {
+      case _ComposerMediaSource.photos:
+        await _pickPhotos();
+      case _ComposerMediaSource.video:
+        await _pickVideo();
+    }
   }
 
   Future<void> _pickPhotos() async {
@@ -2879,14 +2945,12 @@ class _ComposerTypeOption extends StatelessWidget {
 class _ComposerMediaStage extends StatefulWidget {
   const _ComposerMediaStage({
     required this.media,
-    required this.onAddPhotos,
-    required this.onAddVideo,
+    required this.onAddMedia,
     required this.onRemoveMedia,
   });
 
   final List<_PostMediaDraft> media;
-  final VoidCallback onAddPhotos;
-  final VoidCallback onAddVideo;
+  final VoidCallback onAddMedia;
   final ValueChanged<_PostMediaDraft> onRemoveMedia;
 
   @override
@@ -2984,16 +3048,12 @@ class _ComposerMediaStageState extends State<_ComposerMediaStage> {
                           ),
                       ],
                     )
-                  : _ComposerEmptyMedia(
-                      onAddPhotos: widget.onAddPhotos,
-                      onAddVideo: widget.onAddVideo,
-                    ),
+                  : _ComposerEmptyMedia(onAddMedia: widget.onAddMedia),
             ),
             if (hasMedia && canAddMedia)
               _ComposerMediaActions(
                 itemCount: itemCount,
-                onAddPhotos: widget.onAddPhotos,
-                onAddVideo: widget.onAddVideo,
+                onAddMedia: widget.onAddMedia,
               ),
           ],
         ),
@@ -3028,13 +3088,9 @@ class _ComposerMediaStageState extends State<_ComposerMediaStage> {
 }
 
 class _ComposerEmptyMedia extends StatelessWidget {
-  const _ComposerEmptyMedia({
-    required this.onAddPhotos,
-    required this.onAddVideo,
-  });
+  const _ComposerEmptyMedia({required this.onAddMedia});
 
-  final VoidCallback onAddPhotos;
-  final VoidCallback onAddVideo;
+  final VoidCallback onAddMedia;
 
   @override
   Widget build(BuildContext context) {
@@ -3060,7 +3116,7 @@ class _ComposerEmptyMedia extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Text(
-            'Add the session',
+            'Add media',
             style: Theme.of(
               context,
             ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
@@ -3074,24 +3130,13 @@ class _ComposerEmptyMedia extends StatelessWidget {
             ).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
           ),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.tonalIcon(
-                  onPressed: onAddPhotos,
-                  icon: const Icon(Icons.photo_library_outlined),
-                  label: const Text('Photos'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: FilledButton.tonalIcon(
-                  onPressed: onAddVideo,
-                  icon: const Icon(Icons.videocam_outlined),
-                  label: const Text('Video'),
-                ),
-              ),
-            ],
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonalIcon(
+              onPressed: onAddMedia,
+              icon: const Icon(Icons.perm_media_outlined),
+              label: const Text('Add media'),
+            ),
           ),
         ],
       ),
@@ -3276,13 +3321,11 @@ class _ComposerDots extends StatelessWidget {
 class _ComposerMediaActions extends StatelessWidget {
   const _ComposerMediaActions({
     required this.itemCount,
-    required this.onAddPhotos,
-    required this.onAddVideo,
+    required this.onAddMedia,
   });
 
   final int itemCount;
-  final VoidCallback onAddPhotos;
-  final VoidCallback onAddVideo;
+  final VoidCallback onAddMedia;
 
   @override
   Widget build(BuildContext context) {
@@ -3290,32 +3333,17 @@ class _ComposerMediaActions extends StatelessWidget {
     final label = '$itemCount/$_maxPostMediaItems';
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: onAddPhotos,
-              icon: const Icon(Icons.photo_library_outlined, size: 18),
-              label: Text('Photos $label'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: scheme.primary,
-                side: BorderSide(color: scheme.primary.withValues(alpha: 0.32)),
-              ),
-            ),
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: onAddMedia,
+          icon: const Icon(Icons.perm_media_outlined, size: 18),
+          label: Text('Add media ($label)'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: scheme.primary,
+            side: BorderSide(color: scheme.primary.withValues(alpha: 0.32)),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: onAddVideo,
-              icon: const Icon(Icons.videocam_outlined, size: 18),
-              label: Text('Video $label'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: scheme.primary,
-                side: BorderSide(color: scheme.primary.withValues(alpha: 0.32)),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -4226,6 +4254,8 @@ class _PostMediaDraft {
   final _PostPhotoDraft? photo;
   final XFile? video;
 }
+
+enum _ComposerMediaSource { photos, video }
 
 const _maxPostMediaItems = 3;
 const _maxPostPhotoBytes = 15 * 1024 * 1024;
