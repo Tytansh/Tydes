@@ -2313,9 +2313,16 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
   String? _submitStatus;
 
   @override
+  void initState() {
+    super.initState();
+    _bodyController.addListener(_syncCurrentDraft);
+  }
+
+  @override
   void dispose() {
+    _bodyController.removeListener(_syncCurrentDraft);
     if (!_discardDraftOnDispose) {
-      _saveCurrentDraft();
+      _syncCurrentDraft();
     }
     _bodyController.dispose();
     super.dispose();
@@ -2397,8 +2404,10 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
                 _ComposerMediaStage(
                   media: _media,
                   onAddMedia: _pickMedia,
-                  onRemoveMedia: (media) =>
-                      setState(() => _media.remove(media)),
+                  onRemoveMedia: (media) {
+                    setState(() => _media.remove(media));
+                    _syncCurrentDraft();
+                  },
                 ),
                 const SizedBox(height: 12),
                 Wrap(
@@ -2410,11 +2419,14 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
                           ? Icons.public_rounded
                           : Icons.group_outlined,
                       label: _visibility == 'public' ? 'Public' : 'Followers',
-                      onTap: () => setState(() {
-                        _visibility = _visibility == 'public'
-                            ? 'followers'
-                            : 'public';
-                      }),
+                      onTap: () {
+                        setState(() {
+                          _visibility = _visibility == 'public'
+                              ? 'followers'
+                              : 'public';
+                        });
+                        _syncCurrentDraft();
+                      },
                     ),
                     if (widget.spots.isNotEmpty)
                       _ComposerMetaChip(
@@ -2430,13 +2442,16 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
                   _InviteDateChips(
                     selectedStartDate: _inviteDate,
                     selectedEndDate: _inviteEndDate,
-                    onChanged: (value) => setState(() {
-                      _inviteDate = value?.start;
-                      _inviteEndDate =
-                          value == null || _sameDay(value.start, value.end)
-                          ? null
-                          : value.end;
-                    }),
+                    onChanged: (value) {
+                      setState(() {
+                        _inviteDate = value?.start;
+                        _inviteEndDate =
+                            value == null || _sameDay(value.start, value.end)
+                            ? null
+                            : value.end;
+                      });
+                      _syncCurrentDraft();
+                    },
                   ),
                 ],
                 const SizedBox(height: 14),
@@ -2526,6 +2541,7 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
         _inviteEndDate = null;
       }
     });
+    _syncCurrentDraft();
   }
 
   Future<void> _openSpotTagSheet(Set<String> favoriteSpotIds) async {
@@ -2541,11 +2557,12 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     );
     if (!mounted || value == null) return;
     setState(() => _spotId = value == _noSpotValue ? null : value);
+    _syncCurrentDraft();
   }
 
   Future<void> _openDraftsSheet() async {
     final messenger = ScaffoldMessenger.of(context);
-    _saveCurrentDraft();
+    _syncCurrentDraft();
     final draft = await showModalBottomSheet<_ComposerPostDraft>(
       context: context,
       showDragHandle: true,
@@ -2568,11 +2585,16 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
         ..clear()
         ..addAll(draft.media);
     });
+    _syncCurrentDraft();
     messenger.showSnackBar(const SnackBar(content: Text('Draft restored.')));
   }
 
-  void _saveCurrentDraft() {
-    if (!_hasDraftContent) return;
+  void _syncCurrentDraft() {
+    if (_discardDraftOnDispose) return;
+    if (!_hasDraftContent) {
+      _removeActiveDraft();
+      return;
+    }
     final draft = _ComposerPostDraft(
       id: _activeDraftId ?? 'draft_${DateTime.now().microsecondsSinceEpoch}',
       body: _bodyController.text.trim(),
@@ -2591,6 +2613,16 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
         if (item.id != draft.id) item,
     ].take(_maxComposerDrafts).toList();
     _activeDraftId = draft.id;
+  }
+
+  void _removeActiveDraft() {
+    final draftId = _activeDraftId;
+    if (draftId == null) return;
+    ref.read(composerDraftsProvider.notifier).state = [
+      for (final item in ref.read(composerDraftsProvider))
+        if (item.id != draftId) item,
+    ];
+    _activeDraftId = null;
   }
 
   bool get _hasDraftContent {
@@ -2652,6 +2684,7 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
 
     if (drafts.isNotEmpty) {
       setState(() => _media.addAll(drafts));
+      _syncCurrentDraft();
     }
     if (picked.length > remainingSlots) {
       warnings.insert(0, 'Only the first 3 media items were added.');
