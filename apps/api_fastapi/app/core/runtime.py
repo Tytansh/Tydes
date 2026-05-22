@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import shutil
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -26,6 +27,26 @@ def data_dir_path() -> Path:
 
 def media_dir_path() -> Path:
     return Path(os.getenv("TYDES_MEDIA_DIR", str(data_dir_path() / "media"))).expanduser()
+
+
+def seed_media_dir_path() -> Path:
+    return PROJECT_ROOT / "app" / "seed_media"
+
+
+def sync_seed_media_files() -> None:
+    source_dir = seed_media_dir_path()
+    target_dir = media_dir_path()
+    if not source_dir.exists():
+        return
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for source_file in source_dir.iterdir():
+        if not source_file.is_file():
+            continue
+        target_file = target_dir / source_file.name
+        if target_file.exists():
+            continue
+        shutil.copy2(source_file, target_file)
 
 
 def state_file_path() -> Path:

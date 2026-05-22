@@ -5615,18 +5615,6 @@ class DemoSeed {
     );
   }
 
-  static SocialMediaAttachmentModel _video(String mediaId, {String? altText}) {
-    return SocialMediaAttachmentModel(
-      id: mediaId,
-      mediaType: 'video',
-      url: '$_mediaBase/$mediaId.mov',
-      thumbnailUrl: '$_mediaBase/$mediaId.mov',
-      width: null,
-      height: null,
-      altText: altText,
-    );
-  }
-
   static final posts = [
     SocialPostModel(
       id: 'post_lina_canggu_photo',
@@ -5672,7 +5660,7 @@ class DemoSeed {
       visibility: 'public',
       body:
           'The Pass was slow but had a couple long runners if you waited your turn.',
-      media: [_video('media_115e1f73fe', altText: 'Byron point clip')],
+      media: const [],
       meetupDate: null,
       createdAt: '2026-04-30T04:20:00Z',
     ),

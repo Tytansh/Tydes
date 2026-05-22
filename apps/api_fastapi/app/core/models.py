@@ -4457,7 +4457,7 @@ def build_seed() -> dict[str, list[BaseModel] | User]:
             post_type="general",
             visibility="public",
             body="The Pass was slow but had a couple long runners if you waited your turn.",
-            media=[video("media_115e1f73fe", alt_text="Byron point clip")],
+            media=[],
             meetup_date=None,
             created_at=datetime.now(timezone.utc) - timedelta(hours=3),
         ),

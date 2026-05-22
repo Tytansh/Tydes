@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.core.runtime import csv_env, media_dir_path
+from app.core.runtime import csv_env, media_dir_path, sync_seed_media_files
 from app.core.store import store
 from app.modules.ads.router import router as ads_router
 from app.modules.alerts.router import router as alerts_router
@@ -17,6 +17,7 @@ from app.modules.users.router import router as users_router
 app = FastAPI(title="Surf Travel API", version="0.1.0")
 MEDIA_DIR = media_dir_path()
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+sync_seed_media_files()
 ALLOWED_ORIGINS = csv_env("ALLOWED_ORIGINS", "*")
 
 app.add_middleware(

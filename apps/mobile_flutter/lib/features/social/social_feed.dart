@@ -447,8 +447,17 @@ Future<void> showCreatePostSheet(BuildContext context, List<SpotModel> spots) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
+    isDismissible: true,
+    enableDrag: true,
     backgroundColor: Colors.transparent,
-    builder: (context) => _CreatePostSheet(spots: spots),
+    builder: (context) => DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.86,
+      minChildSize: 0.32,
+      maxChildSize: 0.94,
+      builder: (context, scrollController) =>
+          _CreatePostSheet(spots: spots, scrollController: scrollController),
+    ),
   );
 }
 
@@ -2277,9 +2286,10 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
 }
 
 class _CreatePostSheet extends ConsumerStatefulWidget {
-  const _CreatePostSheet({required this.spots});
+  const _CreatePostSheet({required this.spots, required this.scrollController});
 
   final List<SpotModel> spots;
+  final ScrollController scrollController;
 
   @override
   ConsumerState<_CreatePostSheet> createState() => _CreatePostSheetState();
@@ -2335,6 +2345,7 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
             borderRadius: const BorderRadius.vertical(top: Radius.circular(34)),
           ),
           child: SingleChildScrollView(
+            controller: widget.scrollController,
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 22),
             child: Column(
               mainAxisSize: MainAxisSize.min,

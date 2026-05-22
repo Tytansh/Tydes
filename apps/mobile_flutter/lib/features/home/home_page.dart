@@ -256,7 +256,10 @@ class _PeopleSearchPageState extends ConsumerState<PeopleSearchPage> {
             const _NoSearchResultsCard()
           else
             ...results.map(
-              (profile) => _UserSearchResultTile(profile: profile),
+              (profile) => _UserSearchResultTile(
+                profile: profile,
+                currentUserId: me.valueOrNull?.id,
+              ),
             ),
         ],
       ),
@@ -265,13 +268,17 @@ class _PeopleSearchPageState extends ConsumerState<PeopleSearchPage> {
 }
 
 class _UserSearchResultTile extends ConsumerWidget {
-  const _UserSearchResultTile({required this.profile});
+  const _UserSearchResultTile({
+    required this.profile,
+    required this.currentUserId,
+  });
 
   final PublicProfilePreview profile;
+  final String? currentUserId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isMe = profile.userId == 'usr_demo';
+    final isMe = profile.userId == currentUserId;
     final scheme = Theme.of(context).colorScheme;
 
     return Card(
@@ -454,7 +461,8 @@ void _openSearchProfile(
   WidgetRef ref,
   PublicProfilePreview profile,
 ) {
-  if (profile.userId == 'usr_demo') {
+  final currentUserId = ref.read(meProvider).valueOrNull?.id;
+  if (profile.userId == currentUserId) {
     ref.read(currentTabProvider.notifier).state = 4;
     return;
   }
