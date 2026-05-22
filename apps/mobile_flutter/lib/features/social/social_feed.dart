@@ -3894,17 +3894,17 @@ class _InviteDateChips extends StatelessWidget {
       spacing: 8,
       runSpacing: 8,
       children: [
-        for (final option in options)
-          ChoiceChip(
-            label: Text(option.label),
-            selected: _sameRange(selectedRange, option.range),
-            onSelected: (_) => onChanged(option.range),
-          ),
         if (selectedRange != null)
           ChoiceChip(
             label: const Text('No date yet'),
             selected: false,
             onSelected: (_) => onChanged(null),
+          ),
+        for (final option in options)
+          ChoiceChip(
+            label: Text(option.label),
+            selected: _sameRange(selectedRange, option.range),
+            onSelected: (_) => onChanged(option.range),
           ),
         ChoiceChip(
           avatar: const Icon(Icons.calendar_month_outlined, size: 16),
