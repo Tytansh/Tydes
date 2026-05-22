@@ -2536,7 +2536,6 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
       _postType = nextType;
       if (nextType == 'surf_plan') {
         _visibility = 'followers';
-        _inviteDate ??= DateTime.now().add(const Duration(days: 1));
       } else {
         _inviteEndDate = null;
       }
@@ -3888,8 +3887,7 @@ class _InviteDateChips extends StatelessWidget {
     final calendarLabel = calendarSelected
         ? _shortDateRangeLabel(selectedRange)
         : 'Pick dates';
-    final options = <({String label, DateTimeRange? range})>[
-      (label: 'No date yet', range: null),
+    final options = <({String label, DateTimeRange range})>[
       (label: 'Today', range: DateTimeRange(start: today, end: today)),
       (label: 'Tomorrow', range: DateTimeRange(start: tomorrow, end: tomorrow)),
     ];
@@ -3903,6 +3901,12 @@ class _InviteDateChips extends StatelessWidget {
             label: Text(option.label),
             selected: _sameRange(selectedRange, option.range),
             onSelected: (_) => onChanged(option.range),
+          ),
+        if (selectedRange != null)
+          ChoiceChip(
+            label: const Text('No date yet'),
+            selected: false,
+            onSelected: (_) => onChanged(null),
           ),
         ChoiceChip(
           avatar: const Icon(Icons.calendar_month_outlined, size: 16),
