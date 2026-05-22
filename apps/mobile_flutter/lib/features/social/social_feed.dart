@@ -2533,56 +2533,72 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
 
   Future<void> _pickMedia() async {
     final messenger = ScaffoldMessenger.of(context);
-    if (_media.length >= _maxPostMediaItems) {
+    final remainingSlots = _maxPostMediaItems - _media.length;
+    if (remainingSlots <= 0) {
       messenger.showSnackBar(
         const SnackBar(content: Text('You can add up to 3 photos or videos.')),
       );
       return;
     }
 
-    final picked = await _imagePicker.pickMedia(
+    final picked = await _imagePicker.pickMultipleMedia(
       imageQuality: 78,
+      limit: remainingSlots,
       requestFullMetadata: false,
     );
-    if (picked == null || !mounted) return;
+    if (picked.isEmpty || !mounted) return;
 
+    final warnings = <String>[];
+    final drafts = <_PostMediaDraft>[];
+    final selected = picked.take(remainingSlots).toList();
+    for (final media in selected) {
+      final draft = await _draftForPickedMedia(media, warnings);
+      if (!mounted) return;
+      if (draft != null) drafts.add(draft);
+    }
+
+    if (drafts.isNotEmpty) {
+      setState(() => _media.addAll(drafts));
+    }
+
+    if (picked.length > remainingSlots) {
+      warnings.insert(0, 'Only the first 3 media items were added.');
+    }
+    if (warnings.isNotEmpty && mounted) {
+      messenger.showSnackBar(SnackBar(content: Text(warnings.first)));
+    }
+  }
+
+  Future<_PostMediaDraft?> _draftForPickedMedia(
+    XFile picked,
+    List<String> warnings,
+  ) async {
     final isVideo = _isVideoDraft(picked);
     final mediaSize = await picked.length();
-    if (!mounted) return;
 
     if (isVideo && mediaSize > _maxPostVideoBytes) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Videos need to be under ${_formatFileSize(_maxPostVideoBytes)} for now. Try trimming this clip.',
-          ),
-        ),
+      warnings.add(
+        'Videos need to be under ${_formatFileSize(_maxPostVideoBytes)} for now. Try trimming this clip.',
       );
-      return;
+      return null;
     }
 
     if (!isVideo && mediaSize > _maxPostPhotoBytes) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Photos need to be under ${_formatFileSize(_maxPostPhotoBytes)}.',
-          ),
-        ),
+      warnings.add(
+        'Photos need to be under ${_formatFileSize(_maxPostPhotoBytes)}.',
       );
-      return;
+      return null;
     }
 
     if (isVideo) {
-      setState(() => _media.add(_PostMediaDraft.video(picked)));
-      return;
+      return _PostMediaDraft.video(picked);
     }
 
     final draft = _PostPhotoDraft(
       fullImage: picked,
       thumbnail: await _createThumbnail(picked),
     );
-    if (!mounted) return;
-    setState(() => _media.add(_PostMediaDraft.photo(draft)));
+    return _PostMediaDraft.photo(draft);
   }
 
   Future<XFile> _createThumbnail(XFile source) async {
@@ -2881,7 +2897,7 @@ class _ComposerMediaStageState extends State<_ComposerMediaStage> {
             ),
             if (hasMedia && canAddMedia)
               _ComposerMediaFooter(
-                label: 'Add more media ($itemCount/3)',
+                label: 'Add photos/videos ($itemCount/3)',
                 icon: Icons.add_photo_alternate_outlined,
                 onTap: widget.onAddMedia,
               ),
@@ -2953,7 +2969,7 @@ class _ComposerEmptyMedia extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Photos or a short clip show up here before you post.',
+            'Pick up to 3 photos or videos before you post.',
             textAlign: TextAlign.center,
             style: Theme.of(
               context,
