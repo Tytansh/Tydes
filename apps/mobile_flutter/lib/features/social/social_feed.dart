@@ -44,6 +44,9 @@ const _commentLikeAccent = Color(0xFF2AA7A1);
 final postCommentsProvider = StateProvider<Map<String, List<SocialComment>>>(
   (ref) => demoPostComments,
 );
+final composerDraftsProvider = StateProvider<List<_ComposerPostDraft>>(
+  (ref) => const [],
+);
 final socialEngagementHydrationProvider = FutureProvider<void>((ref) async {
   final engagement = await ref
       .watch(surfRepositoryProvider)
@@ -2299,16 +2302,21 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
   final _bodyController = TextEditingController();
   final _imagePicker = ImagePicker();
   final List<_PostMediaDraft> _media = [];
+  String? _activeDraftId;
   String _postType = 'general';
   String _visibility = 'public';
   String? _spotId;
   DateTime? _inviteDate;
   DateTime? _inviteEndDate;
   bool _submitting = false;
+  bool _discardDraftOnDispose = false;
   String? _submitStatus;
 
   @override
   void dispose() {
+    if (!_discardDraftOnDispose) {
+      _saveCurrentDraft();
+    }
     _bodyController.dispose();
     super.dispose();
   }
@@ -2371,6 +2379,10 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
                           fontWeight: FontWeight.w900,
                         ),
                       ),
+                    ),
+                    TextButton(
+                      onPressed: _openDraftsSheet,
+                      child: const Text('Drafts'),
                     ),
                     IconButton(
                       tooltip: 'Close',
@@ -2529,6 +2541,62 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     );
     if (!mounted || value == null) return;
     setState(() => _spotId = value == _noSpotValue ? null : value);
+  }
+
+  Future<void> _openDraftsSheet() async {
+    final messenger = ScaffoldMessenger.of(context);
+    _saveCurrentDraft();
+    final draft = await showModalBottomSheet<_ComposerPostDraft>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => const _ComposerDraftsSheet(),
+    );
+    if (!mounted || draft == null) return;
+    ref.read(composerDraftsProvider.notifier).state = [
+      for (final item in ref.read(composerDraftsProvider))
+        if (item.id != draft.id) item,
+    ];
+    setState(() {
+      _activeDraftId = draft.id;
+      _bodyController.text = draft.body;
+      _postType = draft.postType;
+      _visibility = draft.visibility;
+      _spotId = draft.spotId;
+      _inviteDate = draft.inviteDate;
+      _inviteEndDate = draft.inviteEndDate;
+      _media
+        ..clear()
+        ..addAll(draft.media);
+    });
+    messenger.showSnackBar(const SnackBar(content: Text('Draft restored.')));
+  }
+
+  void _saveCurrentDraft() {
+    if (!_hasDraftContent) return;
+    final draft = _ComposerPostDraft(
+      id: _activeDraftId ?? 'draft_${DateTime.now().microsecondsSinceEpoch}',
+      body: _bodyController.text.trim(),
+      postType: _postType,
+      visibility: _visibility,
+      spotId: _spotId,
+      inviteDate: _inviteDate,
+      inviteEndDate: _inviteEndDate,
+      media: List.unmodifiable(_media),
+      savedAt: DateTime.now(),
+    );
+    final existing = ref.read(composerDraftsProvider);
+    ref.read(composerDraftsProvider.notifier).state = [
+      draft,
+      for (final item in existing)
+        if (item.id != draft.id) item,
+    ].take(_maxComposerDrafts).toList();
+    _activeDraftId = draft.id;
+  }
+
+  bool get _hasDraftContent {
+    return _bodyController.text.trim().isNotEmpty ||
+        _media.isNotEmpty ||
+        _spotId != null;
   }
 
   Future<void> _pickMedia() async {
@@ -2723,6 +2791,13 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
       );
       ref.read(socialRefreshKeyProvider.notifier).state++;
       if (!mounted) return;
+      _discardDraftOnDispose = true;
+      if (_activeDraftId != null) {
+        ref.read(composerDraftsProvider.notifier).state = [
+          for (final item in ref.read(composerDraftsProvider))
+            if (item.id != _activeDraftId) item,
+        ];
+      }
       navigator.pop();
     } catch (error) {
       if (!mounted) return;
@@ -3029,6 +3104,96 @@ class _ComposerEmptyMedia extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ComposerDraftsSheet extends ConsumerWidget {
+  const _ComposerDraftsSheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final drafts = ref.watch(composerDraftsProvider);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 4, 18, 18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Drafts',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Saved posts stay here while the app is open.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 14),
+            if (drafts.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: Text(
+                  'No drafts yet.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              )
+            else
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: drafts.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final draft = drafts[index];
+                    return ListTile(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      tileColor: Colors.white,
+                      title: Text(
+                        _draftTitle(draft),
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      subtitle: Text(
+                        _draftSubtitle(draft),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: IconButton(
+                        tooltip: 'Delete draft',
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () {
+                          ref.read(composerDraftsProvider.notifier).state = [
+                            for (final item in drafts)
+                              if (item.id != draft.id) item,
+                          ];
+                        },
+                      ),
+                      onTap: () => Navigator.pop(context, draft),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -4145,9 +4310,57 @@ class _PostMediaDraft {
   final XFile? video;
 }
 
+class _ComposerPostDraft {
+  const _ComposerPostDraft({
+    required this.id,
+    required this.body,
+    required this.postType,
+    required this.visibility,
+    required this.media,
+    required this.savedAt,
+    this.spotId,
+    this.inviteDate,
+    this.inviteEndDate,
+  });
+
+  final String id;
+  final String body;
+  final String postType;
+  final String visibility;
+  final List<_PostMediaDraft> media;
+  final DateTime savedAt;
+  final String? spotId;
+  final DateTime? inviteDate;
+  final DateTime? inviteEndDate;
+}
+
 const _maxPostMediaItems = 3;
+const _maxComposerDrafts = 8;
 const _maxPostPhotoBytes = 15 * 1024 * 1024;
 const _maxPostVideoBytes = 75 * 1024 * 1024;
+
+String _draftTitle(_ComposerPostDraft draft) {
+  return draft.postType == 'surf_plan' ? 'Event draft' : 'Post draft';
+}
+
+String _draftSubtitle(_ComposerPostDraft draft) {
+  final parts = <String>[
+    _draftAgeLabel(draft.savedAt),
+    if (draft.body.isNotEmpty) draft.body,
+    if (draft.media.isNotEmpty)
+      '${draft.media.length} ${draft.media.length == 1 ? 'media item' : 'media items'}',
+    if (draft.spotId != null) 'Spot tagged',
+  ];
+  return parts.join(' - ');
+}
+
+String _draftAgeLabel(DateTime savedAt) {
+  final elapsed = DateTime.now().difference(savedAt);
+  if (elapsed.inMinutes < 1) return 'Saved just now';
+  if (elapsed.inHours < 1) return 'Saved ${elapsed.inMinutes}m ago';
+  if (elapsed.inDays < 1) return 'Saved ${elapsed.inHours}h ago';
+  return 'Saved ${elapsed.inDays}d ago';
+}
 
 bool _isSurfInvite(SocialPostModel post) {
   return post.postType == 'surf_plan' || post.postType == 'looking_for_buddy';
