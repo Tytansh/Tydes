@@ -2384,7 +2384,8 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
                 const SizedBox(height: 14),
                 _ComposerMediaStage(
                   media: _media,
-                  onAddMedia: _pickMedia,
+                  onAddPhotos: _pickPhotos,
+                  onAddVideo: _pickVideo,
                   onRemoveMedia: (media) =>
                       setState(() => _media.remove(media)),
                 ),
@@ -2531,7 +2532,7 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     setState(() => _spotId = value == _noSpotValue ? null : value);
   }
 
-  Future<void> _pickMedia() async {
+  Future<void> _pickPhotos() async {
     final messenger = ScaffoldMessenger.of(context);
     final remainingSlots = _maxPostMediaItems - _media.length;
     if (remainingSlots <= 0) {
@@ -2541,96 +2542,45 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
       return;
     }
 
-    final mode = await _chooseMediaPickMode(remainingSlots);
-    if (!mounted || mode == null) return;
-
-    switch (mode) {
-      case _ComposerMediaPickMode.mixed:
-        final picked = await _imagePicker.pickMultipleMedia(
-          imageQuality: 78,
-          limit: remainingSlots,
-          requestFullMetadata: false,
-        );
-        if (!mounted) return;
-        await _addPickedMedia(picked, remainingSlots, messenger);
-      case _ComposerMediaPickMode.photos:
-        final picked = await _imagePicker.pickMultiImage(
-          imageQuality: 78,
-          limit: remainingSlots,
-          requestFullMetadata: false,
-        );
-        if (!mounted) return;
-        await _addPickedMedia(picked, remainingSlots, messenger);
-      case _ComposerMediaPickMode.video:
-        final picked = await _imagePicker.pickVideo(
-          source: ImageSource.gallery,
-        );
-        if (!mounted || picked == null) return;
-        await _addPickedMedia([picked], 1, messenger);
+    try {
+      final picked = await _imagePicker.pickMultiImage(
+        imageQuality: 78,
+        limit: remainingSlots,
+        requestFullMetadata: false,
+      );
+      if (!mounted) return;
+      await _addPickedPhotos(picked, remainingSlots, messenger);
+    } catch (_) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not open your photos right now.')),
+      );
     }
   }
 
-  Future<_ComposerMediaPickMode?> _chooseMediaPickMode(
-    int remainingSlots,
-  ) async {
-    return showModalBottomSheet<_ComposerMediaPickMode>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) {
-        final theme = Theme.of(context);
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 4, 18, 18),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Add media',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '$remainingSlots ${remainingSlots == 1 ? 'spot' : 'spots'} left on this post.',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                ListTile(
-                  leading: const Icon(Icons.perm_media_outlined),
-                  title: const Text('Photos and videos'),
-                  subtitle: const Text(
-                    'Pick multiple if your gallery allows it.',
-                  ),
-                  onTap: () =>
-                      Navigator.pop(context, _ComposerMediaPickMode.mixed),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.photo_library_outlined),
-                  title: const Text('Photos'),
-                  subtitle: const Text('Reliable picker for photo-only posts.'),
-                  onTap: () =>
-                      Navigator.pop(context, _ComposerMediaPickMode.photos),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.videocam_outlined),
-                  title: const Text('Video'),
-                  subtitle: const Text('Best for adding one clip.'),
-                  onTap: () =>
-                      Navigator.pop(context, _ComposerMediaPickMode.video),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+  Future<void> _pickVideo() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final remainingSlots = _maxPostMediaItems - _media.length;
+    if (remainingSlots <= 0) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('You can add up to 3 photos or videos.')),
+      );
+      return;
+    }
+
+    try {
+      final picked = await _imagePicker.pickVideo(source: ImageSource.gallery);
+      if (!mounted || picked == null) return;
+      await _addPickedVideo(picked, messenger);
+    } catch (_) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not open your videos right now.')),
+      );
+    }
   }
 
-  Future<void> _addPickedMedia(
+  Future<void> _addPickedPhotos(
     List<XFile> picked,
     int remainingSlots,
     ScaffoldMessengerState messenger,
@@ -2640,8 +2590,8 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     final warnings = <String>[];
     final drafts = <_PostMediaDraft>[];
     final selected = picked.take(remainingSlots).toList();
-    for (final media in selected) {
-      final draft = await _draftForPickedMedia(media, warnings);
+    for (final photo in selected) {
+      final draft = await _draftForPickedPhoto(photo, warnings);
       if (!mounted) return;
       if (draft != null) drafts.add(draft);
     }
@@ -2657,41 +2607,64 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
       messenger.showSnackBar(SnackBar(content: Text(warnings.first)));
     } else if (drafts.isEmpty && mounted) {
       messenger.showSnackBar(
-        const SnackBar(
-          content: Text('Could not add that media. Try a shorter MP4/MOV.'),
-        ),
+        const SnackBar(content: Text('Could not add those photos.')),
       );
     }
   }
 
-  Future<_PostMediaDraft?> _draftForPickedMedia(
+  Future<void> _addPickedVideo(
+    XFile picked,
+    ScaffoldMessengerState messenger,
+  ) async {
+    final tooLarge = await _isPickedVideoTooLarge(picked);
+    if (!mounted) return;
+    if (tooLarge) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Videos need to be under ${_formatFileSize(_maxPostVideoBytes)} for now. Try trimming this clip.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _media.add(_PostMediaDraft.video(picked)));
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Video added to your post.')),
+    );
+  }
+
+  Future<bool> _isPickedVideoTooLarge(XFile picked) async {
+    final size = await _pickedVideoSize(picked);
+    return size != null && size > _maxPostVideoBytes;
+  }
+
+  Future<int?> _pickedVideoSize(XFile picked) async {
+    try {
+      return picked.length().timeout(const Duration(seconds: 3));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<_PostMediaDraft?> _draftForPickedPhoto(
     XFile picked,
     List<String> warnings,
   ) async {
-    final isVideo = _isVideoDraft(picked);
     final mediaSize = await picked.length();
 
-    if (isVideo && mediaSize > _maxPostVideoBytes) {
-      warnings.add(
-        'Videos need to be under ${_formatFileSize(_maxPostVideoBytes)} for now. Try trimming this clip.',
-      );
-      return null;
-    }
-
-    if (!isVideo && mediaSize > _maxPostPhotoBytes) {
+    if (mediaSize > _maxPostPhotoBytes) {
       warnings.add(
         'Photos need to be under ${_formatFileSize(_maxPostPhotoBytes)}.',
       );
       return null;
     }
 
-    if (isVideo) {
-      return _PostMediaDraft.video(picked);
-    }
-
     final thumbnail = await _createThumbnail(picked);
     if (thumbnail == null) {
-      return _PostMediaDraft.video(picked);
+      warnings.add('Could not add one photo. Try another image.');
+      return null;
     }
 
     final draft = _PostPhotoDraft(fullImage: picked, thumbnail: thumbnail);
@@ -2714,23 +2687,6 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
       name: file.uri.pathSegments.last,
       mimeType: 'image/jpeg',
     );
-  }
-
-  bool _isVideoDraft(XFile media) {
-    final mimeType = media.mimeType?.toLowerCase();
-    if (mimeType != null) return mimeType.startsWith('video/');
-    final path = media.path.toLowerCase();
-    final name = media.name.toLowerCase();
-    return path.endsWith('.mov') ||
-        path.endsWith('.mp4') ||
-        path.endsWith('.m4v') ||
-        path.endsWith('.avi') ||
-        path.endsWith('.webm') ||
-        name.endsWith('.mov') ||
-        name.endsWith('.mp4') ||
-        name.endsWith('.m4v') ||
-        name.endsWith('.avi') ||
-        name.endsWith('.webm');
   }
 
   Future<void> _submitPost() async {
@@ -2764,8 +2720,8 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
             ),
           );
         } else if (video != null) {
-          final videoSize = await video.length();
-          if (videoSize > _maxPostVideoBytes) {
+          final videoSize = await _pickedVideoSize(video);
+          if (videoSize != null && videoSize > _maxPostVideoBytes) {
             throw StateError(
               'Videos need to be under ${_formatFileSize(_maxPostVideoBytes)} for now. Try trimming this clip.',
             );
@@ -2905,12 +2861,14 @@ class _ComposerTypeOption extends StatelessWidget {
 class _ComposerMediaStage extends StatefulWidget {
   const _ComposerMediaStage({
     required this.media,
-    required this.onAddMedia,
+    required this.onAddPhotos,
+    required this.onAddVideo,
     required this.onRemoveMedia,
   });
 
   final List<_PostMediaDraft> media;
-  final VoidCallback onAddMedia;
+  final VoidCallback onAddPhotos;
+  final VoidCallback onAddVideo;
   final ValueChanged<_PostMediaDraft> onRemoveMedia;
 
   @override
@@ -2996,13 +2954,16 @@ class _ComposerMediaStageState extends State<_ComposerMediaStage> {
                           ),
                       ],
                     )
-                  : _ComposerEmptyMedia(onAddMedia: widget.onAddMedia),
+                  : _ComposerEmptyMedia(
+                      onAddPhotos: widget.onAddPhotos,
+                      onAddVideo: widget.onAddVideo,
+                    ),
             ),
             if (hasMedia && canAddMedia)
-              _ComposerMediaFooter(
-                label: 'Add photos/videos ($itemCount/3)',
-                icon: Icons.add_photo_alternate_outlined,
-                onTap: widget.onAddMedia,
+              _ComposerMediaActions(
+                itemCount: itemCount,
+                onAddPhotos: widget.onAddPhotos,
+                onAddVideo: widget.onAddVideo,
               ),
           ],
         ),
@@ -3037,9 +2998,13 @@ class _ComposerMediaStageState extends State<_ComposerMediaStage> {
 }
 
 class _ComposerEmptyMedia extends StatelessWidget {
-  const _ComposerEmptyMedia({required this.onAddMedia});
+  const _ComposerEmptyMedia({
+    required this.onAddPhotos,
+    required this.onAddVideo,
+  });
 
-  final VoidCallback onAddMedia;
+  final VoidCallback onAddPhotos;
+  final VoidCallback onAddVideo;
 
   @override
   Widget build(BuildContext context) {
@@ -3079,10 +3044,24 @@ class _ComposerEmptyMedia extends StatelessWidget {
             ).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
           ),
           const SizedBox(height: 16),
-          FilledButton.tonalIcon(
-            onPressed: onAddMedia,
-            icon: const Icon(Icons.perm_media_outlined),
-            label: const Text('Add media'),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.tonalIcon(
+                  onPressed: onAddPhotos,
+                  icon: const Icon(Icons.photo_library_outlined),
+                  label: const Text('Photos'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton.tonalIcon(
+                  onPressed: onAddVideo,
+                  icon: const Icon(Icons.videocam_outlined),
+                  label: const Text('Video'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -3166,11 +3145,26 @@ class _ComposerVideoPreviewState extends State<_ComposerVideoPreview> {
                   : Container(
                       color: scheme.surfaceContainerHighest,
                       alignment: Alignment.center,
-                      child: Icon(
-                        _failed
-                            ? Icons.videocam_off_outlined
-                            : Icons.movie_creation_outlined,
-                        color: scheme.onSurfaceVariant,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _failed
+                                ? Icons.videocam_outlined
+                                : Icons.movie_creation_outlined,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                          if (_failed) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'Video added',
+                              style: TextStyle(
+                                color: scheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
             ),
@@ -3249,38 +3243,49 @@ class _ComposerDots extends StatelessWidget {
   }
 }
 
-class _ComposerMediaFooter extends StatelessWidget {
-  const _ComposerMediaFooter({
-    required this.label,
-    required this.icon,
-    required this.onTap,
+class _ComposerMediaActions extends StatelessWidget {
+  const _ComposerMediaActions({
+    required this.itemCount,
+    required this.onAddPhotos,
+    required this.onAddVideo,
   });
 
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
+  final int itemCount;
+  final VoidCallback onAddPhotos;
+  final VoidCallback onAddVideo;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 18, color: scheme.primary),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                color: scheme.primary,
-                fontWeight: FontWeight.w800,
+    final label = '$itemCount/$_maxPostMediaItems';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: onAddPhotos,
+              icon: const Icon(Icons.photo_library_outlined, size: 18),
+              label: Text('Photos $label'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: scheme.primary,
+                side: BorderSide(color: scheme.primary.withValues(alpha: 0.32)),
               ),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: onAddVideo,
+              icon: const Icon(Icons.videocam_outlined, size: 18),
+              label: Text('Video $label'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: scheme.primary,
+                side: BorderSide(color: scheme.primary.withValues(alpha: 0.32)),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -4191,8 +4196,6 @@ class _PostMediaDraft {
   final _PostPhotoDraft? photo;
   final XFile? video;
 }
-
-enum _ComposerMediaPickMode { mixed, photos, video }
 
 const _maxPostMediaItems = 3;
 const _maxPostPhotoBytes = 15 * 1024 * 1024;
