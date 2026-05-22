@@ -2384,7 +2384,7 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
                 const SizedBox(height: 14),
                 _ComposerMediaStage(
                   media: _media,
-                  onAddMedia: _openMediaPickerOptions,
+                  onAddMedia: _pickMedia,
                   onRemoveMedia: (media) =>
                       setState(() => _media.remove(media)),
                 ),
@@ -2531,100 +2531,7 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     setState(() => _spotId = value == _noSpotValue ? null : value);
   }
 
-  Future<void> _openMediaPickerOptions() async {
-    final messenger = ScaffoldMessenger.of(context);
-    final remainingSlots = _maxPostMediaItems - _media.length;
-    if (remainingSlots <= 0) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('You can add up to 3 photos or videos.')),
-      );
-      return;
-    }
-
-    final source = await showModalBottomSheet<_ComposerMediaSource>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) {
-        final theme = Theme.of(context);
-        final slotLabel = remainingSlots == 1 ? 'spot' : 'spots';
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 4, 18, 18),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Add media',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '$remainingSlots $slotLabel left on this post.',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                ListTile(
-                  leading: const Icon(Icons.photo_library_outlined),
-                  title: const Text('Photos'),
-                  subtitle: const Text('Choose one or more photos.'),
-                  onTap: () =>
-                      Navigator.pop(context, _ComposerMediaSource.photos),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.videocam_outlined),
-                  title: const Text('Video'),
-                  subtitle: const Text('Choose one clip.'),
-                  onTap: () =>
-                      Navigator.pop(context, _ComposerMediaSource.video),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-    if (!mounted || source == null) return;
-
-    switch (source) {
-      case _ComposerMediaSource.photos:
-        await _pickPhotos();
-      case _ComposerMediaSource.video:
-        await _pickVideo();
-    }
-  }
-
-  Future<void> _pickPhotos() async {
-    final messenger = ScaffoldMessenger.of(context);
-    final remainingSlots = _maxPostMediaItems - _media.length;
-    if (remainingSlots <= 0) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('You can add up to 3 photos or videos.')),
-      );
-      return;
-    }
-
-    try {
-      final picked = await _imagePicker.pickMultiImage(
-        imageQuality: 78,
-        limit: remainingSlots,
-        requestFullMetadata: false,
-      );
-      if (!mounted) return;
-      await _addPickedPhotos(picked, remainingSlots, messenger);
-    } catch (_) {
-      if (!mounted) return;
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Could not open your photos right now.')),
-      );
-    }
-  }
-
-  Future<void> _pickVideo() async {
+  Future<void> _pickMedia() async {
     final messenger = ScaffoldMessenger.of(context);
     final remainingSlots = _maxPostMediaItems - _media.length;
     if (remainingSlots <= 0) {
@@ -2640,49 +2547,29 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
         requestFullMetadata: false,
       );
       if (!mounted || picked == null) return;
-      if (!_looksLikeVideo(picked)) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Pick a video from this button.')),
-        );
+      if (_looksLikeVideo(picked)) {
+        await _addPickedVideo(picked, messenger);
         return;
       }
-      await _addPickedVideo(picked, messenger);
+
+      final warnings = <String>[];
+      final draft = await _draftForPickedPhoto(picked, warnings);
+      if (!mounted) return;
+      if (draft != null) {
+        setState(() => _media.add(draft));
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            warnings.isNotEmpty ? warnings.first : 'Could not add that media.',
+          ),
+        ),
+      );
     } catch (_) {
       if (!mounted) return;
       messenger.showSnackBar(
-        const SnackBar(content: Text('Could not open your videos right now.')),
-      );
-    }
-  }
-
-  Future<void> _addPickedPhotos(
-    List<XFile> picked,
-    int remainingSlots,
-    ScaffoldMessengerState messenger,
-  ) async {
-    if (picked.isEmpty || !mounted) return;
-
-    final warnings = <String>[];
-    final drafts = <_PostMediaDraft>[];
-    final selected = picked.take(remainingSlots).toList();
-    for (final photo in selected) {
-      final draft = await _draftForPickedPhoto(photo, warnings);
-      if (!mounted) return;
-      if (draft != null) drafts.add(draft);
-    }
-
-    if (drafts.isNotEmpty) {
-      setState(() => _media.addAll(drafts));
-    }
-
-    if (picked.length > remainingSlots) {
-      warnings.insert(0, 'Only the first 3 media items were added.');
-    }
-    if (warnings.isNotEmpty && mounted) {
-      messenger.showSnackBar(SnackBar(content: Text(warnings.first)));
-    } else if (drafts.isEmpty && mounted) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Could not add those photos.')),
+        const SnackBar(content: Text('Could not open your photos right now.')),
       );
     }
   }
@@ -4254,8 +4141,6 @@ class _PostMediaDraft {
   final _PostPhotoDraft? photo;
   final XFile? video;
 }
-
-enum _ComposerMediaSource { photos, video }
 
 const _maxPostMediaItems = 3;
 const _maxPostPhotoBytes = 15 * 1024 * 1024;
