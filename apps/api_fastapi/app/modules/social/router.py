@@ -233,7 +233,7 @@ def _request_public_base_url(request: Request) -> str:
 def create_post(payload: SocialPostCreateRequest):
     photos = [item for item in payload.media if item.media_type == "photo"][:MAX_PHOTOS_PER_POST]
     videos = [item for item in payload.media if item.media_type == "video"][:MAX_VIDEOS_PER_POST]
-    media = videos if videos else photos
+    media = photos + videos
     post = SocialPost(
         id=f"post_{uuid4().hex[:8]}",
         user_id=store.user.id,

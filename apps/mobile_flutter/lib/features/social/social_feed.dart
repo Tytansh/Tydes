@@ -2518,7 +2518,7 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
   }
 
   Future<void> _pickMedia() async {
-    if (_video != null || _photos.length >= 3) return;
+    if (_video != null && _photos.length >= 3) return;
     final messenger = ScaffoldMessenger.of(context);
 
     final picked = await _imagePicker.pickMedia(
@@ -2528,13 +2528,20 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     if (picked == null || !mounted) return;
 
     if (_isVideoDraft(picked)) {
-      if (_photos.isNotEmpty) {
+      if (_video != null) {
         messenger.showSnackBar(
-          const SnackBar(content: Text('Remove photos before adding a video.')),
+          const SnackBar(content: Text('Only one video can be added for now.')),
         );
         return;
       }
       setState(() => _video = picked);
+      return;
+    }
+
+    if (_photos.length >= 3) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('You can add up to 3 photos.')),
+      );
       return;
     }
 
@@ -2756,10 +2763,24 @@ class _ComposerMediaStageState extends State<_ComposerMediaStage> {
   }
 
   @override
+  void didUpdateWidget(covariant _ComposerMediaStage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final itemCount = _mediaItemCount;
+    if (itemCount == 0) {
+      _index = 0;
+      return;
+    }
+    if (_index >= itemCount) {
+      _index = itemCount - 1;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final hasPhotos = widget.photos.isNotEmpty;
-    final hasVideo = widget.video != null;
+    final itemCount = _mediaItemCount;
+    final hasMedia = itemCount > 0;
+    final canAddMedia = widget.photos.length < 3 || widget.video == null;
 
     return Container(
       width: double.infinity,
@@ -2781,55 +2802,34 @@ class _ComposerMediaStageState extends State<_ComposerMediaStage> {
           children: [
             AspectRatio(
               aspectRatio: 4 / 5,
-              child: hasPhotos
+              child: hasMedia
                   ? Stack(
                       children: [
                         PageView.builder(
                           controller: _controller,
-                          itemCount: widget.photos.length,
+                          itemCount: itemCount,
                           onPageChanged: (value) =>
                               setState(() => _index = value),
-                          itemBuilder: (context, index) {
-                            final photo = widget.photos[index];
-                            return Image.file(
-                              File(photo.thumbnail.path),
-                              fit: BoxFit.cover,
-                              width: double.infinity,
-                            );
-                          },
+                          itemBuilder: _buildMediaPage,
                         ),
-                        _ComposerRemoveButton(
-                          onTap: () => widget.onRemovePhoto(
-                            widget.photos[_index.clamp(
-                              0,
-                              widget.photos.length - 1,
-                            )],
-                          ),
-                        ),
-                        if (widget.photos.length > 1)
+                        _ComposerRemoveButton(onTap: _removeCurrentMedia),
+                        if (itemCount > 1)
                           Positioned(
                             left: 0,
                             right: 0,
                             bottom: 12,
                             child: _ComposerDots(
-                              count: widget.photos.length,
+                              count: itemCount,
                               index: _index,
                             ),
                           ),
                       ],
                     )
-                  : hasVideo
-                  ? Stack(
-                      children: [
-                        _ComposerVideoPreview(video: widget.video!),
-                        _ComposerRemoveButton(onTap: widget.onRemoveVideo),
-                      ],
-                    )
                   : _ComposerEmptyMedia(onAddMedia: widget.onAddMedia),
             ),
-            if (hasPhotos && widget.photos.length < 3)
+            if (hasMedia && canAddMedia)
               _ComposerMediaFooter(
-                label: 'Add more media (${widget.photos.length}/3)',
+                label: 'Add more media ($itemCount/4)',
                 icon: Icons.add_photo_alternate_outlined,
                 onTap: widget.onAddMedia,
               ),
@@ -2837,6 +2837,35 @@ class _ComposerMediaStageState extends State<_ComposerMediaStage> {
         ),
       ),
     );
+  }
+
+  int get _mediaItemCount =>
+      widget.photos.length + (widget.video == null ? 0 : 1);
+
+  Widget _buildMediaPage(BuildContext context, int index) {
+    if (index < widget.photos.length) {
+      final photo = widget.photos[index];
+      return Image.file(
+        File(photo.thumbnail.path),
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+      );
+    }
+
+    final video = widget.video;
+    if (video == null) return const SizedBox.shrink();
+    return Stack(
+      children: [Positioned.fill(child: _ComposerVideoPreview(video: video))],
+    );
+  }
+
+  void _removeCurrentMedia() {
+    if (_index < widget.photos.length) {
+      widget.onRemovePhoto(widget.photos[_index]);
+      return;
+    }
+    widget.onRemoveVideo();
   }
 }
 
@@ -2953,44 +2982,46 @@ class _ComposerVideoPreviewState extends State<_ComposerVideoPreview> {
 
     return GestureDetector(
       onTap: ready ? _toggle : null,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Positioned.fill(
-            child: ready
-                ? FittedBox(
-                    fit: BoxFit.cover,
-                    child: SizedBox(
-                      width: controller!.value.size.width,
-                      height: controller.value.size.height,
-                      child: VideoPlayer(controller),
+      child: SizedBox.expand(
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Positioned.fill(
+              child: ready
+                  ? FittedBox(
+                      fit: BoxFit.cover,
+                      child: SizedBox(
+                        width: controller!.value.size.width,
+                        height: controller.value.size.height,
+                        child: VideoPlayer(controller),
+                      ),
+                    )
+                  : Container(
+                      color: scheme.surfaceContainerHighest,
+                      alignment: Alignment.center,
+                      child: Icon(
+                        _failed
+                            ? Icons.videocam_off_outlined
+                            : Icons.movie_creation_outlined,
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
-                  )
-                : Container(
-                    color: scheme.surfaceContainerHighest,
-                    alignment: Alignment.center,
-                    child: Icon(
-                      _failed
-                          ? Icons.videocam_off_outlined
-                          : Icons.movie_creation_outlined,
-                      color: scheme.onSurfaceVariant,
-                    ),
+            ),
+            if (!playing)
+              Material(
+                color: Colors.black.withValues(alpha: 0.34),
+                shape: const CircleBorder(),
+                child: const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Icon(
+                    Icons.play_arrow_rounded,
+                    color: Colors.white,
+                    size: 36,
                   ),
-          ),
-          if (!playing)
-            Material(
-              color: Colors.black.withValues(alpha: 0.34),
-              shape: const CircleBorder(),
-              child: const Padding(
-                padding: EdgeInsets.all(12),
-                child: Icon(
-                  Icons.play_arrow_rounded,
-                  color: Colors.white,
-                  size: 36,
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
