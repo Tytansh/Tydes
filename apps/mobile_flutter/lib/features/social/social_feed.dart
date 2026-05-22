@@ -2340,9 +2340,7 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
         (_bodyController.text.trim().isNotEmpty ||
             _media.isNotEmpty ||
             (isSurfInvite && _spotId != null));
-    final captionHint = isSurfInvite
-        ? 'What’s happening, who should come, and what should people know?'
-        : 'Add a caption...';
+    const captionHint = 'Add a caption...';
 
     return Padding(
       padding: EdgeInsets.only(
