@@ -447,19 +447,10 @@ class _RepostHeader extends StatelessWidget {
 }
 
 Future<void> showCreatePostSheet(BuildContext context, List<SpotModel> spots) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    isDismissible: true,
-    enableDrag: true,
-    backgroundColor: Colors.transparent,
-    builder: (context) => DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.86,
-      minChildSize: 0.32,
-      maxChildSize: 0.94,
-      builder: (context, scrollController) =>
-          _CreatePostSheet(spots: spots, scrollController: scrollController),
+  return Navigator.of(context).push<void>(
+    MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (context) => _CreatePostPage(spots: spots),
     ),
   );
 }
@@ -2288,17 +2279,16 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
   }
 }
 
-class _CreatePostSheet extends ConsumerStatefulWidget {
-  const _CreatePostSheet({required this.spots, required this.scrollController});
+class _CreatePostPage extends ConsumerStatefulWidget {
+  const _CreatePostPage({required this.spots});
 
   final List<SpotModel> spots;
-  final ScrollController scrollController;
 
   @override
-  ConsumerState<_CreatePostSheet> createState() => _CreatePostSheetState();
+  ConsumerState<_CreatePostPage> createState() => _CreatePostPageState();
 }
 
-class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
+class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
   final _bodyController = TextEditingController();
   final _imagePicker = ImagePicker();
   final List<_PostMediaDraft> _media = [];
@@ -2342,187 +2332,160 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
             (isSurfInvite && _spotId != null));
     const captionHint = 'Add a caption...';
 
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: SafeArea(
-        top: false,
-        child: Container(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * 0.92,
-          ),
-          decoration: BoxDecoration(
-            color: theme.scaffoldBackgroundColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(34)),
-          ),
-          child: SingleChildScrollView(
-            controller: widget.scrollController,
-            padding: const EdgeInsets.fromLTRB(18, 12, 18, 22),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 42,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: scheme.outlineVariant,
-                      borderRadius: BorderRadius.circular(99),
+    return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 22),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Text(
+                      isSurfInvite ? 'New event' : 'New post',
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        isSurfInvite ? 'New event' : 'New post',
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: _openDraftsSheet,
-                      child: const Text('Drafts'),
-                    ),
-                    IconButton(
-                      tooltip: 'Close',
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _ComposerTypeSwitch(value: _postType, onChanged: _setPostType),
-                const SizedBox(height: 14),
-                _ComposerMediaStage(
-                  media: _media,
-                  onAddMedia: _pickMedia,
-                  onRemoveMedia: (media) {
-                    setState(() => _media.remove(media));
-                    _syncCurrentDraft();
-                  },
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _ComposerMetaChip(
-                      icon: _visibility == 'public'
-                          ? Icons.public_rounded
-                          : Icons.group_outlined,
-                      label: _visibility == 'public' ? 'Public' : 'Followers',
-                      onTap: () {
-                        setState(() {
-                          _visibility = _visibility == 'public'
-                              ? 'followers'
-                              : 'public';
-                        });
-                        _syncCurrentDraft();
-                      },
-                    ),
-                    if (widget.spots.isNotEmpty)
-                      _ComposerMetaChip(
-                        icon: Icons.location_on_outlined,
-                        label: selectedSpot?.name ?? 'Tag spot',
-                        selected: selectedSpot != null,
-                        onTap: () => _openSpotTagSheet(favoriteSpotIds),
-                      ),
-                  ],
-                ),
-                if (isSurfInvite) ...[
-                  const SizedBox(height: 10),
-                  _InviteDateChips(
-                    selectedStartDate: _inviteDate,
-                    selectedEndDate: _inviteEndDate,
-                    onChanged: (value) {
+                  TextButton(
+                    onPressed: _openDraftsSheet,
+                    child: const Text('Drafts'),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _ComposerTypeSwitch(value: _postType, onChanged: _setPostType),
+              const SizedBox(height: 14),
+              _ComposerMediaStage(
+                media: _media,
+                onAddMedia: _pickMedia,
+                onRemoveMedia: (media) {
+                  setState(() => _media.remove(media));
+                  _syncCurrentDraft();
+                },
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _ComposerMetaChip(
+                    icon: _visibility == 'public'
+                        ? Icons.public_rounded
+                        : Icons.group_outlined,
+                    label: _visibility == 'public' ? 'Public' : 'Followers',
+                    onTap: () {
                       setState(() {
-                        _inviteDate = value?.start;
-                        _inviteEndDate =
-                            value == null || _sameDay(value.start, value.end)
-                            ? null
-                            : value.end;
+                        _visibility = _visibility == 'public'
+                            ? 'followers'
+                            : 'public';
                       });
                       _syncCurrentDraft();
                     },
                   ),
+                  if (widget.spots.isNotEmpty)
+                    _ComposerMetaChip(
+                      icon: Icons.location_on_outlined,
+                      label: selectedSpot?.name ?? 'Tag spot',
+                      selected: selectedSpot != null,
+                      onTap: () => _openSpotTagSheet(favoriteSpotIds),
+                    ),
                 ],
-                const SizedBox(height: 14),
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(
-                      color: scheme.outlineVariant.withValues(alpha: 0.45),
-                    ),
-                  ),
-                  child: TextField(
-                    controller: _bodyController,
-                    minLines: 4,
-                    maxLines: 8,
-                    onChanged: (_) => setState(() {}),
-                    decoration: InputDecoration(
-                      hintText: captionHint,
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.all(18),
-                    ),
-                    style: theme.textTheme.bodyLarge?.copyWith(height: 1.25),
+              ),
+              if (isSurfInvite) ...[
+                const SizedBox(height: 10),
+                _InviteDateChips(
+                  selectedStartDate: _inviteDate,
+                  selectedEndDate: _inviteEndDate,
+                  onChanged: (value) {
+                    setState(() {
+                      _inviteDate = value?.start;
+                      _inviteEndDate =
+                          value == null || _sameDay(value.start, value.end)
+                          ? null
+                          : value.end;
+                    });
+                    _syncCurrentDraft();
+                  },
+                ),
+              ],
+              const SizedBox(height: 14),
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: scheme.outlineVariant.withValues(alpha: 0.45),
                   ),
                 ),
-                const SizedBox(height: 18),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: canPost ? _submitPost : null,
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    child: _submitting
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : Text(isSurfInvite ? 'Post event' : 'Post'),
+                child: TextField(
+                  controller: _bodyController,
+                  minLines: 4,
+                  maxLines: 8,
+                  onChanged: (_) => setState(() {}),
+                  decoration: InputDecoration(
+                    hintText: captionHint,
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.all(18),
                   ),
+                  style: theme.textTheme.bodyLarge?.copyWith(height: 1.25),
                 ),
-                const SizedBox(height: 12),
-                if (_submitting)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(99),
-                        child: LinearProgressIndicator(
-                          color: scheme.primary,
-                          backgroundColor: scheme.primary.withValues(
-                            alpha: 0.12,
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: canPost ? _submitPost : null,
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: _submitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
                           ),
-                          minHeight: 4,
+                        )
+                      : Text(isSurfInvite ? 'Post event' : 'Post'),
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (_submitting)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(99),
+                      child: LinearProgressIndicator(
+                        color: scheme.primary,
+                        backgroundColor: scheme.primary.withValues(alpha: 0.12),
+                        minHeight: 4,
+                      ),
+                    ),
+                    if (_submitStatus != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        _submitStatus!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                      if (_submitStatus != null) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          _submitStatus!,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
                     ],
-                  ),
-              ],
-            ),
+                  ],
+                ),
+            ],
           ),
         ),
       ),
