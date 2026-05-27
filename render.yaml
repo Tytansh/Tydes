@@ -31,3 +31,7 @@ services:
         sync: false
       - key: TIDECHECK_API_KEY
         sync: false
+      - key: REVENUECAT_ENTITLEMENT_ID
+        value: premium
+      - key: REVENUECAT_SECRET_API_KEY
+        sync: false

@@ -66,7 +66,9 @@ class DemoStore:
                 raise ValueError("Account profile is unavailable.")
             self.user = User.model_validate(user_payload)
             self.user.locale = locale
-            self.user.premium = self._email_has_premium_override(normalized_email)
+            self.user.premium = self.user.premium or self._email_has_premium_override(
+                normalized_email
+            )
             self.user.ads_enabled = not self.user.premium
             self._save_current_account_user()
             token = self._create_session_token(normalized_email)
@@ -545,6 +547,19 @@ class DemoStore:
 
     def list_plans(self) -> Iterable[BillingPlan]:
         return self.plans
+
+    def set_premium_status(self, active: bool) -> User:
+        premium_active = active or self._email_has_premium_override(self.user.email)
+        self.user.premium = premium_active
+        self.user.ads_enabled = not premium_active
+        for post in self.posts:
+            if post.user_id == self.user.id:
+                post.author_premium = premium_active
+        for comment in self.comments:
+            if comment.user_id == self.user.id:
+                comment.author_premium = premium_active
+        self._save_state()
+        return self.user
 
     def list_ads(self, placement: str | None = None) -> Iterable[AdCard]:
         if not self.user.ads_enabled:

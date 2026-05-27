@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../app/router.dart';
+import '../../core/billing/revenuecat_service.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../home/home_page.dart';
@@ -77,6 +78,7 @@ class SettingsPage extends ConsumerWidget {
         },
         onLogout: () async {
           await ref.read(surfRepositoryProvider).logout();
+          await ref.read(revenueCatServiceProvider).logOut();
           ref.invalidate(meProvider);
           ref.invalidate(dashboardProvider);
           ref.invalidate(homeAdsProvider);
@@ -115,6 +117,7 @@ class SettingsPage extends ConsumerWidget {
           );
           if (confirmed != true) return;
           await ref.read(surfRepositoryProvider).deleteAccount();
+          await ref.read(revenueCatServiceProvider).logOut();
           ref.invalidate(meProvider);
           ref.invalidate(dashboardProvider);
           ref.invalidate(homeAdsProvider);

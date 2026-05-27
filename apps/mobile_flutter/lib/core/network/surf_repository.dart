@@ -849,6 +849,27 @@ class SurfRepository {
     }
   }
 
+  Future<UserProfile> syncRevenueCatPremium() async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/billing/sync-revenuecat',
+      );
+      final profile = UserProfile.fromJson(
+        response.data!['user'] as Map<String, dynamic>,
+      );
+      DemoSeed.me = profile;
+      return profile;
+    } on DioException catch (error) {
+      final detail = error.response?.data;
+      if (detail is Map<String, dynamic> && detail['detail'] is String) {
+        throw StateError(detail['detail'] as String);
+      }
+      throw StateError('Could not sync premium status right now.');
+    } catch (_) {
+      throw StateError('Could not sync premium status right now.');
+    }
+  }
+
   Future<List<AdModel>> fetchAds() async {
     try {
       final response = await _dio.get<List<dynamic>>(
