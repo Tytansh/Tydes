@@ -256,6 +256,20 @@ class SurfRepository {
       DemoSeed.me = profile;
       await _demoPersistence.saveFavoriteSpotIds(profile.favoriteSpotIds);
       return profile;
+    } on DioException catch (error) {
+      final statusCode = error.response?.statusCode;
+      if (statusCode == 401 || statusCode == 403) {
+        await _demoPersistence.clearAccessToken();
+        throw StateError('Session expired. Please sign in again.');
+      }
+      final persistedFavoriteSpotIds = await _demoPersistence
+          .loadFavoriteSpotIds();
+      if (persistedFavoriteSpotIds.isNotEmpty) {
+        DemoSeed.me = DemoSeed.me.copyWith(
+          favoriteSpotIds: persistedFavoriteSpotIds,
+        );
+      }
+      return DemoSeed.me;
     } catch (_) {
       final persistedFavoriteSpotIds = await _demoPersistence
           .loadFavoriteSpotIds();

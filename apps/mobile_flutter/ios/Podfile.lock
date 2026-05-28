@@ -4,6 +4,12 @@ PODS:
     - Flutter
   - image_picker_ios (0.0.1):
     - Flutter
+  - purchases_flutter (10.1.1):
+    - Flutter
+    - PurchasesHybridCommon (= 18.7.0)
+  - PurchasesHybridCommon (18.7.0):
+    - RevenueCat (= 5.73.0)
+  - RevenueCat (5.73.0)
   - url_launcher_ios (0.0.1):
     - Flutter
   - video_player_avfoundation (0.0.1):
@@ -14,8 +20,14 @@ DEPENDENCIES:
   - Flutter (from `Flutter`)
   - flutter_local_notifications (from `.symlinks/plugins/flutter_local_notifications/ios`)
   - image_picker_ios (from `.symlinks/plugins/image_picker_ios/ios`)
+  - purchases_flutter (from `.symlinks/plugins/purchases_flutter/ios`)
   - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
   - video_player_avfoundation (from `.symlinks/plugins/video_player_avfoundation/darwin`)
+
+SPEC REPOS:
+  trunk:
+    - PurchasesHybridCommon
+    - RevenueCat
 
 EXTERNAL SOURCES:
   Flutter:
@@ -24,6 +36,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/flutter_local_notifications/ios"
   image_picker_ios:
     :path: ".symlinks/plugins/image_picker_ios/ios"
+  purchases_flutter:
+    :path: ".symlinks/plugins/purchases_flutter/ios"
   url_launcher_ios:
     :path: ".symlinks/plugins/url_launcher_ios/ios"
   video_player_avfoundation:
@@ -33,6 +47,9 @@ SPEC CHECKSUMS:
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_local_notifications: 643a3eda1ce1c0599413ca31672536d423dee214
   image_picker_ios: e0ece4aa2a75771a7de3fa735d26d90817041326
+  purchases_flutter: 5ca66464088136b9338d1024558a78016cf42b5f
+  PurchasesHybridCommon: 90419d67c688e485c84da8d1864f9663a198751a
+  RevenueCat: 3210d4f19cef963a1422f38e424fc599e2f0f7c6
   url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
   video_player_avfoundation: dd410b52df6d2466a42d28550e33e4146928280a
 

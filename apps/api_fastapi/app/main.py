@@ -31,10 +31,11 @@ app.add_middleware(
 
 @app.middleware("http")
 async def bind_authenticated_user(request, call_next):
+    request.state.authenticated_user = False
     auth_header = request.headers.get("authorization", "")
     scheme, _, token = auth_header.partition(" ")
     if scheme.lower() == "bearer" and token.strip():
-        store.use_session_token(token.strip())
+        request.state.authenticated_user = store.use_session_token(token.strip())
     return await call_next(request)
 
 

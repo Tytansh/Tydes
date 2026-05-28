@@ -11,11 +11,12 @@ class AppScaffold extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tab = ref.watch(currentTabProvider);
+    final pages = ref.watch(shellPagesProvider);
     ref.watch(socialRelationshipHydrationProvider);
     final strings = AppStrings.of(context);
 
     return Scaffold(
-      body: SafeArea(child: shellPages[tab]),
+      body: SafeArea(child: pages[tab]),
       bottomNavigationBar: NavigationBar(
         selectedIndex: tab,
         onDestinationSelected: (index) =>

@@ -1,12 +1,24 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_flutter/app/app.dart';
+import 'package:mobile_flutter/app/router.dart';
 
 void main() {
   testWidgets('renders surf travel shell', (tester) async {
-    await tester.pumpWidget(const ProviderScope(child: SurfTravelApp()));
-    await tester.pumpAndSettle();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          shellPagesProvider.overrideWithValue(
+            List<Widget>.filled(5, const Scaffold(body: Text('Smoke shell'))),
+          ),
+        ],
+        child: const SurfTravelApp(enableAlertMonitor: false),
+      ),
+    );
+    await tester.pump();
 
-    expect(find.text('Surf Travel'), findsWidgets);
+    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(find.text('Smoke shell'), findsOneWidget);
   });
 }

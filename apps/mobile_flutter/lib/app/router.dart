@@ -92,3 +92,5 @@ const shellPages = <Widget>[
   AlertsPage(),
   SettingsPage(),
 ];
+
+final shellPagesProvider = Provider<List<Widget>>((ref) => shellPages);

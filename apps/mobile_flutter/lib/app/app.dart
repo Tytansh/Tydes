@@ -8,7 +8,9 @@ import '../features/alerts/alert_monitor.dart';
 import 'router.dart';
 
 class SurfTravelApp extends ConsumerStatefulWidget {
-  const SurfTravelApp({super.key});
+  const SurfTravelApp({super.key, this.enableAlertMonitor = true});
+
+  final bool enableAlertMonitor;
 
   @override
   ConsumerState<SurfTravelApp> createState() => _SurfTravelAppState();
@@ -21,20 +23,24 @@ class _SurfTravelAppState extends ConsumerState<SurfTravelApp>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(alertMonitorProvider).initialize();
+      if (widget.enableAlertMonitor) {
+        ref.read(alertMonitorProvider).initialize();
+      }
     });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    ref.read(alertMonitorProvider).dispose();
+    if (widget.enableAlertMonitor) {
+      ref.read(alertMonitorProvider).dispose();
+    }
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (widget.enableAlertMonitor && state == AppLifecycleState.resumed) {
       ref.read(alertMonitorProvider).checkNow();
     }
   }

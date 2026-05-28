@@ -12,8 +12,12 @@ class NotificationService {
 
   Future<bool> initialize() async {
     if (_initialized) return true;
+    const androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
     const darwinSettings = DarwinInitializationSettings();
     const initializationSettings = InitializationSettings(
+      android: androidSettings,
       iOS: darwinSettings,
       macOS: darwinSettings,
     );
@@ -49,6 +53,13 @@ class NotificationService {
   }) async {
     await initialize();
     const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'surf_alerts',
+        'Surf alerts',
+        channelDescription: 'Notifications when saved surf alerts are on.',
+        importance: Importance.high,
+        priority: Priority.high,
+      ),
       iOS: DarwinNotificationDetails(
         presentAlert: true,
         presentBadge: true,

@@ -576,6 +576,65 @@ def test_signup_creates_pending_email_verification(tmp_path, monkeypatch):
     assert "longboard123" not in saved["auth_accounts"]["newsurfer@example.com"]["password_hash"]
 
 
+def test_user_profile_requires_valid_session(tmp_path, monkeypatch):
+    store.state_file = tmp_path / "demo_state.json"
+    store.auth_accounts = {}
+    store.session_tokens = {}
+    store.verified_emails = set()
+    store.email_verification_codes = {}
+    monkeypatch.setattr(
+        "app.core.store.send_verification_email",
+        lambda _email, _code: SimpleNamespace(
+            configured=False,
+            sent=False,
+            error=None,
+        ),
+    )
+
+    signup_response = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "email": "sessioncheck@example.com",
+            "password": "longboard123",
+            "locale": "en",
+        },
+    )
+    assert signup_response.status_code == 200
+    access_token = signup_response.json()["session"]["access_token"]
+
+    store.logout()
+
+    missing_token_response = client.get("/api/v1/users/me")
+    assert missing_token_response.status_code == 401
+
+    invalid_token_response = client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": "Bearer not-a-real-token"},
+    )
+    assert invalid_token_response.status_code == 401
+
+    valid_token_response = client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert valid_token_response.status_code == 200
+    assert valid_token_response.json()["email"] == "sessioncheck@example.com"
+    assert valid_token_response.json()["handle"] == ""
+
+    update_without_token_response = client.put(
+        "/api/v1/users/me",
+        json={
+            "display_name": "Wrong User",
+            "handle": "ty",
+            "bio": "",
+            "surf_skill": "beginner",
+            "home_region": "",
+            "avatar_url": None,
+        },
+    )
+    assert update_without_token_response.status_code == 401
+
+
 def test_social_feed_and_create_post():
     friends_response = client.get("/api/v1/social/friends")
     assert friends_response.status_code == 200

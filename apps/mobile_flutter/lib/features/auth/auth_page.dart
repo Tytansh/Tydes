@@ -818,6 +818,7 @@ class _ProfileSetupSheetState extends ConsumerState<_ProfileSetupSheet> {
   late final TextEditingController _locationController;
   late final TextEditingController _bioController;
   String? _skill;
+  String? _handleError;
   bool _saving = false;
 
   @override
@@ -830,6 +831,11 @@ class _ProfileSetupSheetState extends ConsumerState<_ProfileSetupSheet> {
     );
     _bioController = TextEditingController(text: widget.profile.bio);
     _skill = widget.profile.surfSkill.isEmpty ? null : widget.profile.surfSkill;
+    _handleController.addListener(() {
+      if (_handleError != null) {
+        setState(() => _handleError = null);
+      }
+    });
   }
 
   @override
@@ -852,13 +858,17 @@ class _ProfileSetupSheetState extends ConsumerState<_ProfileSetupSheet> {
       return;
     }
     if (!RegExp(r'^[a-z0-9_]+$').hasMatch(handle)) {
-      _showError(
-        '@tag can only use lowercase letters, numbers, and underscores.',
+      setState(
+        () => _handleError =
+            '@tag can only use lowercase letters, numbers, and underscores.',
       );
       return;
     }
 
-    setState(() => _saving = true);
+    setState(() {
+      _handleError = null;
+      _saving = true;
+    });
     try {
       await ref
           .read(surfRepositoryProvider)
@@ -877,7 +887,12 @@ class _ProfileSetupSheetState extends ConsumerState<_ProfileSetupSheet> {
       Navigator.of(context).pop(true);
     } catch (error) {
       if (!mounted) return;
-      _showError(error.toString().replaceFirst('Bad state: ', ''));
+      final message = error.toString().replaceFirst('Bad state: ', '');
+      if (_isHandleTakenMessage(message)) {
+        setState(() => _handleError = 'Tag already taken');
+        return;
+      }
+      _showError(message);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -936,10 +951,11 @@ class _ProfileSetupSheetState extends ConsumerState<_ProfileSetupSheet> {
                 TextField(
                   controller: _handleController,
                   textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: '@tag',
                     hintText: 'yourtag',
                     prefixText: '@',
+                    errorText: _handleError,
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -1007,6 +1023,11 @@ class _ProfileSetupSheetState extends ConsumerState<_ProfileSetupSheet> {
       ),
     );
   }
+}
+
+bool _isHandleTakenMessage(String message) {
+  return message.toLowerCase().contains('tag is already taken') ||
+      message.toLowerCase().contains('tag already taken');
 }
 
 class _PasswordResetSheet extends ConsumerStatefulWidget {

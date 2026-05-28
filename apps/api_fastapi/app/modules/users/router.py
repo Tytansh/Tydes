@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 import re
 
@@ -24,13 +24,19 @@ class UpdateProfileRequest(BaseModel):
     avatar_url: str | None = None
 
 
-@router.get("/me")
-def me():
+def require_authenticated_user(request: Request):
+    if not getattr(request.state, "authenticated_user", False):
+        raise HTTPException(status_code=401, detail="Sign in required")
     return store.user
 
 
+@router.get("/me")
+def me(user=Depends(require_authenticated_user)):
+    return user
+
+
 @router.put("/me")
-def update_me(payload: UpdateProfileRequest):
+def update_me(payload: UpdateProfileRequest, _user=Depends(require_authenticated_user)):
     display_name = payload.display_name.strip()
     handle = payload.handle.strip().lower().replace(" ", "")
     bio = payload.bio.strip()

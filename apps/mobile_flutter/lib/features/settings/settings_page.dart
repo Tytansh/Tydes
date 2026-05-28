@@ -848,7 +848,7 @@ class _ProfileSettingsSheet extends StatelessWidget {
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.logout),
               title: const Text('Log out'),
-              subtitle: const Text('Switch demo account'),
+              subtitle: const Text('Sign in with a different account'),
               onTap: onLogout,
             ),
             const Divider(),
@@ -888,6 +888,7 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
   late final TextEditingController _bioController;
   final _imagePicker = ImagePicker();
   String _skill = 'intermediate';
+  String? _handleError;
   XFile? _avatarImage;
   bool _saving = false;
 
@@ -901,6 +902,11 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
     );
     _bioController = TextEditingController(text: widget.profile.bio);
     _skill = widget.profile.surfSkill;
+    _handleController.addListener(() {
+      if (_handleError != null) {
+        setState(() => _handleError = null);
+      }
+    });
   }
 
   @override
@@ -918,14 +924,17 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
     final location = _locationController.text.trim();
     final bio = _bioController.text.trim();
 
-    if (displayName.isEmpty || handle.isEmpty || location.isEmpty) {
+    if (displayName.isEmpty || handle.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Name, @tag, and location are required.')),
+        const SnackBar(content: Text('Name and @tag are required.')),
       );
       return;
     }
 
-    setState(() => _saving = true);
+    setState(() {
+      _handleError = null;
+      _saving = true;
+    });
     try {
       String? avatarUrl = widget.profile.avatarUrl;
       final avatarImage = _avatarImage;
@@ -952,11 +961,14 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
       Navigator.of(context).pop();
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error.toString().replaceFirst('Bad state: ', '')),
-        ),
-      );
+      final message = error.toString().replaceFirst('Bad state: ', '');
+      if (_isHandleTakenMessage(message)) {
+        setState(() => _handleError = 'Tag already taken');
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -1064,10 +1076,11 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
               const SizedBox(height: 14),
               TextField(
                 controller: _handleController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: '@tag',
                   hintText: 'yourtag',
                   prefixText: '@',
+                  errorText: _handleError,
                 ),
               ),
               const SizedBox(height: 14),
@@ -1076,7 +1089,7 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
                 textCapitalization: TextCapitalization.words,
                 maxLength: 40,
                 decoration: const InputDecoration(
-                  labelText: 'Location',
+                  labelText: 'Location (optional)',
                   hintText: 'Bali, Gold Coast, Canggu...',
                 ),
               ),
@@ -1125,6 +1138,11 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
       ),
     );
   }
+}
+
+bool _isHandleTakenMessage(String message) {
+  return message.toLowerCase().contains('tag is already taken') ||
+      message.toLowerCase().contains('tag already taken');
 }
 
 String _skillLabel(String skill) {
