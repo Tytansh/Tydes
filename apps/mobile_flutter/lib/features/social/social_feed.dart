@@ -2145,13 +2145,10 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
     _syncPlaybackToVisibility();
   }
 
-  void _syncPlaybackToVisibility() {
-    final controller = _controller;
-    if (!mounted || controller == null || !controller.value.isInitialized) {
-      return;
-    }
+  double? _visibleFraction() {
+    if (!mounted) return null;
     final renderObject = context.findRenderObject();
-    if (renderObject is! RenderBox || !renderObject.hasSize) return;
+    if (renderObject is! RenderBox || !renderObject.hasSize) return null;
 
     final topLeft = renderObject.localToGlobal(Offset.zero);
     final size = renderObject.size;
@@ -2159,10 +2156,29 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
     final visibleTop = topLeft.dy.clamp(0.0, screenHeight);
     final visibleBottom = (topLeft.dy + size.height).clamp(0.0, screenHeight);
     final visibleHeight = (visibleBottom - visibleTop).clamp(0.0, size.height);
-    final visibleFraction = size.height == 0
-        ? 0.0
-        : visibleHeight / size.height;
-    final shouldPlay = visibleFraction >= 0.6 && !_userPaused;
+    return size.height == 0 ? 0.0 : visibleHeight / size.height;
+  }
+
+  bool _isMostlyVisible() => (_visibleFraction() ?? 0.0) >= 0.6;
+
+  void _syncPlaybackToVisibility() {
+    final mostlyVisible = _isMostlyVisible();
+    final controller = _controller;
+
+    if (mostlyVisible &&
+        controller == null &&
+        !_loadRequested &&
+        !_initializing &&
+        !_videoFailed) {
+      unawaited(_loadVideo());
+      return;
+    }
+
+    if (!mounted || controller == null || !controller.value.isInitialized) {
+      return;
+    }
+
+    final shouldPlay = mostlyVisible && !_userPaused;
 
     if (shouldPlay && !controller.value.isPlaying) {
       controller.play();
@@ -2193,6 +2209,10 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
       await controller.setVolume(soundEnabled ? 1.0 : 0.0);
       if (!mounted) return;
       setState(() => _initializing = false);
+      if (_isMostlyVisible() && !_userPaused) {
+        await controller.play();
+        if (mounted) setState(() {});
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _syncPlaybackToVisibility();
       });
@@ -2201,6 +2221,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
       if (!mounted) return;
       setState(() {
         _controller = null;
+        _loadRequested = false;
         _initializing = false;
         _videoFailed = true;
       });
@@ -2286,7 +2307,10 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
                   ),
                 ),
               if (!ready && !_videoFailed && !_initializing)
-                const Positioned(bottom: 14, child: _VideoLoadHint()),
+                const Positioned(
+                  bottom: 14,
+                  child: _VideoLoadHint(label: 'Auto plays in feed'),
+                ),
               if (_initializing)
                 const Positioned(
                   bottom: 14,
