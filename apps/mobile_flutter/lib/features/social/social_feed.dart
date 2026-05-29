@@ -2139,22 +2139,32 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
   bool _userPaused = false;
   bool _videoFailed = false;
   bool _posterPrecacheStarted = false;
+  bool _visibilityCheckQueued = false;
 
   @override
   void initState() {
     super.initState();
+    _scheduleVisibilityCheck();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final nextPosition = Scrollable.maybeOf(context)?.position;
-    if (_scrollPosition == nextPosition) return;
-    _scrollPosition?.removeListener(_handleScroll);
-    _scrollPosition = nextPosition;
-    _scrollPosition?.addListener(_handleScroll);
+    if (_scrollPosition != nextPosition) {
+      _scrollPosition?.removeListener(_handleScroll);
+      _scrollPosition = nextPosition;
+      _scrollPosition?.addListener(_handleScroll);
+    }
     _precachePoster();
+    _scheduleVisibilityCheck();
+  }
+
+  void _scheduleVisibilityCheck() {
+    if (_visibilityCheckQueued) return;
+    _visibilityCheckQueued = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _visibilityCheckQueued = false;
       _syncPlaybackToVisibility();
     });
   }
@@ -2177,11 +2187,17 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
 
     final topLeft = renderObject.localToGlobal(Offset.zero);
     final size = renderObject.size;
+    if (size.width == 0 || size.height == 0) return 0.0;
+
+    final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
+    final visibleLeft = topLeft.dx.clamp(0.0, screenWidth);
+    final visibleRight = (topLeft.dx + size.width).clamp(0.0, screenWidth);
+    final visibleWidth = (visibleRight - visibleLeft).clamp(0.0, size.width);
     final visibleTop = topLeft.dy.clamp(0.0, screenHeight);
     final visibleBottom = (topLeft.dy + size.height).clamp(0.0, screenHeight);
     final visibleHeight = (visibleBottom - visibleTop).clamp(0.0, size.height);
-    return size.height == 0 ? 0.0 : visibleHeight / size.height;
+    return (visibleWidth * visibleHeight) / (size.width * size.height);
   }
 
   bool _isMostlyVisible() =>
