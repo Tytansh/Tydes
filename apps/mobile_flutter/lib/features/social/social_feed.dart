@@ -2057,6 +2057,7 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
                     thumbnailUrl: item.thumbnailUrl,
                     borderRadius: 0,
                     expand: true,
+                    active: index == _pageIndex,
                   );
                 }
                 return _PostPhoto(url: item.url);
@@ -2119,12 +2120,14 @@ class AutoplayVideoPlayer extends ConsumerStatefulWidget {
     this.thumbnailUrl,
     this.borderRadius = 18,
     this.expand = false,
+    this.active = true,
   });
 
   final String url;
   final String? thumbnailUrl;
   final double borderRadius;
   final bool expand;
+  final bool active;
 
   @override
   ConsumerState<AutoplayVideoPlayer> createState() =>
@@ -2145,6 +2148,20 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
   void initState() {
     super.initState();
     _scheduleVisibilityCheck();
+    _scheduleActiveAutoplayCheck();
+  }
+
+  @override
+  void didUpdateWidget(covariant AutoplayVideoPlayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.active) {
+      _controller?.pause();
+      return;
+    }
+    if (!oldWidget.active || oldWidget.url != widget.url) {
+      _userPaused = false;
+      _scheduleActiveAutoplayCheck();
+    }
   }
 
   @override
@@ -2158,6 +2175,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
     }
     _precachePoster();
     _scheduleVisibilityCheck();
+    _scheduleActiveAutoplayCheck();
   }
 
   void _scheduleVisibilityCheck() {
@@ -2166,6 +2184,18 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _visibilityCheckQueued = false;
       _syncPlaybackToVisibility();
+    });
+  }
+
+  void _scheduleActiveAutoplayCheck() {
+    if (!widget.active) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !widget.active) return;
+      if (widget.expand) {
+        unawaited(_loadVideo(playWhenReady: true));
+      } else {
+        _syncPlaybackToVisibility();
+      }
     });
   }
 
@@ -2234,7 +2264,8 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
 
   void _syncPlaybackToVisibility() {
     final mostlyVisible = _isMostlyVisible();
-    final shouldPreload = mostlyVisible || _isNearViewport();
+    final shouldPreload =
+        widget.active && (widget.expand || mostlyVisible || _isNearViewport());
     final controller = _controller;
 
     if (shouldPreload &&
@@ -2242,7 +2273,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
         !_loadRequested &&
         !_initializing &&
         !_videoFailed) {
-      unawaited(_loadVideo());
+      unawaited(_loadVideo(playWhenReady: widget.expand));
       return;
     }
 
@@ -2250,7 +2281,8 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
       return;
     }
 
-    final shouldPlay = mostlyVisible && !_userPaused;
+    final shouldPlay =
+        widget.active && !_userPaused && (widget.expand || mostlyVisible);
 
     if (shouldPlay && !controller.value.isPlaying) {
       controller.play();
@@ -2261,7 +2293,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
     }
   }
 
-  Future<void> _loadVideo() async {
+  Future<void> _loadVideo({bool playWhenReady = false}) async {
     if (_loadRequested || _initializing) return;
     setState(() {
       _loadRequested = true;
@@ -2281,7 +2313,9 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
       await controller.setVolume(soundEnabled ? 1.0 : 0.0);
       if (!mounted) return;
       setState(() => _initializing = false);
-      if (_isMostlyVisible() && !_userPaused) {
+      if (widget.active &&
+          !_userPaused &&
+          (playWhenReady || widget.expand || _isMostlyVisible())) {
         await controller.play();
         if (mounted) setState(() {});
       }
