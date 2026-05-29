@@ -623,8 +623,7 @@ class _PostCard extends ConsumerWidget {
                 SocialPostMediaCarousel(media: post.media),
                 const SizedBox(height: 12),
               ],
-              if (post.body.isNotEmpty)
-                Text(post.body, style: Theme.of(context).textTheme.bodyLarge),
+              if (post.body.isNotEmpty) SocialPostBodyPreview(body: post.body),
               if (isSurfInvite) ...[
                 if (post.body.isNotEmpty) const SizedBox(height: 14),
                 SurfInviteActions(post: post, spot: spot),
@@ -646,6 +645,27 @@ class PostEngagementBar extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<PostEngagementBar> createState() => _PostEngagementBarState();
+}
+
+class SocialPostBodyPreview extends StatelessWidget {
+  const SocialPostBodyPreview({
+    super.key,
+    required this.body,
+    this.maxLines = _postBodyPreviewMaxLines,
+  });
+
+  final String body;
+  final int maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      body,
+      maxLines: maxLines,
+      overflow: TextOverflow.ellipsis,
+      style: Theme.of(context).textTheme.bodyLarge,
+    );
+  }
 }
 
 class _PostEngagementBarState extends ConsumerState<PostEngagementBar> {
@@ -2016,21 +2036,8 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
   @override
   Widget build(BuildContext context) {
     final media = widget.media;
-    final videos = media
-        .where((item) => item.mediaType == 'video')
-        .take(1)
-        .toList();
-    if (videos.isNotEmpty) {
-      final video = videos.first;
-      return AutoplayVideoPlayer(
-        url: video.url,
-        thumbnailUrl: video.thumbnailUrl,
-        borderRadius: widget.borderRadius,
-      );
-    }
-
-    final photos = media.where((item) => item.mediaType == 'photo').toList();
-    if (photos.isEmpty) return const SizedBox.shrink();
+    if (media.isEmpty) return const SizedBox.shrink();
+    if (_pageIndex >= media.length) _pageIndex = media.length - 1;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(widget.borderRadius),
@@ -2040,20 +2047,29 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
           children: [
             PageView.builder(
               controller: _pageController,
-              itemCount: photos.length,
+              itemCount: media.length,
               onPageChanged: (index) => setState(() => _pageIndex = index),
               itemBuilder: (context, index) {
-                return _PostPhoto(url: photos[index].url);
+                final item = media[index];
+                if (item.mediaType == 'video') {
+                  return AutoplayVideoPlayer(
+                    url: item.url,
+                    thumbnailUrl: item.thumbnailUrl,
+                    borderRadius: 0,
+                    expand: true,
+                  );
+                }
+                return _PostPhoto(url: item.url);
               },
             ),
-            if (photos.length > 1)
+            if (media.length > 1)
               Positioned(
                 left: 0,
                 right: 0,
                 bottom: 12,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(photos.length, (index) {
+                  children: List.generate(media.length, (index) {
                     final selected = index == _pageIndex;
                     return AnimatedContainer(
                       duration: const Duration(milliseconds: 180),
@@ -2102,11 +2118,13 @@ class AutoplayVideoPlayer extends ConsumerStatefulWidget {
     required this.url,
     this.thumbnailUrl,
     this.borderRadius = 18,
+    this.expand = false,
   });
 
   final String url;
   final String? thumbnailUrl;
   final double borderRadius;
+  final bool expand;
 
   @override
   ConsumerState<AutoplayVideoPlayer> createState() =>
@@ -2278,96 +2296,100 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
         readyController.value.volume != targetVolume) {
       readyController.setVolume(targetVolume);
     }
+    final videoBody = GestureDetector(
+      onTap: () {
+        if (readyController == null) {
+          _loadVideo();
+          return;
+        }
+        if (readyController.value.isPlaying) {
+          _userPaused = true;
+          readyController.pause();
+        } else {
+          _userPaused = false;
+          readyController.play();
+        }
+        setState(() {});
+      },
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Positioned.fill(
+            child: readyController != null
+                ? VideoPlayer(readyController)
+                : _videoFailed
+                ? Container(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.videocam_off_outlined),
+                  )
+                : _VideoPosterFrame(
+                    thumbnailUrl: _usableThumbnailUrl,
+                    initializing: _initializing,
+                  ),
+          ),
+          if (!isPlaying && !_videoFailed && !_initializing)
+            IgnorePointer(
+              child: Material(
+                color: Colors.black.withValues(alpha: 0.28),
+                shape: const CircleBorder(),
+                child: const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: Icon(
+                    Icons.play_arrow_rounded,
+                    color: Colors.white,
+                    size: 34,
+                  ),
+                ),
+              ),
+            ),
+          if (!ready && !_videoFailed && !_initializing)
+            const Positioned(
+              bottom: 14,
+              child: _VideoLoadHint(label: 'Auto plays in feed'),
+            ),
+          if (_initializing)
+            const Positioned(
+              bottom: 14,
+              child: _VideoLoadHint(label: 'Loading video...'),
+            ),
+          if (ready)
+            Positioned(
+              right: 10,
+              bottom: 10,
+              child: Material(
+                color: Colors.black.withValues(alpha: 0.32),
+                shape: const CircleBorder(),
+                child: IconButton(
+                  onPressed: () {
+                    ref.read(videoSoundEnabledProvider.notifier).state =
+                        !soundEnabled;
+                  },
+                  color: Colors.white,
+                  iconSize: 20,
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(
+                    soundEnabled
+                        ? Icons.volume_up_rounded
+                        : Icons.volume_off_rounded,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(widget.borderRadius),
-      child: AspectRatio(
-        aspectRatio: readyController?.value.aspectRatio ?? 4 / 5,
-        child: GestureDetector(
-          onTap: () {
-            if (readyController == null) {
-              _loadVideo();
-              return;
-            }
-            if (readyController.value.isPlaying) {
-              _userPaused = true;
-              readyController.pause();
-            } else {
-              _userPaused = false;
-              readyController.play();
-            }
-            setState(() {});
-          },
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Positioned.fill(
-                child: readyController != null
-                    ? VideoPlayer(readyController)
-                    : _videoFailed
-                    ? Container(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest,
-                        alignment: Alignment.center,
-                        child: const Icon(Icons.videocam_off_outlined),
-                      )
-                    : _VideoPosterFrame(
-                        thumbnailUrl: _usableThumbnailUrl,
-                        initializing: _initializing,
-                      ),
-              ),
-              if (!isPlaying && !_videoFailed && !_initializing)
-                IgnorePointer(
-                  child: Material(
-                    color: Colors.black.withValues(alpha: 0.28),
-                    shape: const CircleBorder(),
-                    child: const Padding(
-                      padding: EdgeInsets.all(10),
-                      child: Icon(
-                        Icons.play_arrow_rounded,
-                        color: Colors.white,
-                        size: 34,
-                      ),
-                    ),
-                  ),
-                ),
-              if (!ready && !_videoFailed && !_initializing)
-                const Positioned(
-                  bottom: 14,
-                  child: _VideoLoadHint(label: 'Auto plays in feed'),
-                ),
-              if (_initializing)
-                const Positioned(
-                  bottom: 14,
-                  child: _VideoLoadHint(label: 'Loading video...'),
-                ),
-              if (ready)
-                Positioned(
-                  right: 10,
-                  bottom: 10,
-                  child: Material(
-                    color: Colors.black.withValues(alpha: 0.32),
-                    shape: const CircleBorder(),
-                    child: IconButton(
-                      onPressed: () {
-                        ref.read(videoSoundEnabledProvider.notifier).state =
-                            !soundEnabled;
-                      },
-                      color: Colors.white,
-                      iconSize: 20,
-                      visualDensity: VisualDensity.compact,
-                      icon: Icon(
-                        soundEnabled
-                            ? Icons.volume_up_rounded
-                            : Icons.volume_off_rounded,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
+      child: widget.expand
+          ? SizedBox.expand(child: videoBody)
+          : AspectRatio(
+              aspectRatio: readyController?.value.aspectRatio ?? 4 / 5,
+              child: videoBody,
+            ),
     );
   }
 }
@@ -4645,6 +4667,7 @@ const _maxPostPhotoBytes = 15 * 1024 * 1024;
 const _maxPostVideoBytes = 500 * 1024 * 1024;
 const _minPostVideoCompressionBytes = 3 * 1024 * 1024;
 const _videoPlayVisibilityThreshold = 0.6;
+const _postBodyPreviewMaxLines = 6;
 
 String _draftTitle(_ComposerPostDraft draft) {
   return draft.postType == 'surf_plan' ? 'Event draft' : 'Post draft';
