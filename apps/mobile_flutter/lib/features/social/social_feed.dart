@@ -2120,6 +2120,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
   bool _initializing = false;
   bool _userPaused = false;
   bool _videoFailed = false;
+  bool _posterPrecacheStarted = false;
 
   @override
   void initState() {
@@ -2134,6 +2135,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
     _scrollPosition?.removeListener(_handleScroll);
     _scrollPosition = nextPosition;
     _scrollPosition?.addListener(_handleScroll);
+    _precachePoster();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncPlaybackToVisibility();
     });
@@ -2164,7 +2166,20 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
     return size.height == 0 ? 0.0 : visibleHeight / size.height;
   }
 
-  bool _isMostlyVisible() => (_visibleFraction() ?? 0.0) >= 0.6;
+  bool _isMostlyVisible() =>
+      (_visibleFraction() ?? 0.0) >= _videoPlayVisibilityThreshold;
+
+  bool _isNearViewport() {
+    if (!mounted) return false;
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return false;
+
+    final topLeft = renderObject.localToGlobal(Offset.zero);
+    final size = renderObject.size;
+    final screenHeight = MediaQuery.of(context).size.height;
+    return topLeft.dy < screenHeight * 1.35 &&
+        topLeft.dy + size.height > -screenHeight * 0.35;
+  }
 
   String? get _usableThumbnailUrl {
     final thumbnailUrl = widget.thumbnailUrl?.trim();
@@ -2176,11 +2191,19 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
     return thumbnailUrl;
   }
 
+  void _precachePoster() {
+    final thumbnailUrl = _usableThumbnailUrl;
+    if (_posterPrecacheStarted || thumbnailUrl == null) return;
+    _posterPrecacheStarted = true;
+    unawaited(precacheImage(NetworkImage(thumbnailUrl), context));
+  }
+
   void _syncPlaybackToVisibility() {
     final mostlyVisible = _isMostlyVisible();
+    final shouldPreload = mostlyVisible || _isNearViewport();
     final controller = _controller;
 
-    if (mostlyVisible &&
+    if (shouldPreload &&
         controller == null &&
         !_loadRequested &&
         !_initializing &&
@@ -2387,27 +2410,48 @@ class _VideoPosterFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final fallback = Container(
-      color: scheme.surfaceContainerHighest,
-      alignment: Alignment.center,
-      child: Icon(
-        Icons.movie_creation_outlined,
-        size: 42,
-        color: scheme.onSurfaceVariant,
+    final fallback = DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF082F33), Color(0xFF0D5557), Color(0xFFBFECEE)],
+        ),
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            top: -36,
+            right: -26,
+            child: _PosterGlow(size: 126, opacity: 0.22),
+          ),
+          Positioned(
+            left: -44,
+            bottom: -42,
+            child: _PosterGlow(size: 150, opacity: 0.16),
+          ),
+          Center(
+            child: Icon(
+              Icons.movie_creation_outlined,
+              size: 42,
+              color: Colors.white.withValues(alpha: 0.88),
+            ),
+          ),
+        ],
       ),
     );
 
     return Stack(
       fit: StackFit.expand,
       children: [
-        if (thumbnailUrl == null)
-          fallback
-        else
+        fallback,
+        if (thumbnailUrl != null)
           Image.network(
             thumbnailUrl!,
             fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) => fallback,
+            gaplessPlayback: true,
+            errorBuilder: (context, error, stackTrace) =>
+                const SizedBox.shrink(),
           ),
         if (initializing)
           Container(
@@ -2422,6 +2466,25 @@ class _VideoPosterFrame extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _PosterGlow extends StatelessWidget {
+  const _PosterGlow({required this.size, required this.opacity});
+
+  final double size;
+  final double opacity;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: opacity),
+        shape: BoxShape.circle,
+      ),
     );
   }
 }
@@ -2826,10 +2889,10 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
     try {
       final compressedInfo = await VideoCompress.compressVideo(
         source.path,
-        quality: VideoQuality.Res960x540Quality,
+        quality: VideoQuality.Res640x480Quality,
         deleteOrigin: false,
         includeAudio: true,
-        frameRate: 30,
+        frameRate: 24,
       );
       final compressedPath = compressedInfo?.path;
       if (compressedPath == null || compressedPath.isEmpty) return source;
@@ -4581,6 +4644,7 @@ const _maxComposerDrafts = 8;
 const _maxPostPhotoBytes = 15 * 1024 * 1024;
 const _maxPostVideoBytes = 500 * 1024 * 1024;
 const _minPostVideoCompressionBytes = 3 * 1024 * 1024;
+const _videoPlayVisibilityThreshold = 0.6;
 
 String _draftTitle(_ComposerPostDraft draft) {
   return draft.postType == 'surf_plan' ? 'Event draft' : 'Post draft';
