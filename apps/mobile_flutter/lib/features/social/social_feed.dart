@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image/image.dart' as image_tools;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../core/network/api_models.dart';
@@ -2761,6 +2762,54 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
     }
   }
 
+  Future<XFile> _videoForUpload(XFile source, int index) async {
+    final originalSize = await _pickedVideoSize(source);
+    if (originalSize != null && originalSize <= _minPostVideoCompressionBytes) {
+      return source;
+    }
+
+    _setSubmitStatus(
+      'Compressing video ${index + 1} of ${_media.length}${originalSize == null ? '' : ' (${_formatFileSize(originalSize)})'}...',
+    );
+
+    try {
+      final compressedInfo = await VideoCompress.compressVideo(
+        source.path,
+        quality: VideoQuality.MediumQuality,
+        deleteOrigin: false,
+        includeAudio: true,
+      );
+      final compressedPath = compressedInfo?.path;
+      if (compressedPath == null || compressedPath.isEmpty) return source;
+
+      final compressed = XFile(
+        compressedPath,
+        name: _compressedVideoName(source, compressedPath),
+        mimeType: 'video/mp4',
+      );
+      final compressedSize = await _pickedVideoSize(compressed);
+      if (compressedSize == null) return source;
+      if (originalSize != null && compressedSize >= originalSize) {
+        return source;
+      }
+      return compressed;
+    } catch (_) {
+      return source;
+    }
+  }
+
+  String _compressedVideoName(XFile source, String compressedPath) {
+    final sourceName = source.name.trim();
+    if (sourceName.isEmpty) {
+      return File(compressedPath).uri.pathSegments.last;
+    }
+    final dotIndex = sourceName.lastIndexOf('.');
+    final baseName = dotIndex <= 0
+        ? sourceName
+        : sourceName.substring(0, dotIndex);
+    return '${baseName}_compressed.mp4';
+  }
+
   bool _looksLikeVideo(XFile media) {
     final mimeType = media.mimeType?.toLowerCase();
     if (mimeType != null) return mimeType.startsWith('video/');
@@ -2860,25 +2909,29 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
             ),
           );
         } else if (video != null) {
-          final videoSize = await _pickedVideoSize(video);
+          final uploadVideo = await _videoForUpload(video, index);
+          final videoSize = await _pickedVideoSize(uploadVideo);
           if (videoSize != null && videoSize > _maxPostVideoBytes) {
             throw StateError(
               'Videos need to be under ${_formatFileSize(_maxPostVideoBytes)} for now. Try trimming this clip.',
             );
           }
           var lastPercent = -1;
+          final compressedLabel = uploadVideo.path == video.path
+              ? ''
+              : ' compressed';
           _setSubmitStatus(
-            'Uploading video ${index + 1} of ${_media.length}${videoSize == null ? '' : ' (${_formatFileSize(videoSize)})'}...',
+            'Uploading$compressedLabel video ${index + 1} of ${_media.length}${videoSize == null ? '' : ' (${_formatFileSize(videoSize)})'}...',
           );
           media.add(
             await repository.uploadPostVideo(
-              video: video,
+              video: uploadVideo,
               onSendProgress: (sent, total) {
                 final percent = _uploadPercent(sent, total);
                 if (percent == null || percent == lastPercent) return;
                 lastPercent = percent;
                 _setSubmitStatus(
-                  'Uploading video ${index + 1} of ${_media.length} ($percent%)...',
+                  'Uploading$compressedLabel video ${index + 1} of ${_media.length} ($percent%)...',
                 );
               },
             ),
@@ -2919,6 +2972,8 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
       messenger.showSnackBar(
         SnackBar(content: Text(_uploadErrorMessage(error))),
       );
+    } finally {
+      unawaited(VideoCompress.deleteAllCache());
     }
   }
 
@@ -4454,6 +4509,7 @@ const _maxPostMediaItems = 3;
 const _maxComposerDrafts = 8;
 const _maxPostPhotoBytes = 15 * 1024 * 1024;
 const _maxPostVideoBytes = 500 * 1024 * 1024;
+const _minPostVideoCompressionBytes = 8 * 1024 * 1024;
 
 String _draftTitle(_ComposerPostDraft draft) {
   return draft.postType == 'surf_plan' ? 'Event draft' : 'Post draft';
