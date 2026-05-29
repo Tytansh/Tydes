@@ -169,9 +169,19 @@ async def upload_media(
 
     thumb_url: str | None = None
     if media_type == "photo":
-        if thumbnail is None or _image_extension(thumbnail) is None:
+        thumb_extension = (
+            _image_extension(thumbnail) if thumbnail is not None else None
+        )
+        if thumb_extension is None:
             raise HTTPException(status_code=400, detail="Thumbnail must be a photo.")
-        thumb_path = MEDIA_DIR / f"{media_id}_thumb{extension}"
+        thumb_path = MEDIA_DIR / f"{media_id}_thumb{thumb_extension}"
+        _write_upload_with_limit(thumbnail, thumb_path, MAX_PHOTO_BYTES)
+        thumb_url = f"{_request_public_base_url(request)}/media/{thumb_path.name}"
+    elif thumbnail is not None:
+        thumb_extension = _image_extension(thumbnail)
+        if thumb_extension is None:
+            raise HTTPException(status_code=400, detail="Video thumbnail must be a photo.")
+        thumb_path = MEDIA_DIR / f"{media_id}_thumb{thumb_extension}"
         _write_upload_with_limit(thumbnail, thumb_path, MAX_PHOTO_BYTES)
         thumb_url = f"{_request_public_base_url(request)}/media/{thumb_path.name}"
 

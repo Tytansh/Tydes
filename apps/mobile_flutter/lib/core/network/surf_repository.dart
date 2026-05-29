@@ -838,8 +838,18 @@ class SurfRepository {
 
   Future<SocialMediaAttachmentModel> uploadPostVideo({
     required XFile video,
+    XFile? thumbnail,
     ProgressCallback? onSendProgress,
   }) async {
+    final formData = <String, dynamic>{
+      'file': await MultipartFile.fromFile(video.path, filename: video.name),
+    };
+    if (thumbnail != null) {
+      formData['thumbnail'] = await MultipartFile.fromFile(
+        thumbnail.path,
+        filename: thumbnail.name,
+      );
+    }
     final response = await _dio.post<Map<String, dynamic>>(
       '/social/media',
       options: Options(
@@ -847,9 +857,7 @@ class SurfRepository {
         receiveTimeout: const Duration(minutes: 2),
       ),
       onSendProgress: onSendProgress,
-      data: FormData.fromMap({
-        'file': await MultipartFile.fromFile(video.path, filename: video.name),
-      }),
+      data: FormData.fromMap(formData),
     );
     return SocialMediaAttachmentModel.fromJson(response.data!);
   }

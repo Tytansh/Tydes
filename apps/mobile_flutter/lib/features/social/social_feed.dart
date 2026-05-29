@@ -2021,8 +2021,10 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
         .take(1)
         .toList();
     if (videos.isNotEmpty) {
+      final video = videos.first;
       return AutoplayVideoPlayer(
-        url: videos.first.url,
+        url: video.url,
+        thumbnailUrl: video.thumbnailUrl,
         borderRadius: widget.borderRadius,
       );
     }
@@ -2098,10 +2100,12 @@ class AutoplayVideoPlayer extends ConsumerStatefulWidget {
   const AutoplayVideoPlayer({
     super.key,
     required this.url,
+    this.thumbnailUrl,
     this.borderRadius = 18,
   });
 
   final String url;
+  final String? thumbnailUrl;
   final double borderRadius;
 
   @override
@@ -2161,6 +2165,16 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
   }
 
   bool _isMostlyVisible() => (_visibleFraction() ?? 0.0) >= 0.6;
+
+  String? get _usableThumbnailUrl {
+    final thumbnailUrl = widget.thumbnailUrl?.trim();
+    if (thumbnailUrl == null ||
+        thumbnailUrl.isEmpty ||
+        thumbnailUrl == widget.url) {
+      return null;
+    }
+    return thumbnailUrl;
+  }
 
   void _syncPlaybackToVisibility() {
     final mostlyVisible = _isMostlyVisible();
@@ -2274,22 +2288,9 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
                         alignment: Alignment.center,
                         child: const Icon(Icons.videocam_off_outlined),
                       )
-                    : Container(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest,
-                        alignment: Alignment.center,
-                        child: _initializing
-                            ? const SizedBox.square(
-                                dimension: 32,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 3,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.movie_creation_outlined,
-                                size: 42,
-                              ),
+                    : _VideoPosterFrame(
+                        thumbnailUrl: _usableThumbnailUrl,
+                        initializing: _initializing,
                       ),
               ),
               if (!isPlaying && !_videoFailed && !_initializing)
@@ -2371,6 +2372,56 @@ class _VideoLoadHint extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _VideoPosterFrame extends StatelessWidget {
+  const _VideoPosterFrame({
+    required this.thumbnailUrl,
+    required this.initializing,
+  });
+
+  final String? thumbnailUrl;
+  final bool initializing;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final fallback = Container(
+      color: scheme.surfaceContainerHighest,
+      alignment: Alignment.center,
+      child: Icon(
+        Icons.movie_creation_outlined,
+        size: 42,
+        color: scheme.onSurfaceVariant,
+      ),
+    );
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (thumbnailUrl == null)
+          fallback
+        else
+          Image.network(
+            thumbnailUrl!,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) => fallback,
+          ),
+        if (initializing)
+          Container(
+            color: Colors.black.withValues(alpha: 0.18),
+            alignment: Alignment.center,
+            child: const SizedBox.square(
+              dimension: 32,
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                color: Colors.white,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -2775,9 +2826,10 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
     try {
       final compressedInfo = await VideoCompress.compressVideo(
         source.path,
-        quality: VideoQuality.MediumQuality,
+        quality: VideoQuality.Res960x540Quality,
         deleteOrigin: false,
         includeAudio: true,
+        frameRate: 30,
       );
       final compressedPath = compressedInfo?.path;
       if (compressedPath == null || compressedPath.isEmpty) return source;
@@ -2808,6 +2860,23 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
         ? sourceName
         : sourceName.substring(0, dotIndex);
     return '${baseName}_compressed.mp4';
+  }
+
+  Future<XFile?> _createVideoThumbnail(XFile source) async {
+    try {
+      final thumbnailFile = await VideoCompress.getFileThumbnail(
+        source.path,
+        quality: 45,
+        position: 0,
+      );
+      return XFile(
+        thumbnailFile.path,
+        name: 'video_thumb_${DateTime.now().microsecondsSinceEpoch}.jpg',
+        mimeType: 'image/jpeg',
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   bool _looksLikeVideo(XFile media) {
@@ -2910,6 +2979,7 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
           );
         } else if (video != null) {
           final uploadVideo = await _videoForUpload(video, index);
+          final videoThumbnail = await _createVideoThumbnail(uploadVideo);
           final videoSize = await _pickedVideoSize(uploadVideo);
           if (videoSize != null && videoSize > _maxPostVideoBytes) {
             throw StateError(
@@ -2926,6 +2996,7 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
           media.add(
             await repository.uploadPostVideo(
               video: uploadVideo,
+              thumbnail: videoThumbnail,
               onSendProgress: (sent, total) {
                 final percent = _uploadPercent(sent, total);
                 if (percent == null || percent == lastPercent) return;
@@ -4509,7 +4580,7 @@ const _maxPostMediaItems = 3;
 const _maxComposerDrafts = 8;
 const _maxPostPhotoBytes = 15 * 1024 * 1024;
 const _maxPostVideoBytes = 500 * 1024 * 1024;
-const _minPostVideoCompressionBytes = 8 * 1024 * 1024;
+const _minPostVideoCompressionBytes = 3 * 1024 * 1024;
 
 String _draftTitle(_ComposerPostDraft draft) {
   return draft.postType == 'surf_plan' ? 'Event draft' : 'Post draft';
