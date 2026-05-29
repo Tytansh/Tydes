@@ -2109,33 +2109,16 @@ class AutoplayVideoPlayer extends ConsumerStatefulWidget {
 }
 
 class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
-  late final VideoPlayerController _controller;
+  VideoPlayerController? _controller;
   ScrollPosition? _scrollPosition;
+  bool _loadRequested = false;
+  bool _initializing = false;
   bool _userPaused = false;
   bool _videoFailed = false;
 
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
-    _controller
-      ..setLooping(true)
-      ..initialize()
-          .then((_) {
-            final soundEnabled = ref.read(videoSoundEnabledProvider);
-            _controller.setVolume(soundEnabled ? 1.0 : 0.0);
-            if (mounted) {
-              setState(() {});
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                _syncPlaybackToVisibility();
-              });
-            }
-          })
-          .catchError((Object error) {
-            if (!mounted) return null;
-            setState(() => _videoFailed = true);
-            return null;
-          });
   }
 
   @override
@@ -2154,7 +2137,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
   @override
   void dispose() {
     _scrollPosition?.removeListener(_handleScroll);
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
@@ -2163,7 +2146,10 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
   }
 
   void _syncPlaybackToVisibility() {
-    if (!mounted || !_controller.value.isInitialized) return;
+    final controller = _controller;
+    if (!mounted || controller == null || !controller.value.isInitialized) {
+      return;
+    }
     final renderObject = context.findRenderObject();
     if (renderObject is! RenderBox || !renderObject.hasSize) return;
 
@@ -2178,47 +2164,86 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
         : visibleHeight / size.height;
     final shouldPlay = visibleFraction >= 0.6 && !_userPaused;
 
-    if (shouldPlay && !_controller.value.isPlaying) {
-      _controller.play();
+    if (shouldPlay && !controller.value.isPlaying) {
+      controller.play();
       if (mounted) setState(() {});
-    } else if (!shouldPlay && _controller.value.isPlaying) {
-      _controller.pause();
+    } else if (!shouldPlay && controller.value.isPlaying) {
+      controller.pause();
       if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _loadVideo() async {
+    if (_loadRequested || _initializing) return;
+    setState(() {
+      _loadRequested = true;
+      _initializing = true;
+      _videoFailed = false;
+    });
+
+    final controller = VideoPlayerController.networkUrl(
+      Uri.parse(widget.url),
+      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+    );
+    _controller = controller;
+    try {
+      await controller.setLooping(true);
+      await controller.initialize();
+      final soundEnabled = ref.read(videoSoundEnabledProvider);
+      await controller.setVolume(soundEnabled ? 1.0 : 0.0);
+      if (!mounted) return;
+      setState(() => _initializing = false);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _syncPlaybackToVisibility();
+      });
+    } catch (_) {
+      await controller.dispose();
+      if (!mounted) return;
+      setState(() {
+        _controller = null;
+        _initializing = false;
+        _videoFailed = true;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final soundEnabled = ref.watch(videoSoundEnabledProvider);
-    final ready = _controller.value.isInitialized;
-    final isPlaying = ready && _controller.value.isPlaying;
+    final controller = _controller;
+    final ready = controller?.value.isInitialized ?? false;
+    final readyController = ready ? controller : null;
+    final isPlaying = readyController?.value.isPlaying ?? false;
     final targetVolume = soundEnabled ? 1.0 : 0.0;
-    if (ready && _controller.value.volume != targetVolume) {
-      _controller.setVolume(targetVolume);
+    if (readyController != null &&
+        readyController.value.volume != targetVolume) {
+      readyController.setVolume(targetVolume);
     }
     return ClipRRect(
       borderRadius: BorderRadius.circular(widget.borderRadius),
       child: AspectRatio(
-        aspectRatio: ready ? _controller.value.aspectRatio : 16 / 9,
+        aspectRatio: readyController?.value.aspectRatio ?? 4 / 5,
         child: GestureDetector(
-          onTap: ready
-              ? () {
-                  if (_controller.value.isPlaying) {
-                    _userPaused = true;
-                    _controller.pause();
-                  } else {
-                    _userPaused = false;
-                    _controller.play();
-                  }
-                  setState(() {});
-                }
-              : null,
+          onTap: () {
+            if (readyController == null) {
+              _loadVideo();
+              return;
+            }
+            if (readyController.value.isPlaying) {
+              _userPaused = true;
+              readyController.pause();
+            } else {
+              _userPaused = false;
+              readyController.play();
+            }
+            setState(() {});
+          },
           child: Stack(
             alignment: Alignment.center,
             children: [
               Positioned.fill(
-                child: ready
-                    ? VideoPlayer(_controller)
+                child: readyController != null
+                    ? VideoPlayer(readyController)
                     : _videoFailed
                     ? Container(
                         color: Theme.of(
@@ -2231,9 +2256,21 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
                         color: Theme.of(
                           context,
                         ).colorScheme.surfaceContainerHighest,
+                        alignment: Alignment.center,
+                        child: _initializing
+                            ? const SizedBox.square(
+                                dimension: 32,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 3,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.movie_creation_outlined,
+                                size: 42,
+                              ),
                       ),
               ),
-              if (!isPlaying && !_videoFailed)
+              if (!isPlaying && !_videoFailed && !_initializing)
                 IgnorePointer(
                   child: Material(
                     color: Colors.black.withValues(alpha: 0.28),
@@ -2247,6 +2284,13 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
                       ),
                     ),
                   ),
+                ),
+              if (!ready && !_videoFailed && !_initializing)
+                const Positioned(bottom: 14, child: _VideoLoadHint()),
+              if (_initializing)
+                const Positioned(
+                  bottom: 14,
+                  child: _VideoLoadHint(label: 'Loading video...'),
                 ),
               if (ready)
                 Positioned(
@@ -2272,6 +2316,33 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
                   ),
                 ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VideoLoadHint extends StatelessWidget {
+  const _VideoLoadHint({this.label = 'Tap to load video'});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.42),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
           ),
         ),
       ),
