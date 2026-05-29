@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../app/router.dart';
 import '../../core/network/api_models.dart';
@@ -82,7 +83,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
       if (!mounted || completed != true) return;
       _refreshAfterAuth();
     }
-    Navigator.of(context).pop();
+    context.go('/');
   }
 
   bool _validateEmailAndPassword({bool requireConfirmation = false}) {
@@ -221,180 +222,175 @@ class _AuthPageState extends ConsumerState<AuthPage> {
         ? 'Create account'
         : 'Sign in';
 
-    return Scaffold(
-      body: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFFDFF5F2), Color(0xFFF8F7F2), Color(0xFFFFF2E2)],
-            stops: [0, 0.58, 1],
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
+        body: DecoratedBox(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFDFF5F2), Color(0xFFF8F7F2), Color(0xFFFFF2E2)],
+              stops: [0, 0.58, 1],
+            ),
           ),
-        ),
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final maxWidth = constraints.maxWidth > 560
-                  ? 500.0
-                  : double.infinity;
-              return SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 10, 20, 28),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: maxWidth),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: IconButton.filledTonal(
-                            onPressed: () => Navigator.of(context).maybePop(),
-                            icon: Icon(
-                              Navigator.of(context).canPop()
-                                  ? Icons.arrow_back_rounded
-                                  : Icons.close_rounded,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        _AuthBrandHeader(title: title, subtitle: subtitle),
-                        const SizedBox(height: 18),
-                        _AuthFormCard(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              if (!_verificationPending) ...[
-                                _AuthModeToggle(
-                                  mode: _mode,
-                                  onChanged: _setMode,
-                                ),
-                                const SizedBox(height: 22),
-                                TextField(
-                                  controller: _emailController,
-                                  keyboardType: TextInputType.emailAddress,
-                                  autofillHints: const [AutofillHints.email],
-                                  decoration: const InputDecoration(
-                                    labelText: 'Email',
-                                    prefixIcon: Icon(Icons.email_outlined),
+          child: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final maxWidth = constraints.maxWidth > 560
+                    ? 500.0
+                    : double.infinity;
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 28),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: maxWidth),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _AuthBrandHeader(title: title, subtitle: subtitle),
+                          const SizedBox(height: 18),
+                          _AuthFormCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (!_verificationPending) ...[
+                                  _AuthModeToggle(
+                                    mode: _mode,
+                                    onChanged: _setMode,
                                   ),
-                                ),
-                                const SizedBox(height: 14),
-                                TextField(
-                                  controller: _passwordController,
-                                  obscureText: _obscurePassword,
-                                  autofillHints: const [AutofillHints.password],
-                                  decoration: InputDecoration(
-                                    labelText: 'Password',
-                                    helperText: isSignup
-                                        ? 'Use at least 8 characters.'
-                                        : null,
-                                    prefixIcon: const Icon(Icons.lock_outline),
-                                    suffixIcon: IconButton(
-                                      onPressed: () => setState(
-                                        () => _obscurePassword =
-                                            !_obscurePassword,
-                                      ),
-                                      icon: Icon(
-                                        _obscurePassword
-                                            ? Icons.visibility_outlined
-                                            : Icons.visibility_off_outlined,
-                                      ),
+                                  const SizedBox(height: 22),
+                                  TextField(
+                                    controller: _emailController,
+                                    keyboardType: TextInputType.emailAddress,
+                                    autofillHints: const [AutofillHints.email],
+                                    decoration: const InputDecoration(
+                                      labelText: 'Email',
+                                      prefixIcon: Icon(Icons.email_outlined),
                                     ),
                                   ),
-                                ),
-                                if (!isSignup) ...[
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: TextButton(
-                                      onPressed: _loading
-                                          ? null
-                                          : _openPasswordReset,
-                                      child: const Text('Forgot password?'),
-                                    ),
-                                  ),
-                                ],
-                                if (isSignup) ...[
                                   const SizedBox(height: 14),
                                   TextField(
-                                    controller: _confirmPasswordController,
+                                    controller: _passwordController,
                                     obscureText: _obscurePassword,
                                     autofillHints: const [
-                                      AutofillHints.newPassword,
+                                      AutofillHints.password,
                                     ],
-                                    decoration: const InputDecoration(
-                                      labelText: 'Confirm password',
-                                      prefixIcon: Icon(
-                                        Icons.lock_reset_rounded,
+                                    decoration: InputDecoration(
+                                      labelText: 'Password',
+                                      helperText: isSignup
+                                          ? 'Use at least 8 characters.'
+                                          : null,
+                                      prefixIcon: const Icon(
+                                        Icons.lock_outline,
+                                      ),
+                                      suffixIcon: IconButton(
+                                        onPressed: () => setState(
+                                          () => _obscurePassword =
+                                              !_obscurePassword,
+                                        ),
+                                        icon: Icon(
+                                          _obscurePassword
+                                              ? Icons.visibility_outlined
+                                              : Icons.visibility_off_outlined,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ],
-                              ] else ...[
-                                TextField(
-                                  controller: _verificationCodeController,
-                                  keyboardType: TextInputType.number,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Verification code',
-                                    prefixIcon: Icon(
-                                      Icons.mark_email_read_outlined,
+                                  if (!isSignup) ...[
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: TextButton(
+                                        onPressed: _loading
+                                            ? null
+                                            : _openPasswordReset,
+                                        child: const Text('Forgot password?'),
+                                      ),
+                                    ),
+                                  ],
+                                  if (isSignup) ...[
+                                    const SizedBox(height: 14),
+                                    TextField(
+                                      controller: _confirmPasswordController,
+                                      obscureText: _obscurePassword,
+                                      autofillHints: const [
+                                        AutofillHints.newPassword,
+                                      ],
+                                      decoration: const InputDecoration(
+                                        labelText: 'Confirm password',
+                                        prefixIcon: Icon(
+                                          Icons.lock_reset_rounded,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ] else ...[
+                                  TextField(
+                                    controller: _verificationCodeController,
+                                    keyboardType: TextInputType.number,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Verification code',
+                                      prefixIcon: Icon(
+                                        Icons.mark_email_read_outlined,
+                                      ),
                                     ),
                                   ),
-                                ),
-                                if (_verificationHint != null) ...[
-                                  const SizedBox(height: 10),
-                                  _AuthNotice(text: _verificationHint!),
+                                  if (_verificationHint != null) ...[
+                                    const SizedBox(height: 10),
+                                    _AuthNotice(text: _verificationHint!),
+                                  ],
+                                  const SizedBox(height: 8),
+                                  TextButton(
+                                    onPressed: _loading
+                                        ? null
+                                        : () {
+                                            setState(() {
+                                              _verificationPending = false;
+                                              _errorText = null;
+                                            });
+                                          },
+                                    child: const Text('Use a different email'),
+                                  ),
                                 ],
-                                const SizedBox(height: 8),
-                                TextButton(
+                                if (_errorText != null) ...[
+                                  const SizedBox(height: 14),
+                                  _AuthError(text: _errorText!),
+                                ],
+                                const SizedBox(height: 24),
+                                FilledButton(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: const Color(0xFF073F43),
+                                    foregroundColor: Colors.white,
+                                    minimumSize: const Size.fromHeight(56),
+                                    textStyle: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                  ),
                                   onPressed: _loading
                                       ? null
-                                      : () {
-                                          setState(() {
-                                            _verificationPending = false;
-                                            _errorText = null;
-                                          });
-                                        },
-                                  child: const Text('Use a different email'),
+                                      : _verificationPending
+                                      ? _verifyEmail
+                                      : isSignup
+                                      ? _submitSignup
+                                      : _submitSignIn,
+                                  child: Text(actionLabel),
                                 ),
                               ],
-                              if (_errorText != null) ...[
-                                const SizedBox(height: 14),
-                                _AuthError(text: _errorText!),
-                              ],
-                              const SizedBox(height: 24),
-                              FilledButton(
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: const Color(0xFF073F43),
-                                  foregroundColor: Colors.white,
-                                  minimumSize: const Size.fromHeight(56),
-                                  textStyle: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                ),
-                                onPressed: _loading
-                                    ? null
-                                    : _verificationPending
-                                    ? _verifyEmail
-                                    : isSignup
-                                    ? _submitSignup
-                                    : _submitSignIn,
-                                child: Text(actionLabel),
-                              ),
-                            ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 16),
-                        if (!_verificationPending) const _AuthPerksCard(),
-                      ],
+                          const SizedBox(height: 16),
+                          if (!_verificationPending) const _AuthPerksCard(),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),

@@ -40,6 +40,26 @@ class HomePage extends ConsumerWidget {
     final user = ref.watch(meProvider);
     final spots = ref.watch(travelFeedSpotsProvider);
     final spotItems = spots.valueOrNull ?? const [];
+    final sessionExpired = user.hasError && _isSessionExpiredError(user.error);
+
+    ref.listen<AsyncValue<UserProfile>>(meProvider, (_, next) {
+      if (!next.hasError || !_isSessionExpiredError(next.error)) {
+        return;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) {
+          context.go('/login');
+        }
+      });
+    });
+
+    if (user.isLoading || sessionExpired) {
+      return _AuthGateLoadingPage(
+        message: sessionExpired
+            ? 'Taking you to sign in...'
+            : 'Loading your profile...',
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -54,15 +74,19 @@ class HomePage extends ConsumerWidget {
               onTap: () => ref.read(currentTabProvider.notifier).state = 4,
             ),
             orElse: () => _ProfileHeaderChip(
-              name: 'Profile',
-              onTap: () => ref.read(currentTabProvider.notifier).state = 4,
+              name: sessionExpired ? 'Sign in' : 'Profile',
+              onTap: () => sessionExpired
+                  ? context.go('/login')
+                  : ref.read(currentTabProvider.notifier).state = 4,
             ),
           ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: FilledButton(
               style: tydesPostButtonStyle(),
-              onPressed: () => showCreatePostSheet(context, spotItems),
+              onPressed: () => sessionExpired
+                  ? context.go('/login')
+                  : showCreatePostSheet(context, spotItems),
               child: const Text('Post'),
             ),
           ),
@@ -74,6 +98,41 @@ class HomePage extends ConsumerWidget {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(20),
           children: [const TravelFeedSection(showHeader: false)],
+        ),
+      ),
+    );
+  }
+}
+
+bool _isSessionExpiredError(Object? error) {
+  return error.toString().toLowerCase().contains('session expired');
+}
+
+class _AuthGateLoadingPage extends StatelessWidget {
+  const _AuthGateLoadingPage({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox.square(
+              dimension: 34,
+              child: CircularProgressIndicator(strokeWidth: 3),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              style: const TextStyle(
+                color: Color(0xFF5D686C),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
         ),
       ),
     );

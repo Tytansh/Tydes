@@ -89,7 +89,7 @@ class SettingsPage extends ConsumerWidget {
           ref.invalidate(spotDetailBundleProvider);
           if (!context.mounted) return;
           Navigator.of(context).pop();
-          context.push('/login');
+          context.go('/login');
         },
         onDeleteAccount: () async {
           final confirmed = await showDialog<bool>(
@@ -128,7 +128,7 @@ class SettingsPage extends ConsumerWidget {
           ref.invalidate(spotDetailBundleProvider);
           if (!context.mounted) return;
           Navigator.of(context).pop();
-          context.push('/login');
+          context.go('/login');
         },
       ),
     );
@@ -194,7 +194,10 @@ class SettingsPage extends ConsumerWidget {
                 unreadNotifications: unreadNotifications,
               ),
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (_, _) => const SizedBox.shrink(),
+              error: (error, _) => _SignedOutProfileCard(
+                message: _profileErrorMessage(error),
+                onSignIn: () => context.go('/login'),
+              ),
             ),
             const SizedBox(height: 24),
             Text(
@@ -234,10 +237,12 @@ class SettingsPage extends ConsumerWidget {
                 ),
                 FilledButton.icon(
                   style: tydesPostButtonStyle(),
-                  onPressed: () => showCreatePostSheet(
-                    context,
-                    spots.valueOrNull ?? const [],
-                  ),
+                  onPressed: me.hasError
+                      ? () => context.go('/login')
+                      : () => showCreatePostSheet(
+                          context,
+                          spots.valueOrNull ?? const [],
+                        ),
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('Post'),
                 ),
@@ -260,13 +265,72 @@ class SettingsPage extends ConsumerWidget {
                 error: (error, _) => Text('Could not load posts: $error'),
               ),
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (_, _) => const SizedBox.shrink(),
+              error: (_, _) => const _SignedOutPostsCard(),
             ),
           ],
         ),
       ),
     );
   }
+}
+
+class _SignedOutProfileCard extends StatelessWidget {
+  const _SignedOutProfileCard({required this.message, required this.onSignIn});
+
+  final String message;
+  final VoidCallback onSignIn;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.lock_outline, color: scheme.primary, size: 28),
+            const SizedBox(height: 12),
+            Text(
+              'Sign in to view your profile',
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: const TextStyle(color: Color(0xFF5D686C), height: 1.35),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(onPressed: onSignIn, child: const Text('Sign in')),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SignedOutPostsCard extends StatelessWidget {
+  const _SignedOutPostsCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Card(
+      child: Padding(
+        padding: EdgeInsets.all(18),
+        child: Text('Sign in to see and create your posts.'),
+      ),
+    );
+  }
+}
+
+String _profileErrorMessage(Object error) {
+  final message = error.toString().replaceFirst('Bad state: ', '');
+  if (message.toLowerCase().contains('session expired')) {
+    return 'Your session expired after the backend update. Sign in again and your real account will load.';
+  }
+  return 'We could not load your profile right now. Sign in again to refresh your session.';
 }
 
 class _ProfileHero extends StatelessWidget {

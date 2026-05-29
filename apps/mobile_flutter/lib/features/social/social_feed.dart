@@ -2745,13 +2745,23 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
         final photo = draft.photo;
         final video = draft.video;
         if (photo != null) {
+          final photoSize = await _pickedVideoSize(photo.fullImage);
+          var lastPercent = -1;
           _setSubmitStatus(
-            'Uploading photo ${index + 1} of ${_media.length}...',
+            'Uploading photo ${index + 1} of ${_media.length}${photoSize == null ? '' : ' (${_formatFileSize(photoSize)})'}...',
           );
           media.add(
             await repository.uploadPostPhoto(
               image: photo.fullImage,
               thumbnail: photo.thumbnail,
+              onSendProgress: (sent, total) {
+                final percent = _uploadPercent(sent, total);
+                if (percent == null || percent == lastPercent) return;
+                lastPercent = percent;
+                _setSubmitStatus(
+                  'Uploading photo ${index + 1} of ${_media.length} ($percent%)...',
+                );
+              },
             ),
           );
         } else if (video != null) {
@@ -2761,10 +2771,23 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
               'Videos need to be under ${_formatFileSize(_maxPostVideoBytes)} for now. Try trimming this clip.',
             );
           }
+          var lastPercent = -1;
           _setSubmitStatus(
-            'Uploading video ${index + 1} of ${_media.length}...',
+            'Uploading video ${index + 1} of ${_media.length}${videoSize == null ? '' : ' (${_formatFileSize(videoSize)})'}...',
           );
-          media.add(await repository.uploadPostVideo(video: video));
+          media.add(
+            await repository.uploadPostVideo(
+              video: video,
+              onSendProgress: (sent, total) {
+                final percent = _uploadPercent(sent, total);
+                if (percent == null || percent == lastPercent) return;
+                lastPercent = percent;
+                _setSubmitStatus(
+                  'Uploading video ${index + 1} of ${_media.length} ($percent%)...',
+                );
+              },
+            ),
+          );
         }
       }
 
@@ -4335,7 +4358,7 @@ class _ComposerPostDraft {
 const _maxPostMediaItems = 3;
 const _maxComposerDrafts = 8;
 const _maxPostPhotoBytes = 15 * 1024 * 1024;
-const _maxPostVideoBytes = 75 * 1024 * 1024;
+const _maxPostVideoBytes = 500 * 1024 * 1024;
 
 String _draftTitle(_ComposerPostDraft draft) {
   return draft.postType == 'surf_plan' ? 'Event draft' : 'Post draft';
@@ -4489,6 +4512,11 @@ String _uploadErrorMessage(Object error) {
 String _formatFileSize(int bytes) {
   final mb = bytes / (1024 * 1024);
   return '${mb.round()}MB';
+}
+
+int? _uploadPercent(int sent, int total) {
+  if (total <= 0) return null;
+  return ((sent / total) * 100).clamp(0, 99).round();
 }
 
 SpotModel? _spotForId(List<SpotModel> spots, String? spotId) {
