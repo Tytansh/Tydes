@@ -6,12 +6,12 @@ from uuid import uuid4
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field, field_validator
 
-from app.core.runtime import media_dir_path, public_backend_url
+from app.core.media_storage import configured_media_storage
+from app.core.runtime import public_backend_url
 from app.core.models import SocialMediaAttachment, SocialPost
 from app.core.store import store
 
 router = APIRouter(prefix="/social", tags=["social"])
-MEDIA_DIR = media_dir_path()
 ALLOWED_IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 ALLOWED_VIDEO_TYPES = {
@@ -161,11 +161,16 @@ async def upload_media(
         raise HTTPException(status_code=400, detail="Only photos and videos are supported.")
 
     media_id = f"media_{uuid4().hex[:10]}"
-    MEDIA_DIR.mkdir(parents=True, exist_ok=True)
-
-    full_path = MEDIA_DIR / f"{media_id}{extension}"
+    storage = configured_media_storage()
+    base_url = _request_public_base_url(request)
+    object_name = f"{media_id}{extension}"
     max_bytes = MAX_VIDEO_BYTES if media_type == "video" else MAX_PHOTO_BYTES
-    _write_upload_with_limit(file, full_path, max_bytes)
+    stored_media = storage.store_upload(
+        file,
+        object_name,
+        max_bytes,
+        local_base_url=base_url,
+    )
 
     thumb_url: str | None = None
     if media_type == "photo":
@@ -174,41 +179,31 @@ async def upload_media(
         )
         if thumb_extension is None:
             raise HTTPException(status_code=400, detail="Thumbnail must be a photo.")
-        thumb_path = MEDIA_DIR / f"{media_id}_thumb{thumb_extension}"
-        _write_upload_with_limit(thumbnail, thumb_path, MAX_PHOTO_BYTES)
-        thumb_url = f"{_request_public_base_url(request)}/media/{thumb_path.name}"
+        stored_thumb = storage.store_upload(
+            thumbnail,
+            f"{media_id}_thumb{thumb_extension}",
+            MAX_PHOTO_BYTES,
+            local_base_url=base_url,
+        )
+        thumb_url = stored_thumb.url
     elif thumbnail is not None:
         thumb_extension = _image_extension(thumbnail)
         if thumb_extension is None:
             raise HTTPException(status_code=400, detail="Video thumbnail must be a photo.")
-        thumb_path = MEDIA_DIR / f"{media_id}_thumb{thumb_extension}"
-        _write_upload_with_limit(thumbnail, thumb_path, MAX_PHOTO_BYTES)
-        thumb_url = f"{_request_public_base_url(request)}/media/{thumb_path.name}"
+        stored_thumb = storage.store_upload(
+            thumbnail,
+            f"{media_id}_thumb{thumb_extension}",
+            MAX_PHOTO_BYTES,
+            local_base_url=base_url,
+        )
+        thumb_url = stored_thumb.url
 
-    base_url = _request_public_base_url(request)
-    media_url = f"{base_url}/media/{full_path.name}"
     return SocialMediaAttachment(
         id=media_id,
         media_type=media_type,
-        url=media_url,
-        thumbnail_url=thumb_url or media_url,
+        url=stored_media.url,
+        thumbnail_url=thumb_url or stored_media.url,
     )
-
-
-def _write_upload_with_limit(file: UploadFile, path: Path, max_bytes: int) -> None:
-    bytes_written = 0
-    with path.open("wb") as output:
-        while chunk := file.file.read(1024 * 1024):
-            bytes_written += len(chunk)
-            if bytes_written > max_bytes:
-                output.close()
-                path.unlink(missing_ok=True)
-                limit_mb = max_bytes // (1024 * 1024)
-                raise HTTPException(
-                    status_code=413,
-                    detail=f"File is too large. Limit is {limit_mb} MB.",
-                )
-            output.write(chunk)
 
 
 def _image_extension(file: UploadFile) -> str | None:

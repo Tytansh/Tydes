@@ -658,3 +658,24 @@ def test_social_feed_and_create_post():
         post["body"].startswith("Anyone surfing")
         for post in posts_response.json()
     )
+
+
+def test_media_upload_stores_video_thumbnail_locally(monkeypatch, tmp_path):
+    monkeypatch.setenv("MEDIA_STORAGE_BACKEND", "local")
+    monkeypatch.setenv("TYDES_MEDIA_DIR", str(tmp_path / "media"))
+
+    response = client.post(
+        "/api/v1/social/media",
+        files={
+            "file": ("clip.mp4", b"fake video", "video/mp4"),
+            "thumbnail": ("clip.jpg", b"fake image", "image/jpeg"),
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["media_type"] == "video"
+    assert payload["url"].endswith(".mp4")
+    assert payload["thumbnail_url"].endswith("_thumb.jpg")
+    assert payload["thumbnail_url"] != payload["url"]
+    assert len(list((tmp_path / "media").iterdir())) == 2

@@ -27,6 +27,18 @@ services:
         value: 'https://tydes.io,https://www.tydes.io,http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:8080'
       - key: TYDES_DATA_DIR
         value: /var/data
+      - key: MEDIA_STORAGE_BACKEND
+        value: local
+      - key: CLOUDFLARE_R2_ACCOUNT_ID
+        sync: false
+      - key: CLOUDFLARE_R2_BUCKET
+        sync: false
+      - key: CLOUDFLARE_R2_ACCESS_KEY_ID
+        sync: false
+      - key: CLOUDFLARE_R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: CLOUDFLARE_R2_PUBLIC_URL
+        sync: false
       - key: RESEND_API_KEY
         sync: false
       - key: TIDECHECK_API_KEY
