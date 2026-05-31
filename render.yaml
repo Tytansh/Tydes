@@ -47,3 +47,5 @@ services:
         value: premium
       - key: REVENUECAT_SECRET_API_KEY
         sync: false
+      - key: TYDES_ADMIN_TOKEN
+        sync: false

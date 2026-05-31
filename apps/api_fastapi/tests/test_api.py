@@ -576,6 +576,52 @@ def test_signup_creates_pending_email_verification(tmp_path, monkeypatch):
     assert "longboard123" not in saved["auth_accounts"]["newsurfer@example.com"]["password_hash"]
 
 
+def test_admin_users_requires_token_and_lists_accounts(tmp_path, monkeypatch):
+    store.state_file = tmp_path / "demo_state.json"
+    store.verified_emails = set()
+    store.email_verification_codes = {}
+    store.password_reset_codes = {}
+    store.auth_accounts = {}
+    store.session_tokens = {}
+    monkeypatch.setattr(
+        "app.core.store.send_verification_email",
+        lambda _email, _code: SimpleNamespace(
+            configured=False,
+            sent=False,
+            error=None,
+        ),
+    )
+
+    disabled_response = client.get("/api/v1/admin/users")
+    assert disabled_response.status_code == 404
+
+    monkeypatch.setenv("TYDES_ADMIN_TOKEN", "dev-admin-token")
+    blocked_response = client.get("/api/v1/admin/users")
+    assert blocked_response.status_code == 403
+
+    signup_response = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "email": "admincheck@example.com",
+            "password": "longboard123",
+            "locale": "en",
+        },
+    )
+    assert signup_response.status_code == 200
+
+    users_response = client.get(
+        "/api/v1/admin/users",
+        headers={"X-Tydes-Admin-Token": "dev-admin-token"},
+    )
+
+    assert users_response.status_code == 200
+    payload = users_response.json()
+    assert payload["count"] == 1
+    assert payload["users"][0]["email"] == "admincheck@example.com"
+    assert payload["users"][0]["handle"] == ""
+    assert "password_hash" not in payload["users"][0]
+
+
 def test_user_profile_requires_valid_session(tmp_path, monkeypatch):
     store.state_file = tmp_path / "demo_state.json"
     store.auth_accounts = {}

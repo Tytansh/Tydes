@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.runtime import csv_env, media_dir_path, sync_seed_media_files
 from app.core.store import store
 from app.modules.ads.router import router as ads_router
+from app.modules.admin.router import router as admin_router
 from app.modules.alerts.router import router as alerts_router
 from app.modules.auth.router import router as auth_router
 from app.modules.billing.router import router as billing_router
@@ -63,4 +64,5 @@ app.include_router(trips_router, prefix="/api/v1")
 app.include_router(alerts_router, prefix="/api/v1")
 app.include_router(billing_router, prefix="/api/v1")
 app.include_router(ads_router, prefix="/api/v1")
+app.include_router(admin_router, prefix="/api/v1")
 app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")
