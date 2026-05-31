@@ -676,7 +676,7 @@ class _NewMessagePersonTile extends StatelessWidget {
                   : NetworkImage(profile.avatarUrl!),
               child: profile.avatarUrl == null
                   ? Text(
-                      profile.displayName.characters.first,
+                      _initialFor(profile.displayName),
                       style: const TextStyle(
                         color: tydesAvatarForeground,
                         fontWeight: FontWeight.w900,
@@ -1292,9 +1292,7 @@ class _SharedPostPreview extends ConsumerWidget {
                             : NetworkImage(message.sharedPostAuthorAvatarUrl!),
                         child: message.sharedPostAuthorAvatarUrl == null
                             ? Text(
-                                (message.sharedPostAuthor ?? 'S')
-                                    .characters
-                                    .first,
+                                _initialFor(message.sharedPostAuthor ?? 'S'),
                                 style: const TextStyle(
                                   color: tydesAvatarForeground,
                                   fontWeight: FontWeight.w900,

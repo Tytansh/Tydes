@@ -543,7 +543,7 @@ class _PostCard extends ConsumerWidget {
                           : NetworkImage(authorAvatarUrl),
                       child: authorAvatarUrl == null
                           ? Text(
-                              authorName.characters.first,
+                              tydesProfileInitial(authorName),
                               style: const TextStyle(
                                 color: tydesAvatarForeground,
                                 fontWeight: FontWeight.w800,
@@ -4620,7 +4620,7 @@ class _GoingPersonTile extends StatelessWidget {
                       : NetworkImage(profile.avatarUrl!),
                   child: profile.avatarUrl == null
                       ? Text(
-                          profile.displayName.characters.first,
+                          tydesProfileInitial(profile.displayName),
                           style: const TextStyle(
                             color: tydesAvatarForeground,
                             fontWeight: FontWeight.w800,

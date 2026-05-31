@@ -52,7 +52,10 @@ class _NotificationTile extends StatelessWidget {
                       : NetworkImage(item.profile!.avatarUrl!),
                   child: item.profile?.avatarUrl == null
                       ? Text(
-                          item.profile?.displayName.characters.first ?? 'T',
+                          tydesProfileInitial(
+                            item.profile?.displayName,
+                            fallback: 'T',
+                          ),
                           style: const TextStyle(
                             color: tydesAvatarForeground,
                             fontWeight: FontWeight.w900,

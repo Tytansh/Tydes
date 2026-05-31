@@ -23,6 +23,12 @@ final socialRelationshipHydrationProvider = FutureProvider<void>((ref) async {
 const tydesAvatarBackground = Color(0xFFE0F7F4);
 const tydesAvatarForeground = Color(0xFF087E8B);
 
+String tydesProfileInitial(String? name, {String fallback = '?'}) {
+  final trimmed = name?.trim() ?? '';
+  if (trimmed.isEmpty) return fallback;
+  return trimmed.characters.first.toUpperCase();
+}
+
 class PublicProfilePreview {
   const PublicProfilePreview({
     required this.userId,
@@ -397,7 +403,7 @@ class _ProfilePersonTile extends StatelessWidget {
                   : NetworkImage(profile.avatarUrl!),
               child: profile.avatarUrl == null
                   ? Text(
-                      profile.displayName.characters.first,
+                      tydesProfileInitial(profile.displayName),
                       style: const TextStyle(
                         color: tydesAvatarForeground,
                         fontWeight: FontWeight.w800,

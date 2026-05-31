@@ -255,7 +255,7 @@ class _PublicProfileHero extends StatelessWidget {
                       : NetworkImage(profile.avatarUrl!),
                   child: profile.avatarUrl == null
                       ? Text(
-                          profile.displayName.characters.first,
+                          tydesProfileInitial(profile.displayName),
                           style: const TextStyle(
                             fontSize: 30,
                             fontWeight: FontWeight.w900,
@@ -424,7 +424,7 @@ class _PublicProfilePostCard extends StatelessWidget {
                       : NetworkImage(profile.avatarUrl!),
                   child: profile.avatarUrl == null
                       ? Text(
-                          profile.displayName.characters.first,
+                          tydesProfileInitial(profile.displayName),
                           style: const TextStyle(
                             color: tydesAvatarForeground,
                             fontWeight: FontWeight.w800,

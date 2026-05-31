@@ -94,7 +94,7 @@ class _PostDetailCard extends StatelessWidget {
                         : NetworkImage(profile.avatarUrl!),
                     child: profile.avatarUrl == null
                         ? Text(
-                            profile.displayName.characters.first,
+                            tydesProfileInitial(profile.displayName),
                             style: const TextStyle(
                               color: tydesAvatarForeground,
                               fontWeight: FontWeight.w800,

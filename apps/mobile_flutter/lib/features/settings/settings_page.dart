@@ -390,7 +390,7 @@ class _ProfileHero extends StatelessWidget {
                           : NetworkImage(profile.avatarUrl!),
                       child: profile.avatarUrl == null
                           ? Text(
-                              profile.displayName.characters.first,
+                              tydesProfileInitial(profile.displayName),
                               style: const TextStyle(
                                 fontSize: 30,
                                 fontWeight: FontWeight.w900,
@@ -1110,7 +1110,7 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
                           _avatarImage == null &&
                               widget.profile.avatarUrl == null
                           ? Text(
-                              widget.profile.displayName.characters.first,
+                              tydesProfileInitial(widget.profile.displayName),
                               style: const TextStyle(
                                 fontSize: 30,
                                 fontWeight: FontWeight.w900,
@@ -1541,7 +1541,7 @@ class _ProfilePostCard extends StatelessWidget {
                       ? null
                       : NetworkImage(authorAvatarUrl),
                   child: authorAvatarUrl == null
-                      ? Text(authorName.characters.first)
+                      ? Text(tydesProfileInitial(authorName))
                       : null,
                 ),
                 const SizedBox(width: 12),
