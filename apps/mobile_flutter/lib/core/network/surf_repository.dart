@@ -83,6 +83,7 @@ class SurfRepository {
     String locale, {
     String? password,
   }) async {
+    await _demoPersistence.clearAccessToken();
     try {
       final payload = {'email': email, 'locale': locale};
       if (password != null) {
@@ -107,11 +108,9 @@ class SurfRepository {
       if (detail is Map<String, dynamic> && detail['detail'] is String) {
         throw StateError(detail['detail'] as String);
       }
-      DemoSeed.me = DemoSeed.me.copyWith(email: email, emailVerified: true);
-      return DemoSeed.me;
+      throw StateError('Could not sign in right now.');
     } catch (_) {
-      DemoSeed.me = DemoSeed.me.copyWith(email: email, emailVerified: true);
-      return DemoSeed.me;
+      throw StateError('Could not sign in right now.');
     }
   }
 
@@ -148,13 +147,7 @@ class SurfRepository {
       }
       throw StateError('Could not create account right now.');
     } catch (_) {
-      DemoSeed.me = DemoSeed.me.copyWith(email: email, emailVerified: true);
-      return SignupResult(
-        user: DemoSeed.me,
-        verificationRequired: false,
-        verificationSentTo: email,
-        verificationHint: null,
-      );
+      throw StateError('Could not create account right now.');
     }
   }
 
@@ -177,8 +170,7 @@ class SurfRepository {
       }
       throw StateError('Could not verify that code right now.');
     } catch (_) {
-      DemoSeed.me = DemoSeed.me.copyWith(emailVerified: true);
-      return DemoSeed.me;
+      throw StateError('Could not verify that code right now.');
     }
   }
 
@@ -250,6 +242,10 @@ class SurfRepository {
   }
 
   Future<UserProfile> fetchMe() async {
+    final token = await _demoPersistence.loadAccessToken();
+    if (token == null) {
+      throw StateError('Session expired. Please sign in again.');
+    }
     try {
       final response = await _dio.get<Map<String, dynamic>>('/users/me');
       final profile = UserProfile.fromJson(response.data!);
