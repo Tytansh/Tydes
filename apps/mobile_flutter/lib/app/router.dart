@@ -22,6 +22,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/',
     routes: [
+      GoRoute(path: '/login', builder: (context, state) => const AuthPage()),
       GoRoute(
         path: '/',
         builder: (context, state) => const AppScaffold(),
@@ -37,7 +38,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               initialSpotId: state.uri.queryParameters['spotId'],
             ),
           ),
-          GoRoute(path: 'login', builder: (context, state) => const AuthPage()),
           GoRoute(
             path: 'people-search',
             builder: (context, state) => const PeopleSearchPage(),
