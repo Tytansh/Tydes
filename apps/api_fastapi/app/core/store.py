@@ -11,6 +11,7 @@ from typing import Literal
 
 from app.core.email_sender import send_password_reset_email, send_verification_email
 from app.core.models import AdCard, Alert, BillingPlan, Dashboard, ForecastEntry, FriendProfile, Session, SocialComment, SocialEngagementState, SocialPost, SocialRepost, Spot, SurfWindowForecast, TideForecast, Trip, User, build_seed
+from app.core.postgres_auth import PostgresAuthRepository
 from app.core.runtime import public_media_url, state_file_path
 from app.integrations.tide_providers.tidecheck import TideCheckProvider
 from app.integrations.weather_providers.open_meteo import FREE_FORECAST_MAX_AGE, FRESH_FORECAST_MAX_AGE, OpenMeteoMarineProvider, PREVIEW_FORECAST_MAX_AGE
@@ -48,6 +49,16 @@ class DemoStore:
         self.session_tokens: dict[str, str] = {}
         self.state_file = state_file_path()
         self._load_state()
+        self.postgres_auth = PostgresAuthRepository.from_env()
+        if self.postgres_auth is not None:
+            self.postgres_auth.bootstrap_from_state(
+                auth_accounts=self.auth_accounts,
+                session_tokens=self.session_tokens,
+                verified_emails=self.verified_emails,
+                email_verification_codes=self.email_verification_codes,
+                password_reset_codes=self.password_reset_codes,
+            )
+            self._sync_auth_from_postgres()
 
     def login(
         self,
@@ -56,7 +67,7 @@ class DemoStore:
         password: str | None = None,
     ) -> Session:
         normalized_email = email.strip().lower()
-        account = self.auth_accounts.get(normalized_email)
+        account = self._get_auth_account(normalized_email)
         if account is not None:
             password_hash = str(account.get("password_hash", ""))
             if password is None or not _verify_password(password, password_hash):
@@ -82,7 +93,7 @@ class DemoStore:
         self.user.locale = locale
         self.user.premium = self._email_has_premium_override(normalized_email)
         self.user.email_verified = (
-            normalized_email in self.verified_emails
+            self._is_verified_email(normalized_email)
             or normalized_email.endswith("@surftravel.app")
             or self.user.premium
         )
@@ -94,7 +105,7 @@ class DemoStore:
 
     def signup(self, email: str, password: str, locale: str = "en") -> dict[str, object]:
         normalized_email = email.strip().lower()
-        if normalized_email in self.auth_accounts:
+        if self._get_auth_account(normalized_email) is not None:
             raise ValueError("An account already exists for that email.")
 
         verification_code = _generate_verification_code()
@@ -121,12 +132,13 @@ class DemoStore:
             }
         )
         self.user = user
-        self.auth_accounts[normalized_email] = {
+        account = {
             "password_hash": _hash_password(password),
             "user": self.user.model_dump(mode="json"),
         }
+        self._create_auth_account(normalized_email, account)
         self.capture_email(normalized_email)
-        self.email_verification_codes[normalized_email] = verification_code
+        self._set_email_verification_code(normalized_email, verification_code)
         token = self._create_session_token(normalized_email)
         self._save_state()
         return {
@@ -140,16 +152,18 @@ class DemoStore:
 
     def verify_email(self, email: str, code: str) -> User:
         normalized_email = email.strip().lower()
-        expected_code = self.email_verification_codes.get(normalized_email, "123456")
+        expected_code = self._get_email_verification_code(normalized_email)
+        if expected_code is None and self.postgres_auth is None:
+            expected_code = "123456"
         if code.strip() != expected_code:
             raise ValueError("Invalid verification code.")
-        self.verified_emails.add(normalized_email)
-        self.email_verification_codes.pop(normalized_email, None)
-        account = self.auth_accounts.get(normalized_email)
+        self._set_verified_email(normalized_email)
+        self._delete_email_verification_code(normalized_email)
+        account = self._get_auth_account(normalized_email)
         if account is not None and isinstance(account.get("user"), dict):
             user = User.model_validate(account["user"])
             user.email_verified = True
-            account["user"] = user.model_dump(mode="json")
+            self._save_auth_account_user(normalized_email, user)
             self.user = user
         elif self.user.email.strip().lower() == normalized_email:
             self.user.email_verified = True
@@ -157,6 +171,14 @@ class DemoStore:
         return self.user
 
     def logout(self) -> User:
+        previous_email = self.user.email.strip().lower()
+        if self.postgres_auth is not None:
+            self.postgres_auth.delete_sessions_for_email(previous_email)
+            self.session_tokens = {
+                token_hash: email
+                for token_hash, email in self.session_tokens.items()
+                if email != previous_email
+            }
         self.user.email = "demo@surftravel.app"
         self.user.display_name = "Tytan"
         self.user.handle = "ty"
@@ -173,10 +195,10 @@ class DemoStore:
 
     def delete_current_account(self) -> User:
         normalized_email = self.user.email.strip().lower()
-        self.auth_accounts.pop(normalized_email, None)
-        self.verified_emails.discard(normalized_email)
-        self.email_verification_codes.pop(normalized_email, None)
-        self.password_reset_codes.pop(normalized_email, None)
+        self._delete_auth_account(normalized_email)
+        self._delete_verified_email(normalized_email)
+        self._delete_email_verification_code(normalized_email)
+        self._delete_password_reset_code(normalized_email)
         self.session_tokens = {
             token_hash: email
             for token_hash, email in self.session_tokens.items()
@@ -186,7 +208,7 @@ class DemoStore:
 
     def request_password_reset(self, email: str) -> dict[str, object]:
         normalized_email = email.strip().lower()
-        account = self.auth_accounts.get(normalized_email)
+        account = self._get_auth_account(normalized_email)
         if account is None:
             return {
                 "reset_sent_to": normalized_email,
@@ -197,7 +219,7 @@ class DemoStore:
         email_result = send_password_reset_email(normalized_email, reset_code)
         if email_result.configured and not email_result.sent:
             raise RuntimeError("Could not send password reset email right now.")
-        self.password_reset_codes[normalized_email] = reset_code
+        self._set_password_reset_code(normalized_email, reset_code)
         self._save_state()
         return {
             "reset_sent_to": normalized_email,
@@ -208,10 +230,10 @@ class DemoStore:
 
     def reset_password(self, email: str, code: str, new_password: str) -> Session:
         normalized_email = email.strip().lower()
-        account = self.auth_accounts.get(normalized_email)
+        account = self._get_auth_account(normalized_email)
         if account is None:
             raise ValueError("No account found for that email.")
-        expected_code = self.password_reset_codes.get(normalized_email)
+        expected_code = self._get_password_reset_code(normalized_email)
         if expected_code is None or code.strip() != expected_code:
             raise ValueError("Invalid password reset code.")
 
@@ -219,8 +241,8 @@ class DemoStore:
         if not isinstance(user_payload, dict):
             raise ValueError("Account profile is unavailable.")
 
-        self.password_reset_codes.pop(normalized_email, None)
-        account["password_hash"] = _hash_password(new_password)
+        self._delete_password_reset_code(normalized_email)
+        self._update_auth_password(normalized_email, _hash_password(new_password))
         self.user = User.model_validate(user_payload)
         token = self._create_session_token(normalized_email)
         self._save_state()
@@ -270,6 +292,10 @@ class DemoStore:
             for post in self.posts
             if post.user_id != self.user.id
         }
+        if normalized in reserved_handles or normalized in post_handles:
+            return True
+        if self.postgres_auth is not None:
+            return self.postgres_auth.handle_exists(normalized, self.user.id)
         account_handles = {
             str((account.get("user") or {}).get("handle", ""))
             .strip()
@@ -279,7 +305,7 @@ class DemoStore:
             if isinstance(account.get("user"), dict)
             and (account.get("user") or {}).get("id") != self.user.id
         }
-        return normalized in reserved_handles or normalized in post_handles or normalized in account_handles
+        return normalized in account_handles
 
     def _handle_from_name(self, name: str) -> str:
         return "".join(character for character in name.lower() if character.isalnum())
@@ -306,14 +332,26 @@ class DemoStore:
 
     def _create_session_token(self, email: str) -> str:
         token = secrets.token_urlsafe(32)
-        self.session_tokens[_hash_token(token)] = email.strip().lower()
+        token_hash = _hash_token(token)
+        normalized_email = email.strip().lower()
+        self.session_tokens[token_hash] = normalized_email
+        if (
+            self.postgres_auth is not None
+            and self.postgres_auth.get_account(normalized_email) is not None
+        ):
+            self.postgres_auth.create_session_hash(token_hash, normalized_email)
         return token
 
     def use_session_token(self, token: str) -> bool:
-        email = self.session_tokens.get(_hash_token(token))
+        token_hash = _hash_token(token)
+        email = (
+            self.postgres_auth.get_session_email(token_hash)
+            if self.postgres_auth is not None
+            else self.session_tokens.get(token_hash)
+        )
         if email is None:
             return False
-        account = self.auth_accounts.get(email)
+        account = self._get_auth_account(email)
         if account is None:
             return False
         user_payload = account.get("user")
@@ -324,9 +362,122 @@ class DemoStore:
 
     def _save_current_account_user(self) -> None:
         normalized_email = self.user.email.strip().lower()
+        self._save_auth_account_user(normalized_email, self.user)
+
+    def _sync_auth_from_postgres(self) -> None:
+        if self.postgres_auth is None:
+            return
+        snapshot = self.postgres_auth.snapshot()
+        self.auth_accounts = snapshot.auth_accounts
+        self.session_tokens = snapshot.session_tokens
+        self.verified_emails = snapshot.verified_emails
+        self.email_verification_codes = snapshot.email_verification_codes
+        self.password_reset_codes = snapshot.password_reset_codes
+
+    def _get_auth_account(self, email: str) -> dict[str, object] | None:
+        normalized_email = email.strip().lower()
+        if self.postgres_auth is not None:
+            account = self.postgres_auth.get_account(normalized_email)
+            if account is not None:
+                self.auth_accounts[normalized_email] = account
+            return account
+        return self.auth_accounts.get(normalized_email)
+
+    def _create_auth_account(
+        self,
+        email: str,
+        account: dict[str, object],
+    ) -> None:
+        normalized_email = email.strip().lower()
+        self.auth_accounts[normalized_email] = account
+        if self.postgres_auth is not None:
+            user_payload = account.get("user")
+            if not isinstance(user_payload, dict):
+                raise ValueError("Account profile is unavailable.")
+            self.postgres_auth.create_account(
+                normalized_email,
+                str(account.get("password_hash", "")),
+                user_payload,
+            )
+
+    def _save_auth_account_user(self, email: str, user: User) -> None:
+        normalized_email = email.strip().lower()
         account = self.auth_accounts.get(normalized_email)
         if account is not None:
-            account["user"] = self.user.model_dump(mode="json")
+            account["user"] = user.model_dump(mode="json")
+        if self.postgres_auth is not None and account is not None:
+            self.postgres_auth.save_account_user(
+                normalized_email,
+                user.model_dump(mode="json"),
+            )
+
+    def _update_auth_password(self, email: str, password_hash: str) -> None:
+        normalized_email = email.strip().lower()
+        account = self.auth_accounts.get(normalized_email)
+        if account is not None:
+            account["password_hash"] = password_hash
+        if self.postgres_auth is not None:
+            self.postgres_auth.update_password(normalized_email, password_hash)
+
+    def _delete_auth_account(self, email: str) -> None:
+        normalized_email = email.strip().lower()
+        self.auth_accounts.pop(normalized_email, None)
+        if self.postgres_auth is not None:
+            self.postgres_auth.delete_account(normalized_email)
+
+    def _set_verified_email(self, email: str) -> None:
+        normalized_email = email.strip().lower()
+        self.verified_emails.add(normalized_email)
+        if self.postgres_auth is not None:
+            self.postgres_auth.set_verified_email(normalized_email)
+
+    def _delete_verified_email(self, email: str) -> None:
+        normalized_email = email.strip().lower()
+        self.verified_emails.discard(normalized_email)
+        if self.postgres_auth is not None:
+            self.postgres_auth.delete_verified_email(normalized_email)
+
+    def _is_verified_email(self, email: str) -> bool:
+        normalized_email = email.strip().lower()
+        if self.postgres_auth is not None:
+            return self.postgres_auth.is_verified_email(normalized_email)
+        return normalized_email in self.verified_emails
+
+    def _set_email_verification_code(self, email: str, code: str) -> None:
+        normalized_email = email.strip().lower()
+        self.email_verification_codes[normalized_email] = code
+        if self.postgres_auth is not None:
+            self.postgres_auth.set_email_verification_code(normalized_email, code)
+
+    def _get_email_verification_code(self, email: str) -> str | None:
+        normalized_email = email.strip().lower()
+        if self.postgres_auth is not None:
+            return self.postgres_auth.get_email_verification_code(normalized_email)
+        return self.email_verification_codes.get(normalized_email)
+
+    def _delete_email_verification_code(self, email: str) -> None:
+        normalized_email = email.strip().lower()
+        self.email_verification_codes.pop(normalized_email, None)
+        if self.postgres_auth is not None:
+            self.postgres_auth.delete_email_verification_code(normalized_email)
+
+    def _set_password_reset_code(self, email: str, code: str) -> None:
+        normalized_email = email.strip().lower()
+        self.password_reset_codes[normalized_email] = code
+        if self.postgres_auth is not None:
+            self.postgres_auth.set_password_reset_code(normalized_email, code)
+
+    def _get_password_reset_code(self, email: str) -> str | None:
+        normalized_email = email.strip().lower()
+        if self.postgres_auth is not None:
+            return self.postgres_auth.get_password_reset_code(normalized_email)
+        return self.password_reset_codes.get(normalized_email)
+
+    def _delete_password_reset_code(self, email: str) -> None:
+        normalized_email = email.strip().lower()
+        self.password_reset_codes.pop(normalized_email, None)
+        if self.postgres_auth is not None:
+            self.postgres_auth.delete_password_reset_code(normalized_email)
 
     def get_dashboard(self) -> Dashboard:
         featured = self._featured_spot()
@@ -614,6 +765,26 @@ class DemoStore:
 
     def list_friends(self) -> Iterable[FriendProfile]:
         return self.friends
+
+    def list_auth_users(self) -> list[dict[str, object]]:
+        if self.postgres_auth is not None:
+            self._sync_auth_from_postgres()
+        users: list[dict[str, object]] = []
+        for email, account in sorted(self.auth_accounts.items()):
+            user = account.get("user")
+            if not isinstance(user, dict):
+                continue
+            users.append(
+                {
+                    "email": email,
+                    "user_id": user.get("id"),
+                    "handle": user.get("handle") or "",
+                    "display_name": user.get("display_name") or "",
+                    "email_verified": bool(user.get("email_verified")),
+                    "premium": bool(user.get("premium")),
+                }
+            )
+        return users
 
     def list_posts(self) -> Iterable[SocialPost]:
         return sorted(self.posts, key=lambda post: post.created_at, reverse=True)

@@ -20,19 +20,5 @@ def require_admin_token(provided_token: str | None):
 @router.get("/users")
 def list_users(x_tydes_admin_token: str | None = Header(default=None)):
     require_admin_token(x_tydes_admin_token)
-    users = []
-    for email, account in sorted(store.auth_accounts.items()):
-        user = account.get("user")
-        if not isinstance(user, dict):
-            continue
-        users.append(
-            {
-                "email": email,
-                "user_id": user.get("id"),
-                "handle": user.get("handle") or "",
-                "display_name": user.get("display_name") or "",
-                "email_verified": bool(user.get("email_verified")),
-                "premium": bool(user.get("premium")),
-            }
-        )
+    users = store.list_auth_users()
     return {"count": len(users), "users": users}
