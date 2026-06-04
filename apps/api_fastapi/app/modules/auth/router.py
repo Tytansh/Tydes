@@ -73,6 +73,8 @@ def verify_email(payload: VerifyEmailRequest):
 def request_password_reset(payload: PasswordResetRequest):
     try:
         return store.request_password_reset(payload.email)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     except RuntimeError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
 

@@ -475,6 +475,13 @@ def test_signup_creates_pending_email_verification(tmp_path, monkeypatch):
     reset_code = store.password_reset_codes["newsurfer@example.com"]
     assert reset_code in reset_request_response.json()["reset_hint"]
 
+    missing_reset_response = client.post(
+        "/api/v1/auth/password-reset/request",
+        json={"email": "missing-surfer@example.com"},
+    )
+    assert missing_reset_response.status_code == 400
+    assert missing_reset_response.json()["detail"] == "No account found for that email."
+
     bad_reset_response = client.post(
         "/api/v1/auth/password-reset/confirm",
         json={
@@ -519,7 +526,7 @@ def test_signup_creates_pending_email_verification(tmp_path, monkeypatch):
         "/api/v1/users/me",
         json={
             "display_name": "Newsurfer",
-            "handle": "samehandle",
+            "handle": "ty",
             "bio": "",
             "surf_skill": "beginner",
             "home_region": "",
@@ -528,6 +535,21 @@ def test_signup_creates_pending_email_verification(tmp_path, monkeypatch):
         headers={"Authorization": f"Bearer {new_password_response.json()['access_token']}"},
     )
     assert profile_response.status_code == 200
+    assert profile_response.json()["handle"] == "ty"
+
+    rename_response = client.put(
+        "/api/v1/users/me",
+        json={
+            "display_name": "Newsurfer",
+            "handle": "samehandle",
+            "bio": "",
+            "surf_skill": "beginner",
+            "home_region": "",
+            "avatar_url": None,
+        },
+        headers={"Authorization": f"Bearer {new_password_response.json()['access_token']}"},
+    )
+    assert rename_response.status_code == 200
 
     other_signup_response = client.post(
         "/api/v1/auth/signup",

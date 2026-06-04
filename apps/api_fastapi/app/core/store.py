@@ -210,10 +210,7 @@ class DemoStore:
         normalized_email = email.strip().lower()
         account = self._get_auth_account(normalized_email)
         if account is None:
-            return {
-                "reset_sent_to": normalized_email,
-                "reset_hint": None,
-            }
+            raise ValueError("No account found for that email.")
 
         reset_code = _generate_verification_code()
         email_result = send_password_reset_email(normalized_email, reset_code)
@@ -283,17 +280,6 @@ class DemoStore:
         normalized = handle.strip().lower().lstrip("@")
         if not normalized:
             return False
-        reserved_handles = {
-            self._handle_from_name(friend.display_name)
-            for friend in self.friends
-        }
-        post_handles = {
-            (post.author_handle or "").strip().lower().lstrip("@")
-            for post in self.posts
-            if post.user_id != self.user.id
-        }
-        if normalized in reserved_handles or normalized in post_handles:
-            return True
         if self.postgres_auth is not None:
             return self.postgres_auth.handle_exists(normalized, self.user.id)
         account_handles = {
