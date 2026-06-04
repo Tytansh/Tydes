@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.media_storage import configured_media_storage
@@ -46,6 +46,12 @@ class SocialCommentCreateRequest(BaseModel):
     reply_to_comment_id: str | None = None
 
 
+def require_authenticated_user(request: Request):
+    if not getattr(request.state, "authenticated_user", False):
+        raise HTTPException(status_code=401, detail="Sign in required")
+    return store.user
+
+
 @router.get("/friends")
 def list_friends():
     return list(store.list_friends())
@@ -57,12 +63,12 @@ def list_posts():
 
 
 @router.get("/engagement")
-def get_engagement():
+def get_engagement(_user=Depends(require_authenticated_user)):
     return store.social_engagement_state()
 
 
 @router.post("/posts/{post_id}/likes")
-def like_post(post_id: str):
+def like_post(post_id: str, _user=Depends(require_authenticated_user)):
     state = store.set_post_like(post_id, True)
     if state is None:
         raise HTTPException(status_code=404, detail="Post not found.")
@@ -70,7 +76,7 @@ def like_post(post_id: str):
 
 
 @router.delete("/posts/{post_id}/likes")
-def unlike_post(post_id: str):
+def unlike_post(post_id: str, _user=Depends(require_authenticated_user)):
     state = store.set_post_like(post_id, False)
     if state is None:
         raise HTTPException(status_code=404, detail="Post not found.")
@@ -78,7 +84,7 @@ def unlike_post(post_id: str):
 
 
 @router.post("/posts/{post_id}/reposts")
-def repost_post(post_id: str):
+def repost_post(post_id: str, _user=Depends(require_authenticated_user)):
     state = store.set_post_repost(post_id, True)
     if state is None:
         raise HTTPException(status_code=404, detail="Post not found.")
@@ -86,7 +92,7 @@ def repost_post(post_id: str):
 
 
 @router.delete("/posts/{post_id}/reposts")
-def unrepost_post(post_id: str):
+def unrepost_post(post_id: str, _user=Depends(require_authenticated_user)):
     state = store.set_post_repost(post_id, False)
     if state is None:
         raise HTTPException(status_code=404, detail="Post not found.")
@@ -94,7 +100,7 @@ def unrepost_post(post_id: str):
 
 
 @router.post("/posts/{post_id}/rsvp")
-def join_event(post_id: str):
+def join_event(post_id: str, _user=Depends(require_authenticated_user)):
     state = store.set_event_rsvp(post_id, True)
     if state is None:
         raise HTTPException(status_code=404, detail="Event post not found.")
@@ -102,7 +108,7 @@ def join_event(post_id: str):
 
 
 @router.delete("/posts/{post_id}/rsvp")
-def leave_event(post_id: str):
+def leave_event(post_id: str, _user=Depends(require_authenticated_user)):
     state = store.set_event_rsvp(post_id, False)
     if state is None:
         raise HTTPException(status_code=404, detail="Event post not found.")
@@ -110,7 +116,7 @@ def leave_event(post_id: str):
 
 
 @router.post("/comments")
-def create_comment(payload: SocialCommentCreateRequest):
+def create_comment(payload: SocialCommentCreateRequest, _user=Depends(require_authenticated_user)):
     state = store.add_comment(
         post_id=payload.post_id,
         comment_id=f"comment_{uuid4().hex[:10]}",
@@ -123,7 +129,7 @@ def create_comment(payload: SocialCommentCreateRequest):
 
 
 @router.delete("/comments/{comment_id}")
-def delete_comment(comment_id: str):
+def delete_comment(comment_id: str, _user=Depends(require_authenticated_user)):
     state = store.delete_comment(comment_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Comment not found.")
@@ -131,7 +137,7 @@ def delete_comment(comment_id: str):
 
 
 @router.post("/comments/{comment_id}/likes")
-def like_comment(comment_id: str):
+def like_comment(comment_id: str, _user=Depends(require_authenticated_user)):
     state = store.set_comment_like(comment_id, True)
     if state is None:
         raise HTTPException(status_code=404, detail="Comment not found.")
@@ -139,7 +145,7 @@ def like_comment(comment_id: str):
 
 
 @router.delete("/comments/{comment_id}/likes")
-def unlike_comment(comment_id: str):
+def unlike_comment(comment_id: str, _user=Depends(require_authenticated_user)):
     state = store.set_comment_like(comment_id, False)
     if state is None:
         raise HTTPException(status_code=404, detail="Comment not found.")
@@ -149,6 +155,7 @@ def unlike_comment(comment_id: str):
 @router.post("/media")
 async def upload_media(
     request: Request,
+    _user=Depends(require_authenticated_user),
     file: UploadFile = File(...),
     thumbnail: UploadFile | None = File(None),
 ):
@@ -234,7 +241,7 @@ def _request_public_base_url(request: Request) -> str:
 
 
 @router.post("/posts")
-def create_post(payload: SocialPostCreateRequest):
+def create_post(payload: SocialPostCreateRequest, _user=Depends(require_authenticated_user)):
     media = [
         item
         for item in payload.media

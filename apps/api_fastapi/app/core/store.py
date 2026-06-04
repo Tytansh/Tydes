@@ -12,6 +12,7 @@ from typing import Literal
 from app.core.email_sender import send_password_reset_email, send_verification_email
 from app.core.models import AdCard, Alert, BillingPlan, Dashboard, ForecastEntry, FriendProfile, Session, SocialComment, SocialEngagementState, SocialPost, SocialRepost, Spot, SurfWindowForecast, TideForecast, Trip, User, build_seed
 from app.core.postgres_auth import PostgresAuthRepository
+from app.core.postgres_social import PostgresSocialRepository
 from app.core.runtime import public_media_url, state_file_path
 from app.integrations.tide_providers.tidecheck import TideCheckProvider
 from app.integrations.weather_providers.open_meteo import FREE_FORECAST_MAX_AGE, FRESH_FORECAST_MAX_AGE, OpenMeteoMarineProvider, PREVIEW_FORECAST_MAX_AGE
@@ -48,6 +49,8 @@ class DemoStore:
         self.auth_accounts: dict[str, dict[str, object]] = {}
         self.session_tokens: dict[str, str] = {}
         self.state_file = state_file_path()
+        self.postgres_auth: PostgresAuthRepository | None = None
+        self.postgres_social: PostgresSocialRepository | None = None
         self._load_state()
         self.postgres_auth = PostgresAuthRepository.from_env()
         if self.postgres_auth is not None:
@@ -59,6 +62,15 @@ class DemoStore:
                 password_reset_codes=self.password_reset_codes,
             )
             self._sync_auth_from_postgres()
+        self.postgres_social = PostgresSocialRepository.from_env()
+        if self.postgres_social is not None:
+            self.postgres_social.bootstrap_from_state(
+                posts=self.posts,
+                comments=self.comments,
+                engagement_state=self._local_social_engagement_state(),
+                user_id=self.user.id,
+            )
+            self._sync_social_from_postgres()
 
     def login(
         self,
@@ -195,6 +207,9 @@ class DemoStore:
 
     def delete_current_account(self) -> User:
         normalized_email = self.user.email.strip().lower()
+        user_id = self.user.id
+        if self.postgres_social is not None:
+            self.postgres_social.delete_user_social(user_id)
         self._delete_auth_account(normalized_email)
         self._delete_verified_email(normalized_email)
         self._delete_email_verification_code(normalized_email)
@@ -273,6 +288,9 @@ class DemoStore:
                 comment.author_handle = handle
                 comment.author_avatar_url = avatar_url
                 comment.author_premium = self.user.premium
+        if self.postgres_social is not None:
+            self.postgres_social.update_author_snapshots(self.user)
+            self._sync_social_from_postgres()
         self._save_state()
         return self.user
 
@@ -695,6 +713,9 @@ class DemoStore:
         for comment in self.comments:
             if comment.user_id == self.user.id:
                 comment.author_premium = premium_active
+        if self.postgres_social is not None:
+            self.postgres_social.update_author_snapshots(self.user)
+            self._sync_social_from_postgres()
         self._save_state()
         return self.user
 
@@ -773,14 +794,26 @@ class DemoStore:
         return users
 
     def list_posts(self) -> Iterable[SocialPost]:
+        if self.postgres_social is not None:
+            self._sync_social_from_postgres()
         return sorted(self.posts, key=lambda post: post.created_at, reverse=True)
 
     def add_post(self, post: SocialPost) -> SocialPost:
+        if self.postgres_social is not None:
+            self.postgres_social.save_post(post)
+            self._sync_social_from_postgres()
+            self._save_state()
+            return post
         self.posts.append(post)
         self._save_state()
         return post
 
     def social_engagement_state(self) -> SocialEngagementState:
+        if self.postgres_social is not None:
+            return self.postgres_social.engagement_state(self.user.id)
+        return self._local_social_engagement_state()
+
+    def _local_social_engagement_state(self) -> SocialEngagementState:
         return SocialEngagementState(
             liked_post_ids=sorted(self.liked_post_ids),
             reposted_post_ids=[repost.post_id for repost in self.reposts],
@@ -801,6 +834,9 @@ class DemoStore:
     def set_post_like(self, post_id: str, liked: bool) -> SocialEngagementState | None:
         if self.get_post(post_id) is None:
             return None
+        if self.postgres_social is not None:
+            self.postgres_social.set_post_like(self.user.id, post_id, liked)
+            return self.social_engagement_state()
         if liked:
             self.liked_post_ids.add(post_id)
         else:
@@ -811,6 +847,9 @@ class DemoStore:
     def set_post_repost(self, post_id: str, reposted: bool) -> SocialEngagementState | None:
         if self.get_post(post_id) is None:
             return None
+        if self.postgres_social is not None:
+            self.postgres_social.set_repost(self.user.id, post_id, reposted)
+            return self.social_engagement_state()
         self.reposts = [
             item for item in self.reposts if item.post_id != post_id
         ]
@@ -828,6 +867,9 @@ class DemoStore:
             return None
         if post.post_type not in {"surf_plan", "looking_for_buddy"}:
             return None
+        if self.postgres_social is not None:
+            self.postgres_social.set_rsvp(self.user.id, post_id, joined)
+            return self.social_engagement_state()
         if joined:
             self.rsvp_post_ids.add(post_id)
         else:
@@ -847,20 +889,23 @@ class DemoStore:
             return None
         if reply_to_comment_id is not None and self.get_comment(reply_to_comment_id) is None:
             return None
-        self.comments.append(
-            SocialComment(
-                id=comment_id,
-                post_id=post_id,
-                user_id=self.user.id,
-                author_name=self.user.display_name,
-                author_handle=self.user.handle,
-                author_avatar_url=self.user.avatar_url,
-                author_premium=self.user.premium,
-                text=text,
-                reply_to_comment_id=reply_to_comment_id,
-                created_at=datetime.now(timezone.utc),
-            )
+        comment = SocialComment(
+            id=comment_id,
+            post_id=post_id,
+            user_id=self.user.id,
+            author_name=self.user.display_name,
+            author_handle=self.user.handle,
+            author_avatar_url=self.user.avatar_url,
+            author_premium=self.user.premium,
+            text=text,
+            reply_to_comment_id=reply_to_comment_id,
+            created_at=datetime.now(timezone.utc),
         )
+        if self.postgres_social is not None:
+            self.postgres_social.save_comment(comment)
+            self._sync_social_from_postgres()
+            return self.social_engagement_state()
+        self.comments.append(comment)
         self._save_state()
         return self.social_engagement_state()
 
@@ -872,6 +917,10 @@ class DemoStore:
             post = self.get_post(comment.post_id)
             if post is None or post.user_id != self.user.id:
                 return None
+        if self.postgres_social is not None:
+            self.postgres_social.delete_comment_tree(comment_id)
+            self._sync_social_from_postgres()
+            return self.social_engagement_state()
         self.comments = [
             item
             for item in self.comments
@@ -888,6 +937,9 @@ class DemoStore:
     ) -> SocialEngagementState | None:
         if self.get_comment(comment_id) is None:
             return None
+        if self.postgres_social is not None:
+            self.postgres_social.set_comment_like(self.user.id, comment_id, liked)
+            return self.social_engagement_state()
         if liked:
             self.liked_comment_ids.add(comment_id)
         else:
@@ -896,13 +948,23 @@ class DemoStore:
         return self.social_engagement_state()
 
     def get_post(self, post_id: str) -> SocialPost | None:
+        if self.postgres_social is not None:
+            return self.postgres_social.get_post(post_id)
         return next((post for post in self.posts if post.id == post_id), None)
 
     def get_comment(self, comment_id: str) -> SocialComment | None:
+        if self.postgres_social is not None:
+            return self.postgres_social.get_comment(comment_id)
         return next(
             (comment for comment in self.comments if comment.id == comment_id),
             None,
         )
+
+    def _sync_social_from_postgres(self) -> None:
+        if self.postgres_social is None:
+            return
+        self.posts = self.postgres_social.list_posts()
+        self.comments = self.postgres_social.list_comments()
 
     def _load_state(self) -> None:
         if not self.state_file.exists():

@@ -15,6 +15,39 @@ from app.core.store import store
 client = TestClient(app)
 
 
+def _stub_email_senders(monkeypatch):
+    monkeypatch.setattr(
+        "app.core.store.send_verification_email",
+        lambda _email, _code: SimpleNamespace(
+            configured=False,
+            sent=False,
+            error=None,
+        ),
+    )
+    monkeypatch.setattr(
+        "app.core.store.send_password_reset_email",
+        lambda _email, _code: SimpleNamespace(
+            configured=False,
+            sent=False,
+            error=None,
+        ),
+    )
+
+
+def _signup_access_token(monkeypatch, email: str) -> str:
+    _stub_email_senders(monkeypatch)
+    response = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "email": email,
+            "password": "longboard123",
+            "locale": "en",
+        },
+    )
+    assert response.status_code == 200
+    return response.json()["session"]["access_token"]
+
+
 def test_health():
     response = client.get("/health")
     assert response.status_code == 200
@@ -703,10 +736,21 @@ def test_user_profile_requires_valid_session(tmp_path, monkeypatch):
     assert update_without_token_response.status_code == 401
 
 
-def test_social_feed_and_create_post():
+def test_social_feed_and_create_post(monkeypatch):
+    access_token = _signup_access_token(monkeypatch, "socialpost@example.com")
     friends_response = client.get("/api/v1/social/friends")
     assert friends_response.status_code == 200
     assert len(friends_response.json()) >= 1
+
+    blocked_response = client.post(
+        "/api/v1/social/posts",
+        json={
+            "body": "This should not post without sign in.",
+            "spot_id": "spot_echo_beach",
+            "visibility": "public",
+        },
+    )
+    assert blocked_response.status_code == 401
 
     create_response = client.post(
         "/api/v1/social/posts",
@@ -715,10 +759,12 @@ def test_social_feed_and_create_post():
             "spot_id": "spot_echo_beach",
             "visibility": "friends",
         },
+        headers={"Authorization": f"Bearer {access_token}"},
     )
     assert create_response.status_code == 200
     assert create_response.json()["body"].startswith("Anyone surfing")
     assert create_response.json()["visibility"] == "followers"
+    assert create_response.json()["user_id"].startswith("usr_")
 
     posts_response = client.get("/api/v1/social/posts")
     assert posts_response.status_code == 200
@@ -729,11 +775,13 @@ def test_social_feed_and_create_post():
 
 
 def test_media_upload_stores_video_thumbnail_locally(monkeypatch, tmp_path):
+    access_token = _signup_access_token(monkeypatch, "mediaupload@example.com")
     monkeypatch.setenv("MEDIA_STORAGE_BACKEND", "local")
     monkeypatch.setenv("TYDES_MEDIA_DIR", str(tmp_path / "media"))
 
     response = client.post(
         "/api/v1/social/media",
+        headers={"Authorization": f"Bearer {access_token}"},
         files={
             "file": ("clip.mp4", b"fake video", "video/mp4"),
             "thumbnail": ("clip.jpg", b"fake image", "image/jpeg"),
