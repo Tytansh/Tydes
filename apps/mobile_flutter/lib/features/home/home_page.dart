@@ -446,25 +446,46 @@ List<PublicProfilePreview> _searchProfiles({
   required List<FriendProfileModel> friends,
   required List<SocialPostModel> posts,
 }) {
-  final profiles = <String, PublicProfilePreview>{};
   final currentUserId = me?.id;
+  final currentHandle = _profileHandleKey(
+    PublicProfilePreview(
+      userId: currentUserId ?? '',
+      displayName: me?.displayName ?? '',
+      handle: me?.handle,
+    ),
+  );
+  final profiles = <String, _RankedSearchProfile>{};
+
+  void addProfile(PublicProfilePreview profile, int priority) {
+    final handleKey = _profileHandleKey(profile);
+    if (profile.userId == currentUserId) return;
+    if (handleKey != null && handleKey == currentHandle) return;
+
+    final key = handleKey ?? 'id:${profile.userId}';
+    final existing = profiles[key];
+    if (existing == null ||
+        _shouldReplaceSearchProfile(existing, profile, priority)) {
+      profiles[key] = _RankedSearchProfile(profile, priority);
+    }
+  }
 
   for (final friend in friends) {
-    profiles[friend.id] = PublicProfilePreview(
-      userId: friend.id,
-      displayName: friend.displayName,
-      handle: _handleFromName(friend.displayName),
-      subtitle: friend.vibe,
-      location: friend.homeRegion,
-      surfSkill: 'beginner',
+    addProfile(
+      PublicProfilePreview(
+        userId: friend.id,
+        displayName: friend.displayName,
+        handle: _handleFromName(friend.displayName),
+        subtitle: friend.vibe,
+        location: friend.homeRegion,
+        surfSkill: 'beginner',
+      ),
+      10,
     );
   }
 
   for (final post in posts) {
-    if (post.userId == currentUserId) continue;
-    profiles.putIfAbsent(
-      post.userId,
-      () => PublicProfilePreview(
+    addProfile(
+      PublicProfilePreview(
         userId: post.userId,
         displayName: post.authorName,
         handle: post.authorHandle ?? _handleFromName(post.authorName),
@@ -474,16 +495,41 @@ List<PublicProfilePreview> _searchProfiles({
         location: null,
         surfSkill: 'beginner',
       ),
+      30,
     );
   }
 
   for (final profile in _extraSearchProfiles) {
-    profiles.putIfAbsent(profile.userId, () => profile);
+    addProfile(profile, 5);
   }
 
-  final list = profiles.values.toList();
+  final list = profiles.values.map((item) => item.profile).toList();
   list.sort((a, b) => a.displayName.compareTo(b.displayName));
   return list;
+}
+
+class _RankedSearchProfile {
+  const _RankedSearchProfile(this.profile, this.priority);
+
+  final PublicProfilePreview profile;
+  final int priority;
+}
+
+bool _shouldReplaceSearchProfile(
+  _RankedSearchProfile existing,
+  PublicProfilePreview candidate,
+  int candidatePriority,
+) {
+  if (candidatePriority != existing.priority) {
+    return candidatePriority > existing.priority;
+  }
+  final current = existing.profile;
+  if (candidate.avatarUrl != null && current.avatarUrl == null) return true;
+  if (candidate.premium && !current.premium) return true;
+  if ((candidate.handle ?? '').isNotEmpty && (current.handle ?? '').isEmpty) {
+    return true;
+  }
+  return false;
 }
 
 List<PublicProfilePreview> _filterProfiles({
@@ -513,6 +559,11 @@ bool _profileNameMatches(PublicProfilePreview profile, String query) {
 
 String _normalizeSearchQuery(String value) {
   return value.trim().toLowerCase().replaceFirst(RegExp(r'^@+'), '');
+}
+
+String? _profileHandleKey(PublicProfilePreview profile) {
+  final handle = _normalizeSearchQuery(profile.handle ?? '');
+  return handle.isEmpty ? null : handle;
 }
 
 void _openSearchProfile(
