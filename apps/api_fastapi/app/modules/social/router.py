@@ -72,6 +72,11 @@ def get_relationships(_user=Depends(require_authenticated_user)):
     return store.social_relationship_state()
 
 
+@router.get("/notifications")
+def get_notifications(_user=Depends(require_authenticated_user)):
+    return list(store.list_social_notifications())
+
+
 @router.post("/follows/{user_id}")
 def follow_user(user_id: str, _user=Depends(require_authenticated_user)):
     return store.set_user_follow(user_id, True)

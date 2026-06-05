@@ -736,6 +736,52 @@ class SocialRelationshipModel {
       );
 }
 
+class SocialNotificationModel {
+  SocialNotificationModel({
+    required this.id,
+    required this.recipientUserId,
+    required this.actorUserId,
+    required this.actorName,
+    required this.actorHandle,
+    required this.actorAvatarUrl,
+    required this.actorPremium,
+    required this.type,
+    required this.message,
+    required this.postId,
+    required this.preview,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String recipientUserId;
+  final String actorUserId;
+  final String actorName;
+  final String? actorHandle;
+  final String? actorAvatarUrl;
+  final bool actorPremium;
+  final String type;
+  final String message;
+  final String? postId;
+  final String? preview;
+  final String createdAt;
+
+  factory SocialNotificationModel.fromJson(Map<String, dynamic> json) =>
+      SocialNotificationModel(
+        id: json['id'] as String,
+        recipientUserId: json['recipient_user_id'] as String,
+        actorUserId: json['actor_user_id'] as String,
+        actorName: json['actor_name'] as String,
+        actorHandle: json['actor_handle'] as String?,
+        actorAvatarUrl: json['actor_avatar_url'] as String?,
+        actorPremium: json['actor_premium'] as bool? ?? false,
+        type: json['type'] as String,
+        message: json['message'] as String,
+        postId: json['post_id'] as String?,
+        preview: json['preview'] as String?,
+        createdAt: json['created_at'] as String,
+      );
+}
+
 class SocialRepostModel {
   SocialRepostModel({required this.postId, required this.createdAt});
 

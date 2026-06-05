@@ -192,6 +192,21 @@ class SocialRepost(BaseModel):
     created_at: datetime
 
 
+class SocialNotification(BaseModel):
+    id: str
+    recipient_user_id: str
+    actor_user_id: str
+    actor_name: str
+    actor_handle: str | None = None
+    actor_avatar_url: str | None = None
+    actor_premium: bool = False
+    type: Literal["follow", "like", "reply", "comment", "event", "repost"]
+    message: str
+    post_id: str | None = None
+    preview: str | None = None
+    created_at: datetime
+
+
 class SocialEngagementState(BaseModel):
     liked_post_ids: list[str] = Field(default_factory=list)
     reposted_post_ids: list[str] = Field(default_factory=list)

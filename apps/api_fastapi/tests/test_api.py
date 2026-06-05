@@ -765,6 +765,8 @@ def test_social_feed_and_create_post(monkeypatch):
     assert create_response.json()["body"].startswith("Anyone surfing")
     assert create_response.json()["visibility"] == "followers"
     assert create_response.json()["user_id"].startswith("usr_")
+    owner_user_id = create_response.json()["user_id"]
+    post_id = create_response.json()["id"]
 
     posts_response = client.get("/api/v1/social/posts")
     assert posts_response.status_code == 200
@@ -796,6 +798,39 @@ def test_social_feed_and_create_post(monkeypatch):
     )
     assert unfollow_response.status_code == 200
     assert "friend_lina" not in unfollow_response.json()["followed_user_ids"]
+
+    actor_token = _signup_access_token(monkeypatch, "socialactor@example.com")
+
+    blocked_notifications = client.get("/api/v1/social/notifications")
+    assert blocked_notifications.status_code == 401
+
+    actor_follow_response = client.post(
+        f"/api/v1/social/follows/{owner_user_id}",
+        headers={"Authorization": f"Bearer {actor_token}"},
+    )
+    assert actor_follow_response.status_code == 200
+    assert owner_user_id in actor_follow_response.json()["followed_user_ids"]
+
+    actor_like_response = client.post(
+        f"/api/v1/social/posts/{post_id}/likes",
+        headers={"Authorization": f"Bearer {actor_token}"},
+    )
+    assert actor_like_response.status_code == 200
+    assert post_id in actor_like_response.json()["liked_post_ids"]
+
+    notifications_response = client.get(
+        "/api/v1/social/notifications",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert notifications_response.status_code == 200
+    notifications = notifications_response.json()
+    notification_types = {item["type"] for item in notifications}
+    assert {"follow", "like"} <= notification_types
+    assert all(item["recipient_user_id"] == owner_user_id for item in notifications)
+    assert any(
+        item["type"] == "like" and item["post_id"] == post_id
+        for item in notifications
+    )
 
 
 def test_media_upload_stores_video_thumbnail_locally(monkeypatch, tmp_path):

@@ -13,6 +13,7 @@ import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../home/home_page.dart';
 import '../social/direct_messages_page.dart';
+import '../social/notifications_page.dart';
 import '../social/social_feed.dart';
 import '../social/social_profile.dart';
 import '../spots/spot_detail_page.dart';
@@ -190,6 +191,7 @@ class SettingsPage extends ConsumerWidget {
                 onSettingsPressed: () => _openProfileSettings(context, ref, me),
                 onMessagesPressed: () => context.push('/messages'),
                 onNotificationsPressed: () {
+                  ref.invalidate(socialNotificationsProvider);
                   ref.read(unreadSocialNotificationsProvider.notifier).state =
                       0;
                   context.push('/notifications');

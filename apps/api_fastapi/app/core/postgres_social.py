@@ -7,6 +7,7 @@ from typing import Any
 from app.core.models import (
     SocialComment,
     SocialEngagementState,
+    SocialNotification,
     SocialPost,
     SocialRepost,
     User,
@@ -113,6 +114,53 @@ class PostgresSocialRepository:
             SocialComment.model_validate(_payload_dict(row["payload"]))
             for row in rows
         ]
+
+    def list_notifications(self, recipient_user_id: str) -> list[SocialNotification]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT payload FROM social_notifications
+                WHERE recipient_user_id = %s
+                ORDER BY created_at DESC
+                LIMIT 80
+                """,
+                (recipient_user_id,),
+            ).fetchall()
+        return [
+            SocialNotification.model_validate(_payload_dict(row["payload"]))
+            for row in rows
+        ]
+
+    def save_notification(self, notification: SocialNotification) -> None:
+        payload = notification.model_dump(mode="json")
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO social_notifications
+                    (id, recipient_user_id, actor_user_id, payload, created_at)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO UPDATE
+                SET recipient_user_id = EXCLUDED.recipient_user_id,
+                    actor_user_id = EXCLUDED.actor_user_id,
+                    payload = EXCLUDED.payload,
+                    created_at = EXCLUDED.created_at,
+                    updated_at = NOW()
+                """,
+                (
+                    notification.id,
+                    notification.recipient_user_id,
+                    notification.actor_user_id,
+                    self._jsonb(payload),
+                    _aware_datetime(notification.created_at),
+                ),
+            )
+
+    def delete_notification(self, notification_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                "DELETE FROM social_notifications WHERE id = %s",
+                (notification_id,),
+            )
 
     def get_comment(self, comment_id: str) -> SocialComment | None:
         with self._connect() as connection:
@@ -373,6 +421,12 @@ class PostgresSocialRepository:
             comment.author_avatar_url = user.avatar_url
             comment.author_premium = user.premium
             self.save_comment(comment)
+        for notification in self._notifications_by_actor(user.id):
+            notification.actor_name = user.display_name
+            notification.actor_handle = user.handle
+            notification.actor_avatar_url = user.avatar_url
+            notification.actor_premium = user.premium
+            self.save_notification(notification)
 
     def delete_user_social(self, user_id: str) -> None:
         for comment in self._comments_by_user(user_id):
@@ -397,6 +451,10 @@ class PostgresSocialRepository:
                 )
             connection.execute(
                 "DELETE FROM social_follows WHERE follower_user_id = %s OR followed_user_id = %s",
+                (user_id, user_id),
+            )
+            connection.execute(
+                "DELETE FROM social_notifications WHERE recipient_user_id = %s OR actor_user_id = %s",
                 (user_id, user_id),
             )
 
@@ -435,6 +493,17 @@ class PostgresSocialRepository:
             ).fetchall()
         return [
             SocialComment.model_validate(_payload_dict(row["payload"]))
+            for row in rows
+        ]
+
+    def _notifications_by_actor(self, actor_user_id: str) -> list[SocialNotification]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT payload FROM social_notifications WHERE actor_user_id = %s",
+                (actor_user_id,),
+            ).fetchall()
+        return [
+            SocialNotification.model_validate(_payload_dict(row["payload"]))
             for row in rows
         ]
 
@@ -526,6 +595,24 @@ class PostgresSocialRepository:
             )
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS social_comment_likes_comment_id_idx ON social_comment_likes (comment_id)"
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS social_notifications (
+                    id TEXT PRIMARY KEY,
+                    recipient_user_id TEXT NOT NULL,
+                    actor_user_id TEXT NOT NULL,
+                    payload JSONB NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS social_notifications_recipient_idx ON social_notifications (recipient_user_id, created_at DESC)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS social_notifications_actor_idx ON social_notifications (actor_user_id)"
             )
             connection.execute(
                 """

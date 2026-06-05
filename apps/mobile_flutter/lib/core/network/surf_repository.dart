@@ -745,6 +745,16 @@ class SurfRepository {
     return SocialRelationshipModel.fromJson(response.data!);
   }
 
+  Future<List<SocialNotificationModel>> fetchSocialNotifications() async {
+    final response = await _dio.get<List<dynamic>>('/social/notifications');
+    return response.data!
+        .map(
+          (item) =>
+              SocialNotificationModel.fromJson(item as Map<String, dynamic>),
+        )
+        .toList();
+  }
+
   Future<SocialRelationshipModel> setUserFollow({
     required String userId,
     required bool following,

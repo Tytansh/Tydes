@@ -10,7 +10,26 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
 from app.core.email_sender import send_password_reset_email, send_verification_email
-from app.core.models import AdCard, Alert, BillingPlan, Dashboard, ForecastEntry, FriendProfile, Session, SocialComment, SocialEngagementState, SocialPost, SocialRepost, Spot, SurfWindowForecast, TideForecast, Trip, User, build_seed
+from app.core.models import (
+    AdCard,
+    Alert,
+    BillingPlan,
+    Dashboard,
+    ForecastEntry,
+    FriendProfile,
+    Session,
+    SocialComment,
+    SocialEngagementState,
+    SocialNotification,
+    SocialPost,
+    SocialRepost,
+    Spot,
+    SurfWindowForecast,
+    TideForecast,
+    Trip,
+    User,
+    build_seed,
+)
 from app.core.postgres_auth import PostgresAuthRepository
 from app.core.postgres_social import PostgresSocialRepository
 from app.core.runtime import public_media_url, state_file_path
@@ -36,6 +55,7 @@ class DemoStore:
         self.friends: list[FriendProfile] = list(seed["friends"])  # type: ignore[arg-type]
         self.posts: list[SocialPost] = list(seed["posts"])  # type: ignore[arg-type]
         self.comments: list[SocialComment] = list(seed["comments"])  # type: ignore[arg-type]
+        self.social_notifications: list[SocialNotification] = []
         self.liked_post_ids: set[str] = set()
         self.reposts: list[SocialRepost] = []
         self.liked_comment_ids: set[str] = set()
@@ -803,17 +823,32 @@ class DemoStore:
             "follower_user_ids": sorted(self.follower_user_ids),
         }
 
+    def list_social_notifications(self) -> list[SocialNotification]:
+        if self.postgres_social is not None:
+            return self.postgres_social.list_notifications(self.user.id)
+        return sorted(
+            [
+                notification
+                for notification in self.social_notifications
+                if notification.recipient_user_id == self.user.id
+            ],
+            key=lambda notification: notification.created_at,
+            reverse=True,
+        )[:80]
+
     def set_user_follow(self, followed_user_id: str, following: bool) -> dict[str, list[str]]:
         normalized_user_id = followed_user_id.strip()
         if not normalized_user_id or normalized_user_id == self.user.id:
             return self.social_relationship_state()
         if self.postgres_social is not None:
             self.postgres_social.set_follow(self.user.id, normalized_user_id, following)
+            self._set_follow_notification(normalized_user_id, following)
             return self.social_relationship_state()
         if following:
             self.followed_user_ids.add(normalized_user_id)
         else:
             self.followed_user_ids.discard(normalized_user_id)
+        self._set_follow_notification(normalized_user_id, following)
         self._save_state()
         return self.social_relationship_state()
 
@@ -867,15 +902,18 @@ class DemoStore:
         )
 
     def set_post_like(self, post_id: str, liked: bool) -> SocialEngagementState | None:
-        if self.get_post(post_id) is None:
+        post = self.get_post(post_id)
+        if post is None:
             return None
         if self.postgres_social is not None:
             self.postgres_social.set_post_like(self.user.id, post_id, liked)
+            self._set_post_like_notification(post, liked)
             return self.social_engagement_state()
         if liked:
             self.liked_post_ids.add(post_id)
         else:
             self.liked_post_ids.discard(post_id)
+        self._set_post_like_notification(post, liked)
         self._save_state()
         return self.social_engagement_state()
 
@@ -995,6 +1033,71 @@ class DemoStore:
             None,
         )
 
+    def _set_follow_notification(self, recipient_user_id: str, active: bool) -> None:
+        notification_id = f"notif_follow_{self.user.id}_{recipient_user_id}"
+        if not active:
+            self._delete_social_notification(notification_id)
+            return
+        self._save_social_notification(
+            SocialNotification(
+                id=notification_id,
+                recipient_user_id=recipient_user_id,
+                actor_user_id=self.user.id,
+                actor_name=self.user.display_name or self.user.handle or "Someone",
+                actor_handle=self.user.handle or None,
+                actor_avatar_url=self.user.avatar_url,
+                actor_premium=self.user.premium,
+                type="follow",
+                message="started following you.",
+                post_id=None,
+                preview=None,
+                created_at=datetime.now(timezone.utc),
+            )
+        )
+
+    def _set_post_like_notification(self, post: SocialPost, active: bool) -> None:
+        notification_id = f"notif_like_{self.user.id}_{post.id}"
+        if not active:
+            self._delete_social_notification(notification_id)
+            return
+        if post.user_id == self.user.id:
+            return
+        self._save_social_notification(
+            SocialNotification(
+                id=notification_id,
+                recipient_user_id=post.user_id,
+                actor_user_id=self.user.id,
+                actor_name=self.user.display_name or self.user.handle or "Someone",
+                actor_handle=self.user.handle or None,
+                actor_avatar_url=self.user.avatar_url,
+                actor_premium=self.user.premium,
+                type="like",
+                message="liked your post.",
+                post_id=post.id,
+                preview=post.body,
+                created_at=datetime.now(timezone.utc),
+            )
+        )
+
+    def _save_social_notification(self, notification: SocialNotification) -> None:
+        if notification.recipient_user_id == notification.actor_user_id:
+            return
+        if self.postgres_social is not None:
+            self.postgres_social.save_notification(notification)
+            return
+        self.social_notifications = [
+            item for item in self.social_notifications if item.id != notification.id
+        ]
+        self.social_notifications.insert(0, notification)
+
+    def _delete_social_notification(self, notification_id: str) -> None:
+        if self.postgres_social is not None:
+            self.postgres_social.delete_notification(notification_id)
+            return
+        self.social_notifications = [
+            item for item in self.social_notifications if item.id != notification_id
+        ]
+
     def _sync_social_from_postgres(self) -> None:
         if self.postgres_social is None:
             return
@@ -1038,6 +1141,13 @@ class DemoStore:
             merged_comments = {comment.id: comment for comment in stored_comments}
             merged_comments.update(seed_comments)
             self.comments = list(merged_comments.values())
+
+        notifications_data = data.get("social_notifications")
+        if isinstance(notifications_data, list):
+            self.social_notifications = [
+                SocialNotification.model_validate(item)
+                for item in notifications_data
+            ]
 
         engagement_data = data.get("social_engagement")
         if isinstance(engagement_data, dict):
@@ -1148,6 +1258,10 @@ class DemoStore:
             "posts": [post.model_dump(mode="json") for post in self.posts],
             "comments": [
                 comment.model_dump(mode="json") for comment in self.comments
+            ],
+            "social_notifications": [
+                notification.model_dump(mode="json")
+                for notification in self.social_notifications
             ],
             "social_engagement": self.social_engagement_state().model_dump(
                 mode="json"

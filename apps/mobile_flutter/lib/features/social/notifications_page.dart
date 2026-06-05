@@ -1,24 +1,99 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/network/api_models.dart';
+import '../../core/network/surf_repository.dart';
 import 'social_profile.dart';
 
-class SocialNotificationsPage extends StatelessWidget {
+final socialNotificationsProvider = FutureProvider((ref) {
+  return ref.watch(surfRepositoryProvider).fetchSocialNotifications();
+});
+
+class SocialNotificationsPage extends ConsumerWidget {
   const SocialNotificationsPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notifications = ref.watch(socialNotificationsProvider);
+
     return Scaffold(
       appBar: AppBar(title: const Text('Notifications')),
-      body: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-        itemCount: _demoNotifications.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 10),
-        itemBuilder: (context, index) {
-          final item = _demoNotifications[index];
-          return _NotificationTile(item: item);
-        },
+      body: RefreshIndicator.adaptive(
+        onRefresh: () => ref.refresh(socialNotificationsProvider.future),
+        child: notifications.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (_, _) => const _NotificationsMessage(
+            title: 'Could not load notifications.',
+            body: 'Pull down to try again.',
+          ),
+          data: (items) {
+            if (items.isEmpty) {
+              return const _NotificationsMessage(
+                title: 'No notifications yet.',
+                body:
+                    'Likes, follows, comments, and event updates will show here.',
+              );
+            }
+            return ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              itemCount: items.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final item = _notificationFromModel(items[index]);
+                return _NotificationTile(item: item);
+              },
+            );
+          },
+        ),
       ),
+    );
+  }
+}
+
+class _NotificationsMessage extends StatelessWidget {
+  const _NotificationsMessage({required this.title, required this.body});
+
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.notifications_none_rounded,
+                  color: scheme.primary,
+                  size: 30,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  body,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -145,6 +220,7 @@ class _NotificationIcon extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final icon = switch (type) {
       _NotificationType.like => Icons.favorite_rounded,
+      _NotificationType.follow => Icons.person_add_alt_1_rounded,
       _NotificationType.reply => Icons.reply_rounded,
       _NotificationType.comment => Icons.chat_bubble_outline_rounded,
       _NotificationType.event => Icons.groups_2_rounded,
@@ -177,7 +253,7 @@ void _openNotificationPost(BuildContext context, _SocialNotification item) {
   _openNotificationProfile(context, item);
 }
 
-enum _NotificationType { like, reply, comment, event, repost }
+enum _NotificationType { follow, like, reply, comment, event, repost }
 
 class _SocialNotification {
   const _SocialNotification({
@@ -197,70 +273,43 @@ class _SocialNotification {
   final String? postId;
 }
 
-const _demoNotifications = [
-  _SocialNotification(
-    type: _NotificationType.comment,
+_SocialNotification _notificationFromModel(SocialNotificationModel item) {
+  return _SocialNotification(
+    type: _notificationTypeFromString(item.type),
     profile: PublicProfilePreview(
-      userId: 'friend_maya',
-      displayName: 'Maya Surfer',
-      handle: 'mayasurfer',
-      location: 'Uluwatu',
+      userId: item.actorUserId,
+      displayName: item.actorName,
+      handle: item.actorHandle,
+      avatarUrl: item.actorAvatarUrl,
+      premium: item.actorPremium,
     ),
-    message: 'commented on your event.',
-    time: '4m',
-    preview: 'That warung meetup looks fun.',
-    postId: 'post_bd2cdd58',
-  ),
-  _SocialNotification(
-    type: _NotificationType.like,
-    profile: PublicProfilePreview(
-      userId: 'friend_lina',
-      displayName: 'Lina Reef',
-      handle: 'linareef',
-      location: 'Canggu',
-    ),
-    message: 'liked your post.',
-    time: '18m',
-    preview: 'hi fool',
-    postId: 'post_bd2cdd58',
-  ),
-  _SocialNotification(
-    type: _NotificationType.event,
-    profile: PublicProfilePreview(
-      userId: 'friend_ari',
-      displayName: 'Ari Dawn',
-      handle: 'aridawn',
-      location: 'Uluwatu',
-    ),
-    message: 'is going to your event.',
-    time: '32m',
-    preview: 'Balangan sunset tomorrow',
-    postId: 'post_bd2cdd58',
-  ),
-  _SocialNotification(
-    type: _NotificationType.repost,
-    profile: PublicProfilePreview(
-      userId: 'friend_jo',
-      displayName: 'Jo Tide',
-      handle: 'jotide',
-      location: 'Siargao',
-    ),
-    message: 'reposted your event.',
-    time: '1h',
-    preview: 'Tomorrow paddle out',
-    postId: 'post_bd2cdd58',
-  ),
-  _SocialNotification(
-    type: _NotificationType.comment,
-    profile: PublicProfilePreview(
-      userId: 'friend_kai',
-      displayName: 'Kai Glass',
-      handle: 'kaiglass',
-      location: 'Byron Bay',
-    ),
-    message: 'commented on your post.',
-    time: '2h',
-    preview: 'This spot looks firing.',
-    postId: 'post_bd2cdd58',
-  ),
-];
+    message: item.message,
+    time: _relativeTime(item.createdAt),
+    preview: item.preview,
+    postId: item.postId,
+  );
+}
+
+_NotificationType _notificationTypeFromString(String type) {
+  return switch (type) {
+    'follow' => _NotificationType.follow,
+    'like' => _NotificationType.like,
+    'reply' => _NotificationType.reply,
+    'event' => _NotificationType.event,
+    'repost' => _NotificationType.repost,
+    _ => _NotificationType.comment,
+  };
+}
+
+String _relativeTime(String createdAt) {
+  final timestamp = DateTime.tryParse(createdAt)?.toLocal();
+  if (timestamp == null) return 'now';
+  final diff = DateTime.now().difference(timestamp);
+  if (diff.inMinutes < 1) return 'now';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+  if (diff.inHours < 24) return '${diff.inHours}h';
+  if (diff.inDays < 7) return '${diff.inDays}d';
+  final weeks = (diff.inDays / 7).floor();
+  if (weeks < 5) return '${weeks}w';
+  return '${timestamp.month}/${timestamp.day}/${timestamp.year}';
+}
