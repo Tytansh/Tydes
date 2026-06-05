@@ -4,20 +4,30 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 
 final followedUserIdsProvider = StateProvider<Set<String>>((ref) => {});
+final followerUserIdsProvider = StateProvider<Set<String>>((ref) => {});
 final hiddenFollowingUserIdsProvider = StateProvider<Set<String>>((ref) => {});
 final hiddenFollowerUserIdsProvider = StateProvider<Set<String>>((ref) => {});
 final socialRelationshipHydrationProvider = FutureProvider<void>((ref) async {
   final saved = await ref
       .watch(demoPersistenceProvider)
       .loadSocialRelationships();
-  ref.read(followedUserIdsProvider.notifier).state = saved.followedUserIds;
   ref.read(hiddenFollowingUserIdsProvider.notifier).state =
       saved.hiddenFollowingUserIds;
   ref.read(hiddenFollowerUserIdsProvider.notifier).state =
       saved.hiddenFollowerUserIds;
+  try {
+    final relationships = await ref
+        .read(surfRepositoryProvider)
+        .fetchSocialRelationships();
+    _applySocialRelationships(ref, relationships);
+  } catch (_) {
+    ref.read(followedUserIdsProvider.notifier).state = saved.followedUserIds;
+    ref.read(followerUserIdsProvider.notifier).state = {};
+  }
 });
 
 const tydesAvatarBackground = Color(0xFFE0F7F4);
@@ -137,13 +147,7 @@ class FollowingActions extends ConsumerWidget {
         OutlinedButton(
           onPressed: () {
             final userId = profile.userId;
-            final next = {...ref.read(followedUserIdsProvider)}..remove(userId);
-            ref.read(followedUserIdsProvider.notifier).state = next;
-            ref.read(hiddenFollowingUserIdsProvider.notifier).state = {
-              ...ref.read(hiddenFollowingUserIdsProvider),
-              userId,
-            };
-            _persistSocialRelationships(ref);
+            _unfollowUser(ref, userId);
           },
           child: const Text('Unfollow'),
         ),
@@ -176,6 +180,7 @@ class FollowerActions extends ConsumerWidget {
               userId,
             };
             _persistSocialRelationships(ref);
+            unawaited(_removeFollowerOnBackend(ref, userId));
           },
           icon: const Icon(Icons.close_rounded),
           tooltip: 'Remove follower',
@@ -226,6 +231,7 @@ void _followUser(WidgetRef ref, String userId) {
     userId,
   };
   _persistSocialRelationships(ref);
+  unawaited(_syncFollowToBackend(ref, userId, true));
 }
 
 void _unfollowUser(WidgetRef ref, String userId) {
@@ -238,6 +244,45 @@ void _unfollowUser(WidgetRef ref, String userId) {
     };
   }
   _persistSocialRelationships(ref);
+  unawaited(_syncFollowToBackend(ref, userId, false));
+}
+
+Future<void> _syncFollowToBackend(
+  WidgetRef ref,
+  String userId,
+  bool following,
+) async {
+  try {
+    final relationships = await ref
+        .read(surfRepositoryProvider)
+        .setUserFollow(userId: userId, following: following);
+    _applySocialRelationships(ref, relationships);
+    _persistSocialRelationships(ref);
+  } catch (_) {
+    // Keep the optimistic UI update; the next hydration will reconcile it.
+  }
+}
+
+Future<void> _removeFollowerOnBackend(WidgetRef ref, String userId) async {
+  try {
+    final relationships = await ref
+        .read(surfRepositoryProvider)
+        .removeFollower(userId: userId);
+    _applySocialRelationships(ref, relationships);
+    _persistSocialRelationships(ref);
+  } catch (_) {
+    // Local hide remains useful if the network request fails.
+  }
+}
+
+void _applySocialRelationships(
+  dynamic ref,
+  SocialRelationshipModel relationships,
+) {
+  ref.read(followedUserIdsProvider.notifier).state =
+      relationships.followedUserIds;
+  ref.read(followerUserIdsProvider.notifier).state =
+      relationships.followerUserIds;
 }
 
 void _persistSocialRelationships(WidgetRef ref) {

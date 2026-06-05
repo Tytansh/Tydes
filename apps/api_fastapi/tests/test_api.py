@@ -773,6 +773,30 @@ def test_social_feed_and_create_post(monkeypatch):
         for post in posts_response.json()
     )
 
+    blocked_relationships = client.get("/api/v1/social/relationships")
+    assert blocked_relationships.status_code == 401
+
+    follow_response = client.post(
+        "/api/v1/social/follows/friend_lina",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert follow_response.status_code == 200
+    assert "friend_lina" in follow_response.json()["followed_user_ids"]
+
+    relationships_response = client.get(
+        "/api/v1/social/relationships",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert relationships_response.status_code == 200
+    assert "friend_lina" in relationships_response.json()["followed_user_ids"]
+
+    unfollow_response = client.delete(
+        "/api/v1/social/follows/friend_lina",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert unfollow_response.status_code == 200
+    assert "friend_lina" not in unfollow_response.json()["followed_user_ids"]
+
 
 def test_media_upload_stores_video_thumbnail_locally(monkeypatch, tmp_path):
     access_token = _signup_access_token(monkeypatch, "mediaupload@example.com")

@@ -40,6 +40,8 @@ class DemoStore:
         self.reposts: list[SocialRepost] = []
         self.liked_comment_ids: set[str] = set()
         self.rsvp_post_ids: set[str] = set()
+        self.followed_user_ids: set[str] = set()
+        self.follower_user_ids: set[str] = set()
         self.weather_provider = OpenMeteoMarineProvider()
         self.tide_provider = TideCheckProvider()
         self.waitlist_emails: list[str] = []
@@ -793,6 +795,39 @@ class DemoStore:
             )
         return users
 
+    def social_relationship_state(self) -> dict[str, list[str]]:
+        if self.postgres_social is not None:
+            return self.postgres_social.relationship_state(self.user.id)
+        return {
+            "followed_user_ids": sorted(self.followed_user_ids),
+            "follower_user_ids": sorted(self.follower_user_ids),
+        }
+
+    def set_user_follow(self, followed_user_id: str, following: bool) -> dict[str, list[str]]:
+        normalized_user_id = followed_user_id.strip()
+        if not normalized_user_id or normalized_user_id == self.user.id:
+            return self.social_relationship_state()
+        if self.postgres_social is not None:
+            self.postgres_social.set_follow(self.user.id, normalized_user_id, following)
+            return self.social_relationship_state()
+        if following:
+            self.followed_user_ids.add(normalized_user_id)
+        else:
+            self.followed_user_ids.discard(normalized_user_id)
+        self._save_state()
+        return self.social_relationship_state()
+
+    def remove_follower(self, follower_user_id: str) -> dict[str, list[str]]:
+        normalized_user_id = follower_user_id.strip()
+        if not normalized_user_id:
+            return self.social_relationship_state()
+        if self.postgres_social is not None:
+            self.postgres_social.remove_follower(self.user.id, normalized_user_id)
+            return self.social_relationship_state()
+        self.follower_user_ids.discard(normalized_user_id)
+        self._save_state()
+        return self.social_relationship_state()
+
     def list_posts(self) -> Iterable[SocialPost]:
         if self.postgres_social is not None:
             self._sync_social_from_postgres()
@@ -1022,6 +1057,23 @@ class DemoStore:
             self.liked_comment_ids = set(state.liked_comment_ids)
             self.rsvp_post_ids = set(state.rsvp_post_ids)
 
+        relationship_data = data.get("social_relationships")
+        if isinstance(relationship_data, dict):
+            followed_user_ids = relationship_data.get("followed_user_ids")
+            if isinstance(followed_user_ids, list):
+                self.followed_user_ids = {
+                    str(user_id).strip()
+                    for user_id in followed_user_ids
+                    if str(user_id).strip()
+                }
+            follower_user_ids = relationship_data.get("follower_user_ids")
+            if isinstance(follower_user_ids, list):
+                self.follower_user_ids = {
+                    str(user_id).strip()
+                    for user_id in follower_user_ids
+                    if str(user_id).strip()
+                }
+
         emails = data.get("waitlist_emails")
         if isinstance(emails, list):
             self.waitlist_emails = [
@@ -1100,6 +1152,7 @@ class DemoStore:
             "social_engagement": self.social_engagement_state().model_dump(
                 mode="json"
             ),
+            "social_relationships": self.social_relationship_state(),
             "waitlist_emails": self.waitlist_emails,
             "verified_emails": sorted(self.verified_emails),
             "password_reset_codes": self.password_reset_codes,

@@ -271,6 +271,45 @@ class PostgresSocialRepository:
                     (follower_user_id, followed_user_id),
                 )
 
+    def remove_follower(self, user_id: str, follower_user_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                DELETE FROM social_follows
+                WHERE follower_user_id = %s AND followed_user_id = %s
+                """,
+                (follower_user_id, user_id),
+            )
+
+    def relationship_state(self, user_id: str) -> dict[str, list[str]]:
+        with self._connect() as connection:
+            following_rows = connection.execute(
+                """
+                SELECT followed_user_id FROM social_follows
+                WHERE follower_user_id = %s
+                ORDER BY followed_user_id
+                """,
+                (user_id,),
+            ).fetchall()
+            follower_rows = connection.execute(
+                """
+                SELECT follower_user_id FROM social_follows
+                WHERE followed_user_id = %s
+                ORDER BY follower_user_id
+                """,
+                (user_id,),
+            ).fetchall()
+        return {
+            "followed_user_ids": [
+                row["followed_user_id"]
+                for row in following_rows
+            ],
+            "follower_user_ids": [
+                row["follower_user_id"]
+                for row in follower_rows
+            ],
+        }
+
     def engagement_state(self, user_id: str) -> SocialEngagementState:
         with self._connect() as connection:
             liked_posts = connection.execute(

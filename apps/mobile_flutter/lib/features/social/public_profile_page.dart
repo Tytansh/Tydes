@@ -84,6 +84,7 @@ class PublicProfilePage extends ConsumerWidget {
             }
             final isMe = data.me.id == userId;
             final followedIds = ref.watch(followedUserIdsProvider);
+            final followerIds = ref.watch(followerUserIdsProvider);
             final profileReposts = repostedItemsForProfile(
               posts: data.posts,
               profileUserId: userId,
@@ -103,6 +104,7 @@ class PublicProfilePage extends ConsumerWidget {
               profile,
               data,
               followedIds.contains(profile.userId),
+              isMe ? followerIds : const {},
             );
 
             return ListView(
@@ -616,6 +618,22 @@ String? _handleFromName(String? name) {
   return name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
 }
 
+String _displayNameFromUserId(String userId) {
+  final cleaned = userId
+      .replaceFirst(RegExp(r'^(usr|friend|sample|follower)_'), '')
+      .replaceAll(RegExp(r'[^a-z0-9]+', caseSensitive: false), ' ')
+      .trim();
+  if (cleaned.isEmpty) return 'Tydes Surfer';
+  return cleaned
+      .split(RegExp(r'\s+'))
+      .map(
+        (word) => word.isEmpty
+            ? word
+            : '${word[0].toUpperCase()}${word.substring(1)}',
+      )
+      .join(' ');
+}
+
 bool _isEventPost(String postType) {
   return postType == 'surf_plan' || postType == 'looking_for_buddy';
 }
@@ -680,6 +698,7 @@ List<ProfilePerson> _profileFollowers(
   PublicProfilePreview profile,
   _PublicProfileBundle data,
   bool followedByViewer,
+  Set<String> followerUserIds,
 ) {
   final followers = <ProfilePerson>[..._sampleFollowers(profile)];
   if (followedByViewer && profile.userId != data.me.id) {
@@ -698,6 +717,21 @@ List<ProfilePerson> _profileFollowers(
         canFollow: false,
       ),
     );
+  }
+  if (profile.userId == data.me.id) {
+    final existingIds = followers
+        .map((person) => person.profile.userId)
+        .toSet();
+    for (final userId in followerUserIds) {
+      if (existingIds.contains(userId)) continue;
+      followers.add(
+        ProfilePerson(
+          profile: _profileForUserId(userId, data),
+          subtitle: 'Follower',
+          forceFollowerActions: true,
+        ),
+      );
+    }
   }
   return followers;
 }
@@ -741,6 +775,32 @@ List<ProfilePerson> _sampleFollowers(PublicProfilePreview profile) {
       subtitle: 'Follower',
     );
   }).toList();
+}
+
+PublicProfilePreview _profileForUserId(
+  String userId,
+  _PublicProfileBundle data,
+) {
+  if (userId == data.me.id) {
+    return PublicProfilePreview(
+      userId: data.me.id,
+      displayName: data.me.displayName,
+      handle: data.me.handle,
+      avatarUrl: data.me.avatarUrl,
+      premium: data.me.premium,
+      subtitle: data.me.bio,
+      location: data.me.homeRegion,
+      surfSkill: data.me.surfSkill,
+    );
+  }
+  final friend = _friendForId(data.friends, userId);
+  if (friend != null) return _previewFromFriend(friend);
+  return PublicProfilePreview(
+    userId: userId,
+    displayName: _displayNameFromUserId(userId),
+    handle: _handleFromName(userId),
+    subtitle: 'Surf traveler on Tydes',
+  );
 }
 
 PublicProfilePreview _previewFromFriend(FriendProfileModel friend) {

@@ -141,6 +141,7 @@ class SettingsPage extends ConsumerWidget {
     final posts = ref.watch(socialPostsProvider);
     final spots = ref.watch(spotsProvider);
     final followedUserIds = ref.watch(followedUserIdsProvider);
+    final followerUserIds = ref.watch(followerUserIdsProvider);
     final hiddenFollowingUserIds = ref.watch(hiddenFollowingUserIdsProvider);
     final hiddenFollowerUserIds = ref.watch(hiddenFollowerUserIdsProvider);
     final unreadMessageThreads = ref.watch(
@@ -157,7 +158,10 @@ class SettingsPage extends ConsumerWidget {
       followedUserIds,
       hiddenFollowingUserIds,
     );
-    final followerPeople = _profileFollowerPeople(hiddenFollowerUserIds);
+    final followerPeople = _profileFollowerPeople(
+      followerUserIds,
+      hiddenFollowerUserIds,
+    );
     final excludedSuggestionIds = {
       ...followingPeople.map((person) => person.profile.userId),
       ...followerPeople.map((person) => person.profile.userId),
@@ -682,7 +686,10 @@ List<ProfilePerson> _profileFriendPeople(
   return people;
 }
 
-List<ProfilePerson> _profileFollowerPeople(Set<String> hiddenFollowerUserIds) {
+List<ProfilePerson> _profileFollowerPeople(
+  Set<String> followerUserIds,
+  Set<String> hiddenFollowerUserIds,
+) {
   final names = [
     'Ari Dawn',
     'Lina Reef',
@@ -700,7 +707,7 @@ List<ProfilePerson> _profileFollowerPeople(Set<String> hiddenFollowerUserIds) {
     'Cleo Foam',
   ];
 
-  return names
+  final people = names
       .map(
         (name) => ProfilePerson(
           profile: PublicProfilePreview(
@@ -717,6 +724,22 @@ List<ProfilePerson> _profileFollowerPeople(Set<String> hiddenFollowerUserIds) {
       )
       .where((person) => !hiddenFollowerUserIds.contains(person.profile.userId))
       .toList();
+
+  final existingIds = people.map((person) => person.profile.userId).toSet();
+  for (final userId in followerUserIds) {
+    if (existingIds.contains(userId) ||
+        hiddenFollowerUserIds.contains(userId)) {
+      continue;
+    }
+    people.add(
+      ProfilePerson(
+        profile: _profilePreviewFromUserId(userId),
+        subtitle: 'Follower',
+        forceFollowerActions: true,
+      ),
+    );
+  }
+  return people;
 }
 
 PublicProfilePreview _profilePreviewFromUserId(String userId) {

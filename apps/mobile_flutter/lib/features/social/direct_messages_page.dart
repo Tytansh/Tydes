@@ -1502,6 +1502,25 @@ void _setMiniFollowed(WidgetRef ref, String userId, bool followed) {
           hiddenFollowerUserIds: ref.read(hiddenFollowerUserIdsProvider),
         ),
   );
+  unawaited(_syncMiniFollowToBackend(ref, userId, followed));
+}
+
+Future<void> _syncMiniFollowToBackend(
+  WidgetRef ref,
+  String userId,
+  bool following,
+) async {
+  try {
+    final relationships = await ref
+        .read(surfRepositoryProvider)
+        .setUserFollow(userId: userId, following: following);
+    ref.read(followedUserIdsProvider.notifier).state =
+        relationships.followedUserIds;
+    ref.read(followerUserIdsProvider.notifier).state =
+        relationships.followerUserIds;
+  } catch (_) {
+    // Keep the optimistic local state if the network is briefly unavailable.
+  }
 }
 
 class _ImageAttachmentPreview extends StatelessWidget {

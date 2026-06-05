@@ -67,6 +67,26 @@ def get_engagement(_user=Depends(require_authenticated_user)):
     return store.social_engagement_state()
 
 
+@router.get("/relationships")
+def get_relationships(_user=Depends(require_authenticated_user)):
+    return store.social_relationship_state()
+
+
+@router.post("/follows/{user_id}")
+def follow_user(user_id: str, _user=Depends(require_authenticated_user)):
+    return store.set_user_follow(user_id, True)
+
+
+@router.delete("/follows/{user_id}")
+def unfollow_user(user_id: str, _user=Depends(require_authenticated_user)):
+    return store.set_user_follow(user_id, False)
+
+
+@router.delete("/followers/{user_id}")
+def remove_follower(user_id: str, _user=Depends(require_authenticated_user)):
+    return store.remove_follower(user_id)
+
+
 @router.post("/posts/{post_id}/likes")
 def like_post(post_id: str, _user=Depends(require_authenticated_user)):
     state = store.set_post_like(post_id, True)

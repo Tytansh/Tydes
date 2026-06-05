@@ -716,6 +716,26 @@ class SocialEngagementModel {
       );
 }
 
+class SocialRelationshipModel {
+  SocialRelationshipModel({
+    required this.followedUserIds,
+    required this.followerUserIds,
+  });
+
+  final Set<String> followedUserIds;
+  final Set<String> followerUserIds;
+
+  factory SocialRelationshipModel.fromJson(Map<String, dynamic> json) =>
+      SocialRelationshipModel(
+        followedUserIds: Set<String>.from(
+          json['followed_user_ids'] as List<dynamic>? ?? const [],
+        ),
+        followerUserIds: Set<String>.from(
+          json['follower_user_ids'] as List<dynamic>? ?? const [],
+        ),
+      );
+}
+
 class SocialRepostModel {
   SocialRepostModel({required this.postId, required this.createdAt});
 

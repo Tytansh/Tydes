@@ -738,6 +738,32 @@ class SurfRepository {
     }
   }
 
+  Future<SocialRelationshipModel> fetchSocialRelationships() async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/social/relationships',
+    );
+    return SocialRelationshipModel.fromJson(response.data!);
+  }
+
+  Future<SocialRelationshipModel> setUserFollow({
+    required String userId,
+    required bool following,
+  }) async {
+    final response = following
+        ? await _dio.post<Map<String, dynamic>>('/social/follows/$userId')
+        : await _dio.delete<Map<String, dynamic>>('/social/follows/$userId');
+    return SocialRelationshipModel.fromJson(response.data!);
+  }
+
+  Future<SocialRelationshipModel> removeFollower({
+    required String userId,
+  }) async {
+    final response = await _dio.delete<Map<String, dynamic>>(
+      '/social/followers/$userId',
+    );
+    return SocialRelationshipModel.fromJson(response.data!);
+  }
+
   Future<SocialEngagementModel> setPostLike({
     required String postId,
     required bool liked,
