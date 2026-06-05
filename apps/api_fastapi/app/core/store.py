@@ -815,11 +815,10 @@ class DemoStore:
             )
         return users
 
-    def list_social_profiles(self) -> list[dict[str, object]]:
+    def list_social_profiles(self, current_user_id: str | None = None) -> list[dict[str, object]]:
         if self.postgres_auth is not None:
             self._sync_auth_from_postgres()
         profiles: list[dict[str, object]] = []
-        current_user_id = self.user.id
         for email, account in sorted(self.auth_accounts.items()):
             user_payload = account.get("user")
             if not isinstance(user_payload, dict):
@@ -831,7 +830,7 @@ class DemoStore:
             handle = user.handle.strip().lower().lstrip("@")
             display_name = user.display_name.strip()
             if (
-                user.id == current_user_id
+                (current_user_id is not None and user.id == current_user_id)
                 or user.id == "usr_demo"
                 or email.endswith("@surftravel.app")
                 or not handle

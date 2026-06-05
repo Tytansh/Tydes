@@ -73,8 +73,13 @@ def get_relationships(_user=Depends(require_authenticated_user)):
 
 
 @router.get("/profiles")
-def get_profiles(_user=Depends(require_authenticated_user)):
-    return list(store.list_social_profiles())
+def get_profiles(request: Request):
+    current_user_id = (
+        store.user.id
+        if getattr(request.state, "authenticated_user", False)
+        else None
+    )
+    return list(store.list_social_profiles(current_user_id=current_user_id))
 
 
 @router.get("/notifications")

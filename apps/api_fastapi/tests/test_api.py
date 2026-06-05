@@ -594,6 +594,17 @@ def test_signup_creates_pending_email_verification(tmp_path, monkeypatch):
     )
     assert other_signup_response.status_code == 200
     other_token = other_signup_response.json()["session"]["access_token"]
+    public_profiles_response = client.get("/api/v1/social/profiles")
+    assert public_profiles_response.status_code == 200
+    assert any(
+        profile["handle"] == "samehandle"
+        for profile in public_profiles_response.json()
+    )
+    assert all(
+        profile["user_id"] != "usr_demo"
+        for profile in public_profiles_response.json()
+    )
+
     profiles_response = client.get(
         "/api/v1/social/profiles",
         headers={"Authorization": f"Bearer {other_token}"},
