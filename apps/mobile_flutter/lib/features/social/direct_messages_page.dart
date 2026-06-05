@@ -29,6 +29,10 @@ final unreadDirectMessageThreadCountProvider = Provider<int>((ref) {
 });
 
 final dmSharedEventRsvpProvider = StateProvider<Set<String>>((ref) => {});
+final dmSocialProfilesProvider = FutureProvider((ref) {
+  ref.watch(socialRefreshKeyProvider);
+  return ref.watch(surfRepositoryProvider).fetchSocialProfiles();
+});
 
 class DirectMessageThreadsNotifier
     extends StateNotifier<List<DirectMessageThread>> {
@@ -589,13 +593,12 @@ class _NewMessageSheetState extends ConsumerState<_NewMessageSheet> {
   @override
   Widget build(BuildContext context) {
     final q = _query.trim().toLowerCase().replaceFirst('@', '');
-    final profiles = _messageableProfiles.where((profile) {
-      if (q.isEmpty) return true;
-      final handle = profile.handle?.toLowerCase() ?? '';
-      final name = profile.displayName.toLowerCase();
-      final location = profile.location?.toLowerCase() ?? '';
-      return name.contains(q) || handle.contains(q) || location.contains(q);
-    }).toList();
+    final realProfiles = ref.watch(dmSocialProfilesProvider);
+    final profiles = _filteredMessageableProfiles(
+      realProfiles: realProfiles.valueOrNull ?? const [],
+      fallbackProfiles: _messageableProfiles,
+      query: q,
+    );
 
     return DraggableScrollableSheet(
       initialChildSize: 0.72,
@@ -635,7 +638,12 @@ class _NewMessageSheetState extends ConsumerState<_NewMessageSheet> {
               const SizedBox(height: 16),
               Text('People', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 8),
-              if (profiles.isEmpty)
+              if (realProfiles.isLoading && profiles.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(top: 24),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (profiles.isEmpty)
                 const Card(
                   child: Padding(
                     padding: EdgeInsets.all(18),
@@ -653,6 +661,84 @@ class _NewMessageSheetState extends ConsumerState<_NewMessageSheet> {
     );
   }
 }
+
+List<PublicProfilePreview> _filteredMessageableProfiles({
+  required List<SocialProfileModel> realProfiles,
+  required List<PublicProfilePreview> fallbackProfiles,
+  required String query,
+}) {
+  final ranked = <String, _RankedMessageProfile>{};
+
+  void addProfile(PublicProfilePreview profile, int priority) {
+    if (profile.userId == 'usr_demo') return;
+    final handle = _normalizeMessageSearch(profile.handle ?? '');
+    final key = handle.isEmpty ? 'id:${profile.userId}' : 'handle:$handle';
+    final existing = ranked[key];
+    if (existing == null || priority > existing.priority) {
+      ranked[key] = _RankedMessageProfile(profile, priority);
+    }
+  }
+
+  for (final profile in fallbackProfiles) {
+    addProfile(profile, 5);
+  }
+  for (final profile in realProfiles) {
+    addProfile(
+      PublicProfilePreview(
+        userId: profile.userId,
+        displayName: profile.displayName,
+        handle: profile.handle,
+        avatarUrl: profile.avatarUrl,
+        premium: profile.premium,
+        subtitle: profile.subtitle,
+        location: profile.location,
+        surfSkill: profile.surfSkill ?? 'beginner',
+      ),
+      50,
+    );
+  }
+
+  final profiles = ranked.values.map((item) => item.profile).where((profile) {
+    if (query.isEmpty) return true;
+    final handle = _normalizeMessageSearch(profile.handle ?? '');
+    final name = _normalizeMessageSearch(profile.displayName);
+    final location = _normalizeMessageSearch(profile.location ?? '');
+    return handle.contains(query) ||
+        name.contains(query) ||
+        location.contains(query);
+  }).toList();
+
+  profiles.sort((a, b) {
+    if (query.isNotEmpty) {
+      final aHandle = _normalizeMessageSearch(a.handle ?? '');
+      final bHandle = _normalizeMessageSearch(b.handle ?? '');
+      final exactCompare = _boolRank(
+        bHandle == query,
+      ).compareTo(_boolRank(aHandle == query));
+      if (exactCompare != 0) return exactCompare;
+      final startsCompare = _boolRank(
+        bHandle.startsWith(query),
+      ).compareTo(_boolRank(aHandle.startsWith(query)));
+      if (startsCompare != 0) return startsCompare;
+    }
+    return a.displayName.compareTo(b.displayName);
+  });
+
+  return profiles.take(query.isEmpty ? 16 : 30).toList();
+}
+
+class _RankedMessageProfile {
+  const _RankedMessageProfile(this.profile, this.priority);
+
+  final PublicProfilePreview profile;
+  final int priority;
+}
+
+String _normalizeMessageSearch(String value) {
+  return value.trim().toLowerCase().replaceFirst(RegExp(r'^@+'), '');
+}
+
+int _boolRank(bool value) => value ? 1 : 0;
 
 class _NewMessagePersonTile extends StatelessWidget {
   const _NewMessagePersonTile({required this.profile});
