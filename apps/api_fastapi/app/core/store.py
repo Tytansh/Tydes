@@ -815,6 +815,43 @@ class DemoStore:
             )
         return users
 
+    def list_social_profiles(self) -> list[dict[str, object]]:
+        if self.postgres_auth is not None:
+            self._sync_auth_from_postgres()
+        profiles: list[dict[str, object]] = []
+        current_user_id = self.user.id
+        for email, account in sorted(self.auth_accounts.items()):
+            user_payload = account.get("user")
+            if not isinstance(user_payload, dict):
+                continue
+            try:
+                user = User.model_validate(user_payload)
+            except ValueError:
+                continue
+            handle = user.handle.strip().lower().lstrip("@")
+            display_name = user.display_name.strip()
+            if (
+                user.id == current_user_id
+                or user.id == "usr_demo"
+                or email.endswith("@surftravel.app")
+                or not handle
+                or not display_name
+            ):
+                continue
+            profiles.append(
+                {
+                    "user_id": user.id,
+                    "display_name": display_name,
+                    "handle": handle,
+                    "avatar_url": user.avatar_url,
+                    "premium": user.premium,
+                    "location": user.home_region or None,
+                    "subtitle": "Tydes surfer",
+                    "surf_skill": user.surf_skill or None,
+                }
+            )
+        return profiles
+
     def social_relationship_state(self) -> dict[str, list[str]]:
         if self.postgres_social is not None:
             return self.postgres_social.relationship_state(self.user.id)

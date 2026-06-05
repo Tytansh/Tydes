@@ -736,6 +736,40 @@ class SocialRelationshipModel {
       );
 }
 
+class SocialProfileModel {
+  SocialProfileModel({
+    required this.userId,
+    required this.displayName,
+    required this.handle,
+    required this.avatarUrl,
+    required this.premium,
+    required this.location,
+    required this.subtitle,
+    required this.surfSkill,
+  });
+
+  final String userId;
+  final String displayName;
+  final String? handle;
+  final String? avatarUrl;
+  final bool premium;
+  final String? location;
+  final String? subtitle;
+  final String? surfSkill;
+
+  factory SocialProfileModel.fromJson(Map<String, dynamic> json) =>
+      SocialProfileModel(
+        userId: json['user_id'] as String,
+        displayName: json['display_name'] as String,
+        handle: json['handle'] as String?,
+        avatarUrl: json['avatar_url'] as String?,
+        premium: json['premium'] as bool? ?? false,
+        location: json['location'] as String?,
+        subtitle: json['subtitle'] as String?,
+        surfSkill: json['surf_skill'] as String?,
+      );
+}
+
 class SocialNotificationModel {
   SocialNotificationModel({
     required this.id,

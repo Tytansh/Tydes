@@ -21,6 +21,10 @@ final feedFriendsProvider = FutureProvider((ref) {
   ref.watch(socialRefreshKeyProvider);
   return ref.watch(surfRepositoryProvider).fetchFriends();
 });
+final socialProfilesProvider = FutureProvider((ref) {
+  ref.watch(socialRefreshKeyProvider);
+  return ref.watch(surfRepositoryProvider).fetchSocialProfiles();
+});
 
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
@@ -259,10 +263,12 @@ class _PeopleSearchPageState extends ConsumerState<PeopleSearchPage> {
   Widget build(BuildContext context) {
     final me = ref.watch(meProvider);
     final friends = ref.watch(feedFriendsProvider);
+    final socialProfiles = ref.watch(socialProfilesProvider);
     final posts = ref.watch(travelFeedPostsProvider);
     final profiles = _searchProfiles(
       me: me.valueOrNull,
       friends: friends.valueOrNull ?? const [],
+      socialProfiles: socialProfiles.valueOrNull ?? const [],
       posts: posts.valueOrNull ?? const [],
     );
     final results = _filterProfiles(profiles: profiles, query: _query);
@@ -306,7 +312,10 @@ class _PeopleSearchPageState extends ConsumerState<PeopleSearchPage> {
             ],
           ),
           const SizedBox(height: 8),
-          if (friends.isLoading || posts.isLoading || me.isLoading)
+          if (friends.isLoading ||
+              socialProfiles.isLoading ||
+              posts.isLoading ||
+              me.isLoading)
             const Padding(
               padding: EdgeInsets.only(top: 24),
               child: Center(child: CircularProgressIndicator()),
@@ -444,6 +453,7 @@ class _NoSearchResultsCard extends StatelessWidget {
 List<PublicProfilePreview> _searchProfiles({
   required UserProfile? me,
   required List<FriendProfileModel> friends,
+  required List<SocialProfileModel> socialProfiles,
   required List<SocialPostModel> posts,
 }) {
   final currentUserId = me?.id;
@@ -459,6 +469,7 @@ List<PublicProfilePreview> _searchProfiles({
   void addProfile(PublicProfilePreview profile, int priority) {
     final handleKey = _profileHandleKey(profile);
     if (profile.userId == currentUserId) return;
+    if (profile.userId == 'usr_demo') return;
     if (handleKey != null && handleKey == currentHandle) return;
 
     final key = handleKey ?? 'id:${profile.userId}';
@@ -480,6 +491,22 @@ List<PublicProfilePreview> _searchProfiles({
         surfSkill: 'beginner',
       ),
       10,
+    );
+  }
+
+  for (final profile in socialProfiles) {
+    addProfile(
+      PublicProfilePreview(
+        userId: profile.userId,
+        displayName: profile.displayName,
+        handle: profile.handle,
+        avatarUrl: profile.avatarUrl,
+        premium: profile.premium,
+        subtitle: profile.subtitle,
+        location: profile.location,
+        surfSkill: profile.surfSkill ?? 'beginner',
+      ),
+      50,
     );
   }
 
@@ -537,14 +564,27 @@ List<PublicProfilePreview> _filterProfiles({
   required String query,
 }) {
   final q = _normalizeSearchQuery(query);
-  return profiles
-      .where((profile) {
-        if (q.isEmpty) return true;
-        return _profileNameMatches(profile, q);
-      })
-      .take(q.isEmpty ? 12 : 30)
-      .toList();
+  final results = profiles.where((profile) {
+    if (q.isEmpty) return true;
+    return _profileNameMatches(profile, q);
+  }).toList();
+  if (q.isNotEmpty) {
+    results.sort((a, b) {
+      final aHandle = _normalizeSearchQuery(a.handle ?? '');
+      final bHandle = _normalizeSearchQuery(b.handle ?? '');
+      final exactCompare = _boolRank(
+        bHandle == q,
+      ).compareTo(_boolRank(aHandle == q));
+      if (exactCompare != 0) return exactCompare;
+      final handleLengthCompare = aHandle.length.compareTo(bHandle.length);
+      if (handleLengthCompare != 0) return handleLengthCompare;
+      return a.displayName.compareTo(b.displayName);
+    });
+  }
+  return results.take(q.isEmpty ? 12 : 30).toList();
 }
+
+int _boolRank(bool value) => value ? 1 : 0;
 
 bool _profileNameMatches(PublicProfilePreview profile, String query) {
   final handle = _normalizeSearchQuery(profile.handle ?? '');
