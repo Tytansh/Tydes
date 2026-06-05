@@ -29,7 +29,7 @@ final unreadDirectMessageThreadCountProvider = Provider<int>((ref) {
 });
 
 final dmSharedEventRsvpProvider = StateProvider<Set<String>>((ref) => {});
-final dmSocialProfilesProvider = FutureProvider((ref) {
+final dmSocialProfilesProvider = FutureProvider.autoDispose((ref) {
   ref.watch(socialRefreshKeyProvider);
   return ref.watch(surfRepositoryProvider).fetchSocialProfiles();
 });
@@ -555,6 +555,7 @@ PublicProfilePreview _profileFromThread(DirectMessageThread thread) {
 }
 
 Future<void> _openNewMessageSheet(BuildContext context, WidgetRef ref) async {
+  ref.invalidate(dmSocialProfilesProvider);
   final profile = await showModalBottomSheet<PublicProfilePreview>(
     context: context,
     isScrollControlled: true,
@@ -643,6 +644,10 @@ class _NewMessageSheetState extends ConsumerState<_NewMessageSheet> {
                   padding: EdgeInsets.only(top: 24),
                   child: Center(child: CircularProgressIndicator()),
                 )
+              else if (realProfiles.hasError && profiles.isEmpty)
+                _MessagePeopleErrorCard(
+                  onRetry: () => ref.invalidate(dmSocialProfilesProvider),
+                )
               else if (profiles.isEmpty)
                 const Card(
                   child: Padding(
@@ -658,6 +663,37 @@ class _NewMessageSheetState extends ConsumerState<_NewMessageSheet> {
           ),
         );
       },
+    );
+  }
+}
+
+class _MessagePeopleErrorCard extends StatelessWidget {
+  const _MessagePeopleErrorCard({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Could not load people right now.',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Try again and we will reload the real Tydes accounts.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 12),
+            FilledButton.tonal(onPressed: onRetry, child: const Text('Retry')),
+          ],
+        ),
+      ),
     );
   }
 }
