@@ -465,6 +465,11 @@ List<PublicProfilePreview> _searchProfiles({
     ),
   );
   final profiles = <String, _RankedSearchProfile>{};
+  final realProfileUserIds = socialProfiles
+      .map((profile) => profile.userId)
+      .where((id) => id.isNotEmpty)
+      .toSet();
+  final hasRealProfiles = realProfileUserIds.isNotEmpty;
 
   void addProfile(PublicProfilePreview profile, int priority) {
     final handleKey = _profileHandleKey(profile);
@@ -478,20 +483,6 @@ List<PublicProfilePreview> _searchProfiles({
         _shouldReplaceSearchProfile(existing, profile, priority)) {
       profiles[key] = _RankedSearchProfile(profile, priority);
     }
-  }
-
-  for (final friend in friends) {
-    addProfile(
-      PublicProfilePreview(
-        userId: friend.id,
-        displayName: friend.displayName,
-        handle: _handleFromName(friend.displayName),
-        subtitle: friend.vibe,
-        location: friend.homeRegion,
-        surfSkill: 'beginner',
-      ),
-      10,
-    );
   }
 
   for (final profile in socialProfiles) {
@@ -510,7 +501,30 @@ List<PublicProfilePreview> _searchProfiles({
     );
   }
 
+  if (!hasRealProfiles) {
+    for (final friend in friends) {
+      addProfile(
+        PublicProfilePreview(
+          userId: friend.id,
+          displayName: friend.displayName,
+          handle: _handleFromName(friend.displayName),
+          subtitle: friend.vibe,
+          location: friend.homeRegion,
+          surfSkill: 'beginner',
+        ),
+        10,
+      );
+    }
+
+    for (final profile in _extraSearchProfiles) {
+      addProfile(profile, 5);
+    }
+  }
+
   for (final post in posts) {
+    if (hasRealProfiles && !realProfileUserIds.contains(post.userId)) {
+      continue;
+    }
     addProfile(
       PublicProfilePreview(
         userId: post.userId,
@@ -524,10 +538,6 @@ List<PublicProfilePreview> _searchProfiles({
       ),
       30,
     );
-  }
-
-  for (final profile in _extraSearchProfiles) {
-    addProfile(profile, 5);
   }
 
   final list = profiles.values.map((item) => item.profile).toList();
