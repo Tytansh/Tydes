@@ -21,6 +21,19 @@ def public_media_url(filename: str) -> str:
     return f"{public_backend_url()}/media/{filename.lstrip('/')}"
 
 
+def media_storage_backend() -> str:
+    return os.getenv("MEDIA_STORAGE_BACKEND", "local").strip().lower()
+
+
+def uses_local_media_storage() -> bool:
+    return media_storage_backend() in {"", "local", "disk"}
+
+
+def is_legacy_backend_media_url(url: str) -> bool:
+    media_prefix = f"{public_backend_url()}/media/"
+    return url.strip().startswith(media_prefix)
+
+
 def data_dir_path() -> Path:
     return Path(os.getenv("TYDES_DATA_DIR", str(PROJECT_ROOT / "data"))).expanduser()
 

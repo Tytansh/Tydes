@@ -1,8 +1,14 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.core.runtime import csv_env, media_dir_path, sync_seed_media_files
+from app.core.runtime import (
+    csv_env,
+    media_dir_path,
+    sync_seed_media_files,
+    uses_local_media_storage,
+)
 from app.core.store import store
 from app.modules.ads.router import router as ads_router
 from app.modules.admin.router import router as admin_router
@@ -65,4 +71,22 @@ app.include_router(alerts_router, prefix="/api/v1")
 app.include_router(billing_router, prefix="/api/v1")
 app.include_router(ads_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
-app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")
+
+if uses_local_media_storage():
+    app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")
+else:
+    _LEGACY_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+
+    @app.get("/media/{filename:path}")
+    def legacy_media(filename: str):
+        candidate = (MEDIA_DIR / filename).resolve()
+        if (
+            candidate.suffix.lower() not in _LEGACY_IMAGE_EXTENSIONS
+            or not candidate.is_relative_to(MEDIA_DIR.resolve())
+            or not candidate.is_file()
+        ):
+            raise HTTPException(status_code=410, detail="Legacy media unavailable")
+        return FileResponse(
+            candidate,
+            headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        )

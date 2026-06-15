@@ -32,7 +32,12 @@ from app.core.models import (
 )
 from app.core.postgres_auth import PostgresAuthRepository
 from app.core.postgres_social import PostgresSocialRepository
-from app.core.runtime import public_media_url, state_file_path
+from app.core.runtime import (
+    is_legacy_backend_media_url,
+    public_media_url,
+    state_file_path,
+    uses_local_media_storage,
+)
 from app.integrations.tide_providers.tidecheck import TideCheckProvider
 from app.integrations.weather_providers.open_meteo import FREE_FORECAST_MAX_AGE, FRESH_FORECAST_MAX_AGE, OpenMeteoMarineProvider, PREVIEW_FORECAST_MAX_AGE
 
@@ -902,7 +907,24 @@ class DemoStore:
     def list_posts(self) -> Iterable[SocialPost]:
         if self.postgres_social is not None:
             self._sync_social_from_postgres()
-        return sorted(self.posts, key=lambda post: post.created_at, reverse=True)
+        posts = sorted(self.posts, key=lambda post: post.created_at, reverse=True)
+        if uses_local_media_storage():
+            return posts
+        return [
+            post.model_copy(
+                update={
+                    "media": [
+                        media
+                        for media in post.media
+                        if not (
+                            media.media_type == "video"
+                            and is_legacy_backend_media_url(media.url)
+                        )
+                    ]
+                }
+            )
+            for post in posts
+        ]
 
     def add_post(self, post: SocialPost) -> SocialPost:
         if self.postgres_social is not None:
