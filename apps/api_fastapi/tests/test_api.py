@@ -256,31 +256,14 @@ def test_tides_surface_provider_unavailable_note(monkeypatch):
     assert payload["note"] == "Provider unavailable."
 
 
-def test_balangan_surf_window_prototype(monkeypatch):
+def test_balangan_surf_window_is_locked_for_free_users(monkeypatch):
     store.login("demo@surftravel.app")
+    store.user.free_live_spot_id = None
 
-    def fake_surf_window(_spot, **_kwargs):
-        return SurfWindowForecast(
-            spot_id="spot_balangan",
-            available=True,
-            day=date.today(),
-            best_start_label="6 AM",
-            best_end_label="9 AM",
-            rating="good",
-            summary="Best window: 6 AM - 9 AM.",
-            hours=[
-                SurfWindowHour(
-                    time="2026-05-11T06:00",
-                    label="6 AM",
-                    wave_height_m=1.4,
-                    period_s=10,
-                    wind_kts=6.0,
-                    score=0.88,
-                )
-            ],
-        )
+    def fail_if_called(_spot, **_kwargs):
+        raise AssertionError("Locked free users should not fetch surf windows")
 
-    monkeypatch.setattr(store.weather_provider, "fetch_spot_surf_window", fake_surf_window)
+    monkeypatch.setattr(store.weather_provider, "fetch_spot_surf_window", fail_if_called)
 
     response = client.get(
         "/api/v1/forecasts/surf-window",
@@ -289,10 +272,8 @@ def test_balangan_surf_window_prototype(monkeypatch):
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["available"] is True
-    assert payload["best_start_label"] == "6 AM"
-    assert payload["best_end_label"] == "9 AM"
-    assert payload["confidence"] == "estimated"
+    assert payload["available"] is False
+    assert payload["note"] == "Premium unlocks Best Time Today."
 
 
 def test_premium_surf_window_available_for_any_spot(monkeypatch):

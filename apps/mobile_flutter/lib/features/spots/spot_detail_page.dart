@@ -194,16 +194,9 @@ class SpotDetailPage extends ConsumerWidget {
                 me.when(
                   data: (profile) => Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (!profile.canAccessLiveForecast(spotId) &&
-                          profile.freeLiveSpotId != null)
-                        const _UpgradeCard(
-                          title: 'Premium subscription',
-                          body:
-                              'Your one free live-data unlock is already used. Upgrade to unlock live forecast and tide data on every spot.',
-                        ),
-                      ...bundle.forecasts.map((row) => _ForecastCard(row: row)),
-                    ],
+                    children: bundle.forecasts
+                        .map((row) => _ForecastCard(row: row))
+                        .toList(),
                   ),
                   loading: () =>
                       const Center(child: CircularProgressIndicator()),
@@ -754,42 +747,6 @@ class _ForecastSummary extends StatelessWidget {
   }
 }
 
-class _UpgradeCard extends StatelessWidget {
-  const _UpgradeCard({
-    this.title = 'Access more live forecast data',
-    this.body,
-  });
-
-  final String title;
-  final String? body;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      color: const Color(0xFFFFF4E4),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text(
-              body ??
-                  'Free users get one unlocked live forecast spot. Upgrade to unlock live wave, wind, period, and tide data across more breaks.',
-            ),
-            const SizedBox(height: 12),
-            FilledButton(
-              onPressed: () => context.push('/paywall'),
-              child: const Text('Access more info'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _LiveDataUnlockCard extends ConsumerWidget {
   const _LiveDataUnlockCard({
     required this.profile,
@@ -833,7 +790,7 @@ class _LiveDataUnlockCard extends ConsumerWidget {
     final title = isUnlockedSpot
         ? 'Live data unlocked'
         : hasChosenAnotherSpot
-        ? 'Premium subscription'
+        ? 'Free live spot already selected'
         : 'Unlock more data';
     final subtitle = isUnlockedSpot
         ? 'This is your free live-data spot for wave, wind, period, and tide updates.'

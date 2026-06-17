@@ -653,7 +653,7 @@ class DemoStore:
                 note="Spot not found.",
             )
         can_access_live = self._can_access_live_forecast(spot_id)
-        if not can_access_live and spot_id != "spot_balangan":
+        if not can_access_live:
             return SurfWindowForecast(
                 spot_id=spot_id,
                 available=False,
@@ -666,14 +666,7 @@ class DemoStore:
                 if can_access_live
                 else FREE_FORECAST_MAX_AGE,
             )
-            if can_access_live:
-                return window
-            return window.model_copy(
-                update={
-                    "confidence": "estimated",
-                    "note": "Balangan prototype. Premium unlocks this live window across more breaks.",
-                }
-            )
+            return window
         except Exception as error:
             print(f"Best surf window unavailable for {spot.id}: {error}")
             return SurfWindowForecast(
