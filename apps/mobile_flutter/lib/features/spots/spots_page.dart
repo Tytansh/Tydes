@@ -103,6 +103,10 @@ class _SpotsPageState extends ConsumerState<SpotsPage> {
             final favoriteSpots = _sortSpots(
               items.where((spot) => favoriteSpotIds.contains(spot.id)).toList(),
             );
+            final freeLiveSpotId = me.valueOrNull?.freeLiveSpotId;
+            final premiumBreak = me.valueOrNull?.premium == false
+                ? _spotById(items, freeLiveSpotId)
+                : null;
 
             final countries = _groupBy(filteredItems, (spot) => spot.country);
             final orderedCountryNames = _orderedGroupedKeys(countries);
@@ -120,6 +124,10 @@ class _SpotsPageState extends ConsumerState<SpotsPage> {
                   },
                 ),
                 const SizedBox(height: 18),
+                if (_searchQuery.isEmpty && premiumBreak != null) ...[
+                  _PremiumBreakCard(spot: premiumBreak),
+                  const SizedBox(height: 18),
+                ],
                 if (_searchQuery.isEmpty) ...[
                   _FavoritesSection(
                     spots: favoriteSpots,
@@ -217,6 +225,14 @@ class _SpotsPageState extends ConsumerState<SpotsPage> {
         spot.area.toLowerCase().contains(q) ||
         spot.region.toLowerCase().contains(q) ||
         spot.country.toLowerCase().contains(q);
+  }
+
+  SpotModel? _spotById(List<SpotModel> spots, String? spotId) {
+    if (spotId == null || spotId.isEmpty) return null;
+    for (final spot in spots) {
+      if (spot.id == spotId) return spot;
+    }
+    return null;
   }
 }
 
@@ -344,6 +360,91 @@ class _PartnerOffers extends StatelessWidget {
       },
       loading: () => const SizedBox.shrink(),
       error: (_, _) => const SizedBox.shrink(),
+    );
+  }
+}
+
+class _PremiumBreakCard extends StatelessWidget {
+  const _PremiumBreakCard({required this.spot});
+
+  final SpotModel spot;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: const Color(0xFFE8FAF8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: () => context.push('/spot/${spot.id}'),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF009DA3), Color(0xFF78D7C7)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(Icons.lock_open_rounded, color: Colors.white),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                          child: Text(
+                            'Premium break',
+                            style: Theme.of(context).textTheme.labelMedium
+                                ?.copyWith(
+                                  color: const Color(0xFF007A80),
+                                  fontWeight: FontWeight.w900,
+                                ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      spot.name,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${spot.area}, ${spot.region}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFF516163),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Icon(Icons.chevron_right_rounded),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
