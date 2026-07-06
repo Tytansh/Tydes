@@ -647,7 +647,7 @@ class PostEngagementBar extends ConsumerStatefulWidget {
   ConsumerState<PostEngagementBar> createState() => _PostEngagementBarState();
 }
 
-class SocialPostBodyPreview extends StatelessWidget {
+class SocialPostBodyPreview extends StatefulWidget {
   const SocialPostBodyPreview({
     super.key,
     required this.body,
@@ -658,12 +658,127 @@ class SocialPostBodyPreview extends StatelessWidget {
   final int maxLines;
 
   @override
+  State<SocialPostBodyPreview> createState() => _SocialPostBodyPreviewState();
+}
+
+class _SocialPostBodyPreviewState extends State<SocialPostBodyPreview> {
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final style = theme.textTheme.bodyLarge;
+    final scheme = theme.colorScheme;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final shouldToggle = _textExceedsPreview(context, constraints, style);
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.body,
+              maxLines: _expanded ? null : widget.maxLines,
+              overflow: _expanded
+                  ? TextOverflow.visible
+                  : TextOverflow.ellipsis,
+              style: style,
+            ),
+            if (shouldToggle) ...[
+              const SizedBox(height: 6),
+              InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => setState(() => _expanded = !_expanded),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Text(
+                    _expanded ? 'Show less' : 'Show more',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: scheme.primary,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  bool _textExceedsPreview(
+    BuildContext context,
+    BoxConstraints constraints,
+    TextStyle? style,
+  ) {
+    if (!constraints.hasBoundedWidth || constraints.maxWidth <= 0) {
+      return widget.body.split('\n').length > widget.maxLines;
+    }
+
+    final painter = TextPainter(
+      text: TextSpan(text: widget.body, style: style),
+      maxLines: widget.maxLines,
+      textDirection: Directionality.of(context),
+    )..layout(maxWidth: constraints.maxWidth);
+
+    return painter.didExceedMaxLines;
+  }
+}
+
+class _PostCaptionLineLimitFormatter {
+  static String limit(String value) {
+    final normalized = value.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    final lines = normalized.split('\n');
+    if (lines.length <= _postCaptionMaxLines) return normalized;
+    return lines.take(_postCaptionMaxLines).join('\n');
+  }
+}
+
+class _PostCaptionCharacterLimitFormatter {
+  static String limit(String value) {
+    if (value.length <= _postCaptionMaxChars) return value;
+    return value.substring(0, _postCaptionMaxChars);
+  }
+}
+
+String _limitPostCaption(String value) {
+  return _PostCaptionLineLimitFormatter.limit(
+    _PostCaptionCharacterLimitFormatter.limit(value),
+  );
+}
+
+String _postCaptionLimitLabel(String text) {
+  final lineCount = text.isEmpty ? 0 : text.split('\n').length;
+  final remainingLines = _postCaptionMaxLines - lineCount;
+  if (remainingLines <= 3) {
+    return '$remainingLines ${remainingLines == 1 ? 'line' : 'lines'} left';
+  }
+  return 'Up to $_postCaptionMaxLines lines';
+}
+
+TextSelection _postCaptionSelection(String text) {
+  return TextSelection.collapsed(offset: text.length);
+}
+
+class _PostCaptionLimitNotice extends StatelessWidget {
+  const _PostCaptionLimitNotice({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final nearLimit = text.split('\n').length >= _postCaptionMaxLines - 3;
+
     return Text(
-      body,
-      maxLines: maxLines,
-      overflow: TextOverflow.ellipsis,
-      style: Theme.of(context).textTheme.bodyLarge,
+      _postCaptionLimitLabel(text),
+      style: theme.textTheme.bodySmall?.copyWith(
+        color: nearLimit ? scheme.primary : scheme.onSurfaceVariant,
+        fontWeight: nearLimit ? FontWeight.w800 : FontWeight.w600,
+      ),
     );
   }
 }
@@ -2713,7 +2828,7 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
                   controller: _bodyController,
                   minLines: 4,
                   maxLines: 8,
-                  onChanged: (_) => setState(() {}),
+                  onChanged: _handleBodyChanged,
                   decoration: InputDecoration(
                     hintText: captionHint,
                     border: InputBorder.none,
@@ -2721,6 +2836,11 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
                   ),
                   style: theme.textTheme.bodyLarge?.copyWith(height: 1.25),
                 ),
+              ),
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerRight,
+                child: _PostCaptionLimitNotice(text: _bodyController.text),
               ),
               const SizedBox(height: 18),
               SizedBox(
@@ -2784,6 +2904,17 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
       }
     });
     _syncCurrentDraft();
+  }
+
+  void _handleBodyChanged(String value) {
+    final limited = _limitPostCaption(value);
+    if (limited != value) {
+      _bodyController.value = TextEditingValue(
+        text: limited,
+        selection: _postCaptionSelection(limited),
+      );
+    }
+    setState(() {});
   }
 
   Future<void> _openSpotTagSheet(Set<String> favoriteSpotIds) async {
@@ -4718,6 +4849,8 @@ const _maxPostVideoBytes = 500 * 1024 * 1024;
 const _minPostVideoCompressionBytes = 3 * 1024 * 1024;
 const _videoPlayVisibilityThreshold = 0.6;
 const _postBodyPreviewMaxLines = 6;
+const _postCaptionMaxLines = 16;
+const _postCaptionMaxChars = 1600;
 
 String _draftTitle(_ComposerPostDraft draft) {
   return draft.postType == 'surf_plan' ? 'Event draft' : 'Post draft';

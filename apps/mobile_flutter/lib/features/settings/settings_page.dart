@@ -1614,8 +1614,7 @@ class _ProfilePostCard extends StatelessWidget {
               SocialPostMediaCarousel(media: post.media, borderRadius: 20),
               const SizedBox(height: 12),
             ],
-            if (post.body.isNotEmpty)
-              Text(post.body, style: Theme.of(context).textTheme.bodyLarge),
+            if (post.body.isNotEmpty) SocialPostBodyPreview(body: post.body),
             if (isSurfInvite) ...[
               if (post.body.isNotEmpty) const SizedBox(height: 14),
               SurfInviteActions(post: post, spot: spot),

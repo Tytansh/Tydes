@@ -23,10 +23,12 @@ ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v"}
 MAX_MEDIA_PER_POST = 3
 MAX_PHOTO_BYTES = 15 * 1024 * 1024
 MAX_VIDEO_BYTES = 500 * 1024 * 1024
+MAX_POST_BODY_CHARS = 1600
+MAX_POST_BODY_LINES = 16
 
 
 class SocialPostCreateRequest(BaseModel):
-    body: str
+    body: str = Field(default="", max_length=MAX_POST_BODY_CHARS)
     spot_id: str | None = None
     post_type: Literal["looking_for_buddy", "surf_plan", "general"] = "general"
     visibility: Literal["public", "followers"] = "public"
@@ -38,6 +40,14 @@ class SocialPostCreateRequest(BaseModel):
     @classmethod
     def normalize_legacy_visibility(cls, value: str) -> str:
         return "followers" if value == "friends" else value
+
+    @field_validator("body")
+    @classmethod
+    def normalize_body(cls, value: str) -> str:
+        body = value.strip()
+        if len(body.splitlines()) > MAX_POST_BODY_LINES:
+            raise ValueError(f"Post captions can be up to {MAX_POST_BODY_LINES} lines")
+        return body
 
 
 class SocialCommentCreateRequest(BaseModel):
