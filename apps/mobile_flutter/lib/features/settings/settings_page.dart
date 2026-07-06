@@ -7,7 +7,6 @@ import 'package:image/image.dart' as image_tools;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
-import '../../app/router.dart';
 import '../../core/billing/revenuecat_service.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
@@ -59,9 +58,6 @@ class SettingsPage extends ConsumerWidget {
       builder: (context) => _ProfileSettingsSheet(
         profile: me.valueOrNull,
         premium: me.valueOrNull?.premium ?? false,
-        selectedLocale: ref.watch(localeProvider),
-        onLocaleChanged: (locale) =>
-            ref.read(localeProvider.notifier).state = locale,
         onEditProfile: me.valueOrNull == null
             ? null
             : () async {
@@ -853,8 +849,6 @@ class _ProfileSettingsSheet extends StatelessWidget {
   const _ProfileSettingsSheet({
     required this.profile,
     required this.premium,
-    required this.selectedLocale,
-    required this.onLocaleChanged,
     required this.onEditProfile,
     required this.onManagePremium,
     required this.onLogout,
@@ -863,8 +857,6 @@ class _ProfileSettingsSheet extends StatelessWidget {
 
   final UserProfile? profile;
   final bool premium;
-  final Locale selectedLocale;
-  final ValueChanged<Locale> onLocaleChanged;
   final VoidCallback? onEditProfile;
   final VoidCallback onManagePremium;
   final VoidCallback onLogout;
@@ -915,22 +907,6 @@ class _ProfileSettingsSheet extends StatelessWidget {
               subtitle: const Text('Forecast access and future upgrades'),
               trailing: const Icon(Icons.chevron_right),
               onTap: onManagePremium,
-            ),
-            const Divider(),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.language),
-              title: const Text('Language'),
-              subtitle: const Text('App display language'),
-              trailing: SegmentedButton<Locale>(
-                segments: const [
-                  ButtonSegment<Locale>(value: Locale('en'), label: Text('EN')),
-                  ButtonSegment<Locale>(value: Locale('id'), label: Text('ID')),
-                ],
-                selected: {selectedLocale},
-                onSelectionChanged: (selection) =>
-                    onLocaleChanged(selection.first),
-              ),
             ),
             const Divider(),
             ListTile(
