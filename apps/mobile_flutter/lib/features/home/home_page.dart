@@ -321,7 +321,7 @@ class _PeopleSearchPageState extends ConsumerState<PeopleSearchPage> {
               child: Center(child: CircularProgressIndicator()),
             )
           else if (results.isEmpty)
-            const _NoSearchResultsCard()
+            _NoSearchResultsCard(query: _query)
           else
             ...results.map(
               (profile) => _UserSearchResultTile(
@@ -434,17 +434,21 @@ class _UserSearchResultTile extends ConsumerWidget {
 }
 
 class _NoSearchResultsCard extends StatelessWidget {
-  const _NoSearchResultsCard();
+  const _NoSearchResultsCard({required this.query});
+
+  final String query;
 
   @override
   Widget build(BuildContext context) {
+    final trimmedQuery = query.trim();
+    final message = trimmedQuery.isEmpty
+        ? 'No surfers found yet. Try searching a real name or @tag.'
+        : 'No surfers found for "$trimmedQuery" yet. Try another name or @tag.';
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(18),
-        child: Text(
-          'No surfers found yet. Try a name like Lina or an @tag like @linareef.',
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
+        child: Text(message, style: Theme.of(context).textTheme.bodyMedium),
       ),
     );
   }
