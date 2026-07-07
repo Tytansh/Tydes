@@ -15,6 +15,7 @@ class DemoSeed {
     premium: true,
     emailVerified: true,
     freeLiveSpotId: null,
+    freeLiveSpotChangedAt: null,
     adsEnabled: false,
     favoriteSpotIds: const ['spot_balangan', 'spot_echo_beach'],
   );

@@ -338,10 +338,19 @@ class SurfRepository {
     } catch (_) {
       if (!DemoSeed.me.premium &&
           DemoSeed.me.freeLiveSpotId != null &&
-          DemoSeed.me.freeLiveSpotId != spotId) {
-        throw StateError('Free live spot already selected');
+          DemoSeed.me.freeLiveSpotId != spotId &&
+          !DemoSeed.me.canChangeFreeLiveSpot(DateTime.now())) {
+        final remaining = DemoSeed.me.freeLiveSpotChangeRemaining(
+          DateTime.now(),
+        );
+        throw StateError(
+          'You can change your free premium break again in ${_friendlyDuration(remaining)}.',
+        );
       }
-      DemoSeed.me = DemoSeed.me.copyWith(freeLiveSpotId: spotId);
+      DemoSeed.me = DemoSeed.me.copyWith(
+        freeLiveSpotId: spotId,
+        freeLiveSpotChangedAt: DateTime.now(),
+      );
       return DemoSeed.me;
     }
   }
@@ -995,6 +1004,16 @@ class SurfRepository {
       return favoriteSpotIds;
     }
   }
+}
+
+String _friendlyDuration(Duration? duration) {
+  if (duration == null || duration.isNegative) return 'a few minutes';
+  final totalMinutes = duration.inMinutes <= 0 ? 1 : duration.inMinutes;
+  final hours = totalMinutes ~/ 60;
+  final minutes = totalMinutes % 60;
+  if (hours <= 0) return '${minutes}m';
+  if (minutes <= 0) return '${hours}h';
+  return '${hours}h ${minutes}m';
 }
 
 class FavoriteSpotIdsNotifier extends StateNotifier<Set<String>> {

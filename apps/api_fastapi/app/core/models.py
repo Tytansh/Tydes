@@ -21,6 +21,7 @@ class User(BaseModel):
     premium: bool = False
     email_verified: bool = False
     free_live_spot_id: str | None = None
+    free_live_spot_changed_at: datetime | None = None
     ads_enabled: bool = True
     favorite_spot_ids: list[str] = Field(default_factory=list)
 
@@ -254,6 +255,7 @@ def build_seed() -> dict[str, list[BaseModel] | User]:
         premium=True,
         email_verified=True,
         free_live_spot_id=None,
+        free_live_spot_changed_at=None,
         ads_enabled=False,
     )
     spots = [

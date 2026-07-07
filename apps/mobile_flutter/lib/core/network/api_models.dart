@@ -12,6 +12,7 @@ class UserProfile {
     required this.premium,
     this.emailVerified = false,
     required this.freeLiveSpotId,
+    this.freeLiveSpotChangedAt,
     required this.adsEnabled,
     required this.favoriteSpotIds,
   });
@@ -28,11 +29,27 @@ class UserProfile {
   final bool premium;
   final bool emailVerified;
   final String? freeLiveSpotId;
+  final DateTime? freeLiveSpotChangedAt;
   final bool adsEnabled;
   final List<String> favoriteSpotIds;
 
   bool canAccessLiveForecast(String spotId) {
     return premium || freeLiveSpotId == spotId;
+  }
+
+  bool canChangeFreeLiveSpot(DateTime now) {
+    if (premium || freeLiveSpotId == null || freeLiveSpotChangedAt == null) {
+      return true;
+    }
+    return now.difference(freeLiveSpotChangedAt!) >= const Duration(hours: 24);
+  }
+
+  Duration? freeLiveSpotChangeRemaining(DateTime now) {
+    if (canChangeFreeLiveSpot(now) || freeLiveSpotChangedAt == null) {
+      return null;
+    }
+    final nextChange = freeLiveSpotChangedAt!.add(const Duration(hours: 24));
+    return nextChange.difference(now);
   }
 
   UserProfile copyWith({
@@ -48,6 +65,7 @@ class UserProfile {
     bool? premium,
     bool? emailVerified,
     String? freeLiveSpotId,
+    DateTime? freeLiveSpotChangedAt,
     bool clearFreeLiveSpotId = false,
     bool? adsEnabled,
     List<String>? favoriteSpotIds,
@@ -66,6 +84,7 @@ class UserProfile {
     freeLiveSpotId: clearFreeLiveSpotId
         ? null
         : (freeLiveSpotId ?? this.freeLiveSpotId),
+    freeLiveSpotChangedAt: freeLiveSpotChangedAt ?? this.freeLiveSpotChangedAt,
     adsEnabled: adsEnabled ?? this.adsEnabled,
     favoriteSpotIds: favoriteSpotIds ?? this.favoriteSpotIds,
   );
@@ -84,11 +103,19 @@ class UserProfile {
     premium: json['premium'] as bool? ?? false,
     emailVerified: json['email_verified'] as bool? ?? false,
     freeLiveSpotId: json['free_live_spot_id'] as String?,
+    freeLiveSpotChangedAt: _parseOptionalDateTime(
+      json['free_live_spot_changed_at'],
+    ),
     adsEnabled: json['ads_enabled'] as bool? ?? true,
     favoriteSpotIds: List<String>.from(
       json['favorite_spot_ids'] as List<dynamic>? ?? const [],
     ),
   );
+}
+
+DateTime? _parseOptionalDateTime(Object? value) {
+  if (value is! String || value.isEmpty) return null;
+  return DateTime.tryParse(value);
 }
 
 class SpotModel {

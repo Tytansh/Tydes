@@ -768,6 +768,10 @@ class _LiveDataUnlockCard extends ConsumerWidget {
     final hasChosenAnotherSpot =
         profile.freeLiveSpotId != null && !isUnlockedSpot;
     final isSaving = ref.watch(unlockingLiveSpotProvider(spotId));
+    final remainingChangeTime = profile.freeLiveSpotChangeRemaining(
+      DateTime.now(),
+    );
+    final canChangeToThisSpot = remainingChangeTime == null;
 
     Future<void> unlockSpot() async {
       ref.read(unlockingLiveSpotProvider(spotId).notifier).state = true;
@@ -790,13 +794,17 @@ class _LiveDataUnlockCard extends ConsumerWidget {
     final title = isUnlockedSpot
         ? 'Live data unlocked'
         : hasChosenAnotherSpot
-        ? 'Free live spot already selected'
+        ? canChangeToThisSpot
+              ? 'Change free live spot?'
+              : 'Free live spot already selected'
         : 'Unlock more data';
     final subtitle = isUnlockedSpot
         ? 'This is your free live-data spot for wave, wind, period, and tide updates.'
         : hasChosenAnotherSpot
-        ? 'Free users can unlock one location only. Premium unlocks live data on every spot.'
-        : 'Free users can unlock one spot for live wave and tide data. Choose carefully.';
+        ? canChangeToThisSpot
+              ? 'Switch your free live-data spot to this break. You can change it again after 24 hours.'
+              : 'You can change your free spot again in ${_friendlyCooldown(remainingChangeTime)}. Premium unlocks live data on every spot.'
+        : 'Free users can unlock one spot for live wave and tide data. You can change it once every 24 hours.';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -828,18 +836,23 @@ class _LiveDataUnlockCard extends ConsumerWidget {
               ),
               const SizedBox(width: 12),
               IgnorePointer(
-                ignoring: isUnlockedSpot || hasChosenAnotherSpot || isSaving,
+                ignoring:
+                    isUnlockedSpot ||
+                    (hasChosenAnotherSpot && !canChangeToThisSpot) ||
+                    isSaving,
                 child: Switch.adaptive(
                   value: isUnlockedSpot || isSaving,
                   onChanged:
-                      (!isUnlockedSpot && !hasChosenAnotherSpot && !isSaving)
+                      (!isUnlockedSpot &&
+                          (!hasChosenAnotherSpot || canChangeToThisSpot) &&
+                          !isSaving)
                       ? (_) => unlockSpot()
                       : null,
                 ),
               ),
             ],
           ),
-          if (hasChosenAnotherSpot) ...[
+          if (hasChosenAnotherSpot && !canChangeToThisSpot) ...[
             const SizedBox(height: 12),
             Align(
               alignment: Alignment.centerLeft,
@@ -872,6 +885,15 @@ String _formatSpeed(double value) {
     return value.toStringAsFixed(0);
   }
   return value.toStringAsFixed(1);
+}
+
+String _friendlyCooldown(Duration duration) {
+  final totalMinutes = duration.inMinutes <= 0 ? 1 : duration.inMinutes;
+  final hours = totalMinutes ~/ 60;
+  final minutes = totalMinutes % 60;
+  if (hours <= 0) return '${minutes}m';
+  if (minutes <= 0) return '${hours}h';
+  return '${hours}h ${minutes}m';
 }
 
 String _friendlyPeriod(int periodS) {

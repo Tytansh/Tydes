@@ -45,6 +45,17 @@ ForecastFreshness = Literal["fresh", "preview"]
 
 _PASSWORD_HASH_ALGORITHM = "pbkdf2_sha256"
 _PASSWORD_HASH_ITERATIONS = 260_000
+FREE_LIVE_SPOT_CHANGE_COOLDOWN = timedelta(hours=24)
+
+
+def _friendly_duration(duration: timedelta) -> str:
+    total_minutes = max(1, int(duration.total_seconds() // 60))
+    hours, minutes = divmod(total_minutes, 60)
+    if hours <= 0:
+        return f"{minutes}m"
+    if minutes <= 0:
+        return f"{hours}h"
+    return f"{hours}h {minutes}m"
 
 
 class DemoStore:
@@ -168,6 +179,7 @@ class DemoStore:
                 "ads_enabled": not self._email_has_premium_override(normalized_email),
                 "favorite_spot_ids": [],
                 "free_live_spot_id": None,
+                "free_live_spot_changed_at": None,
             }
         )
         self.user = user
@@ -229,6 +241,7 @@ class DemoStore:
         self.user.email_verified = True
         self.user.ads_enabled = True
         self.user.free_live_spot_id = None
+        self.user.free_live_spot_changed_at = None
         self._save_state()
         return self.user
 
@@ -770,15 +783,29 @@ class DemoStore:
     def set_free_live_spot(self, spot_id: str) -> User | None:
         if self.get_spot(spot_id) is None:
             return None
+        now = datetime.now(timezone.utc)
         if self.user.premium:
             self.user.free_live_spot_id = spot_id
+            self.user.free_live_spot_changed_at = now
             self._save_state()
             return self.user
         if (
             self.user.free_live_spot_id is not None
             and self.user.free_live_spot_id != spot_id
         ):
-            raise ValueError("Free live spot already selected")
+            changed_at = self.user.free_live_spot_changed_at
+            if changed_at is not None:
+                if changed_at.tzinfo is None:
+                    changed_at = changed_at.replace(tzinfo=timezone.utc)
+                next_change_at = changed_at + FREE_LIVE_SPOT_CHANGE_COOLDOWN
+                if now < next_change_at:
+                    remaining = next_change_at - now
+                    raise ValueError(
+                        "You can change your free premium break again in "
+                        f"{_friendly_duration(remaining)}."
+                    )
+        if self.user.free_live_spot_id != spot_id:
+            self.user.free_live_spot_changed_at = now
         self.user.free_live_spot_id = spot_id
         self._save_state()
         return self.user

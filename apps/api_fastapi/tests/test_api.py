@@ -1,9 +1,10 @@
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 import json
 import sys
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -334,6 +335,36 @@ def test_can_add_and_remove_favorite_spot():
     remove_response = client.delete("/api/v1/users/favorites/spot_balangan")
     assert remove_response.status_code == 200
     assert remove_response.json()["favorite_spot_ids"] == []
+
+
+def test_free_live_spot_can_change_after_cooldown(monkeypatch):
+    original_user = store.user
+    monkeypatch.setattr(store, "_save_state", lambda: None)
+    try:
+        store.user = original_user.model_copy(
+            update={
+                "premium": False,
+                "free_live_spot_id": None,
+                "free_live_spot_changed_at": None,
+            }
+        )
+
+        first = store.set_free_live_spot("spot_bondi")
+        assert first is not None
+        assert first.free_live_spot_id == "spot_bondi"
+        assert first.free_live_spot_changed_at is not None
+
+        with pytest.raises(ValueError, match="change your free premium break"):
+            store.set_free_live_spot("spot_balangan")
+
+        store.user.free_live_spot_changed_at = datetime.now(timezone.utc) - timedelta(
+            hours=25
+        )
+        changed = store.set_free_live_spot("spot_balangan")
+        assert changed is not None
+        assert changed.free_live_spot_id == "spot_balangan"
+    finally:
+        store.user = original_user
 
 
 def test_can_toggle_and_delete_alert():

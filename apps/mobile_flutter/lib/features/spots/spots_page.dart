@@ -54,6 +54,7 @@ class SpotsPage extends ConsumerStatefulWidget {
 
 class _SpotsPageState extends ConsumerState<SpotsPage> {
   final _searchController = TextEditingController();
+  bool _changingFreeLiveSpot = false;
 
   String get _searchQuery => _searchController.text.trim();
 
@@ -103,8 +104,9 @@ class _SpotsPageState extends ConsumerState<SpotsPage> {
             final favoriteSpots = _sortSpots(
               items.where((spot) => favoriteSpotIds.contains(spot.id)).toList(),
             );
+            final profile = me.valueOrNull;
             final freeLiveSpotId = me.valueOrNull?.freeLiveSpotId;
-            final premiumBreak = me.valueOrNull?.premium == false
+            final premiumBreak = profile?.premium == false
                 ? _spotById(items, freeLiveSpotId)
                 : null;
 
@@ -125,7 +127,13 @@ class _SpotsPageState extends ConsumerState<SpotsPage> {
                 ),
                 const SizedBox(height: 18),
                 if (_searchQuery.isEmpty && premiumBreak != null) ...[
-                  _PremiumBreakCard(spot: premiumBreak),
+                  _PremiumBreakCard(
+                    spot: premiumBreak,
+                    profile: profile!,
+                    isChanging: _changingFreeLiveSpot,
+                    onChange: () =>
+                        _openFreeLiveSpotPicker(items, premiumBreak),
+                  ),
                   const SizedBox(height: 18),
                 ],
                 if (_searchQuery.isEmpty) ...[
@@ -234,6 +242,62 @@ class _SpotsPageState extends ConsumerState<SpotsPage> {
     }
     return null;
   }
+
+  Future<void> _openFreeLiveSpotPicker(
+    List<SpotModel> spots,
+    SpotModel currentSpot,
+  ) async {
+    final profile = ref.read(meProvider).valueOrNull;
+    if (profile == null) return;
+    final remaining = profile.freeLiveSpotChangeRemaining(DateTime.now());
+    if (remaining != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'You can change your premium break again in ${_friendlyCooldown(remaining)}.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final selected = await showModalBottomSheet<SpotModel>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => _FreeLiveSpotPickerSheet(
+        spots: spots,
+        selectedSpotId: currentSpot.id,
+      ),
+    );
+    if (!mounted || selected == null || selected.id == currentSpot.id) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _changingFreeLiveSpot = true);
+    try {
+      await ref.read(surfRepositoryProvider).setFreeLiveSpot(selected.id);
+      ref.invalidate(meProvider);
+      ref.invalidate(dashboardProvider);
+      ref.invalidate(spotForecastsBySpotProvider);
+      ref.invalidate(spotCardForecastProvider(currentSpot.id));
+      ref.invalidate(spotCardForecastProvider(selected.id));
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('Premium break changed to ${selected.name}.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Bad state: ', '')),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _changingFreeLiveSpot = false);
+      }
+    }
+  }
 }
 
 List<String> _orderedGroupedKeys(Map<String, List<SpotModel>> groups) {
@@ -244,6 +308,22 @@ List<String> _orderedGroupedKeys(Map<String, List<SpotModel>> groups) {
     return a.compareTo(b);
   });
   return next;
+}
+
+bool _pickerMatchesSpot(SpotModel spot, String query) {
+  return spot.name.toLowerCase().contains(query) ||
+      spot.area.toLowerCase().contains(query) ||
+      spot.region.toLowerCase().contains(query) ||
+      spot.country.toLowerCase().contains(query);
+}
+
+String _friendlyCooldown(Duration duration) {
+  final totalMinutes = duration.inMinutes <= 0 ? 1 : duration.inMinutes;
+  final hours = totalMinutes ~/ 60;
+  final minutes = totalMinutes % 60;
+  if (hours <= 0) return '${minutes}m';
+  if (minutes <= 0) return '${hours}h';
+  return '${hours}h ${minutes}m';
 }
 
 class _SpotsSearchBar extends StatelessWidget {
@@ -365,12 +445,26 @@ class _PartnerOffers extends StatelessWidget {
 }
 
 class _PremiumBreakCard extends StatelessWidget {
-  const _PremiumBreakCard({required this.spot});
+  const _PremiumBreakCard({
+    required this.spot,
+    required this.profile,
+    required this.isChanging,
+    required this.onChange,
+  });
 
   final SpotModel spot;
+  final UserProfile profile;
+  final bool isChanging;
+  final VoidCallback onChange;
 
   @override
   Widget build(BuildContext context) {
+    final remaining = profile.freeLiveSpotChangeRemaining(DateTime.now());
+    final canChange = remaining == null && !isChanging;
+    final buttonLabel = remaining == null
+        ? 'Change'
+        : _friendlyCooldown(remaining);
+
     return Card(
       color: const Color(0xFFE8FAF8),
       child: InkWell(
@@ -421,12 +515,49 @@ class _PremiumBreakCard extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    Text(
-                      spot.name,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            spot.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton(
+                          onPressed: canChange ? onChange : null,
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(0, 32),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                          ),
+                          child: isChanging
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Text(buttonLabel),
+                        ),
+                      ],
                     ),
+                    if (remaining != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'You can change it again in ${_friendlyCooldown(remaining)}.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: const Color(0xFF516163),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 2),
                     Text(
                       '${spot.area}, ${spot.region}',
@@ -443,6 +574,120 @@ class _PremiumBreakCard extends StatelessWidget {
               const Icon(Icons.chevron_right_rounded),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FreeLiveSpotPickerSheet extends StatefulWidget {
+  const _FreeLiveSpotPickerSheet({
+    required this.spots,
+    required this.selectedSpotId,
+  });
+
+  final List<SpotModel> spots;
+  final String selectedSpotId;
+
+  @override
+  State<_FreeLiveSpotPickerSheet> createState() =>
+      _FreeLiveSpotPickerSheetState();
+}
+
+class _FreeLiveSpotPickerSheetState extends State<_FreeLiveSpotPickerSheet> {
+  final _controller = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _query.trim().toLowerCase();
+    final spots = [...widget.spots]
+      ..sort((a, b) {
+        final country = a.country.compareTo(b.country);
+        if (country != 0) return country;
+        final region = a.region.compareTo(b.region);
+        if (region != 0) return region;
+        final area = a.area.compareTo(b.area);
+        if (area != 0) return area;
+        return a.name.compareTo(b.name);
+      });
+    final filtered = query.isEmpty
+        ? spots.take(80).toList()
+        : spots
+              .where((spot) => _pickerMatchesSpot(spot, query))
+              .take(80)
+              .toList();
+
+    return SafeArea(
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.78,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+          children: [
+            Text(
+              'Change premium break',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Free users can keep one live-data spot active. After changing, it locks for 24 hours.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              onChanged: (value) => setState(() => _query = value),
+              decoration: InputDecoration(
+                hintText: 'Search spots',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        onPressed: () {
+                          _controller.clear();
+                          setState(() => _query = '');
+                        },
+                        icon: const Icon(Icons.close),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (filtered.isEmpty)
+              const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('No matching breaks found.'),
+                ),
+              )
+            else
+              ...filtered.map(
+                (spot) => Card(
+                  child: ListTile(
+                    leading: Icon(
+                      spot.id == widget.selectedSpotId
+                          ? Icons.check_circle
+                          : Icons.waves,
+                      color: spot.id == widget.selectedSpotId
+                          ? _favoriteAccent
+                          : null,
+                    ),
+                    title: Text(spot.name),
+                    subtitle: Text('${spot.area}, ${spot.region}'),
+                    trailing: spot.id == widget.selectedSpotId
+                        ? const Text('Current')
+                        : const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(context).pop(spot),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
