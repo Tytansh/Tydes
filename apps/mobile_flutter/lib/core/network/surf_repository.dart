@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../moderation/content_moderation.dart';
 import 'api_config.dart';
 import 'api_models.dart';
 import 'demo_persistence.dart';
@@ -286,6 +287,7 @@ class SurfRepository {
     required String homeRegion,
     String? avatarUrl,
   }) async {
+    ensureAllowedContent([displayName, bio, homeRegion]);
     try {
       final response = await _dio.put<Map<String, dynamic>>(
         '/users/me',
@@ -691,6 +693,7 @@ class SurfRepository {
     String? meetupDate,
     String? meetupEndDate,
   }) async {
+    ensureAllowedContent([body]);
     try {
       final response = await _dio.post<Map<String, dynamic>>(
         '/social/posts',
@@ -707,6 +710,12 @@ class SurfRepository {
       final post = SocialPostModel.fromJson(response.data!);
       DemoSeed.posts.insert(0, post);
       return post;
+    } on DioException catch (error) {
+      final detail = error.response?.data;
+      if (detail is Map<String, dynamic> && detail['detail'] is String) {
+        throw StateError(detail['detail'] as String);
+      }
+      throw StateError('Could not create post right now.');
     } catch (_) {
       final post = SocialPostModel(
         id: 'post_${DateTime.now().millisecondsSinceEpoch}',
@@ -831,6 +840,7 @@ class SurfRepository {
     required String text,
     String? replyToCommentId,
   }) async {
+    ensureAllowedContent([text]);
     final response = await _dio.post<Map<String, dynamic>>(
       '/social/comments',
       data: {

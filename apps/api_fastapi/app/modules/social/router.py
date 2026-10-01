@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.media_storage import configured_media_storage
+from app.core.moderation import ensure_allowed_content
 from app.core.runtime import public_backend_url
 from app.core.models import SocialMediaAttachment, SocialPost
 from app.core.store import store
@@ -162,6 +163,11 @@ def leave_event(post_id: str, _user=Depends(require_authenticated_user)):
 
 @router.post("/comments")
 def create_comment(payload: SocialCommentCreateRequest, _user=Depends(require_authenticated_user)):
+    try:
+        ensure_allowed_content(payload.text)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
     state = store.add_comment(
         post_id=payload.post_id,
         comment_id=f"comment_{uuid4().hex[:10]}",
@@ -287,6 +293,11 @@ def _request_public_base_url(request: Request) -> str:
 
 @router.post("/posts")
 def create_post(payload: SocialPostCreateRequest, _user=Depends(require_authenticated_user)):
+    try:
+        ensure_allowed_content(payload.body)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
     media = [
         item
         for item in payload.media

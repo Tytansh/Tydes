@@ -13,6 +13,7 @@ import 'package:video_player/video_player.dart';
 
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
+import '../../core/moderation/content_moderation.dart';
 import '../../app/router.dart';
 import 'direct_messages_page.dart';
 import 'social_profile.dart';
@@ -924,6 +925,12 @@ class _PostEngagementBarState extends ConsumerState<PostEngagementBar> {
   void _addComment() {
     final comment = _commentController.text.trim();
     if (comment.isEmpty) return;
+    if (hasBlockedContent(comment)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text(contentBlockedMessage)));
+      return;
+    }
     unawaited(_saveComment(comment));
     _commentController.clear();
     setState(() => _replyTarget = null);
@@ -939,8 +946,11 @@ class _PostEngagementBarState extends ConsumerState<PostEngagementBar> {
             replyToCommentId: _replyTarget?.id,
           );
       _applySocialEngagement(ref, engagement);
-    } catch (_) {
-      // Keep the composer calm; backend validation will be surfaced in a later pass.
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_uploadErrorMessage(error))));
     }
   }
 

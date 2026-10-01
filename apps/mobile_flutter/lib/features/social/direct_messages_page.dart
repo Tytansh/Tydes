@@ -11,6 +11,7 @@ import 'package:video_player/video_player.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/demo_persistence.dart';
 import '../../core/network/surf_repository.dart';
+import '../../core/moderation/content_moderation.dart';
 import 'social_profile.dart';
 
 final directMessageThreadsProvider =
@@ -1172,6 +1173,12 @@ class _DirectChatPageState extends ConsumerState<_DirectChatPage> {
   void _sendMessage(String threadId) {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
+    if (hasBlockedContent(text)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text(contentBlockedMessage)));
+      return;
+    }
     ref.read(directMessageThreadsProvider.notifier).sendMessage(threadId, text);
     _messageController.clear();
   }

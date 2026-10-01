@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 import re
 
+from app.core.moderation import ensure_allowed_content
 from app.core.store import store
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -41,6 +42,10 @@ def update_me(payload: UpdateProfileRequest, _user=Depends(require_authenticated
     handle = payload.handle.strip().lower().replace(" ", "")
     bio = payload.bio.strip()
     home_region = payload.home_region.strip()
+    try:
+        ensure_allowed_content(display_name, bio, home_region)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
     if not display_name:
         raise HTTPException(status_code=400, detail="Display name is required")

@@ -582,6 +582,20 @@ def test_signup_creates_pending_email_verification(tmp_path, monkeypatch):
     assert profile_response.status_code == 200
     assert profile_response.json()["handle"] == "ty"
 
+    blocked_profile_response = client.put(
+        "/api/v1/users/me",
+        json={
+            "display_name": "Newsurfer",
+            "handle": "ty",
+            "bio": "onlyfans promo",
+            "surf_skill": "beginner",
+            "home_region": "",
+            "avatar_url": None,
+        },
+        headers={"Authorization": f"Bearer {new_password_response.json()['access_token']}"},
+    )
+    assert blocked_profile_response.status_code == 400
+
     rename_response = client.put(
         "/api/v1/users/me",
         json={
@@ -799,6 +813,27 @@ def test_social_feed_and_create_post(monkeypatch):
     assert create_response.json()["user_id"].startswith("usr_")
     owner_user_id = create_response.json()["user_id"]
     post_id = create_response.json()["id"]
+
+    rejected_post_response = client.post(
+        "/api/v1/social/posts",
+        json={
+            "body": "onlyfans promo",
+            "spot_id": "spot_echo_beach",
+            "visibility": "public",
+        },
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert rejected_post_response.status_code == 400
+
+    rejected_comment_response = client.post(
+        "/api/v1/social/comments",
+        json={
+            "post_id": post_id,
+            "text": "onlyfans promo",
+        },
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert rejected_comment_response.status_code == 400
 
     posts_response = client.get("/api/v1/social/posts")
     assert posts_response.status_code == 200
