@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
@@ -17,6 +18,22 @@ const _favoriteAccent = Color(0xFF2AA7A1);
 const _allCountriesLabel = 'All Southeast Asia';
 const _allRegionsLabel = 'All regions';
 const _allAreasLabel = 'All areas';
+const _mapTileUrlTemplate = String.fromEnvironment(
+  'MAP_TILE_URL_TEMPLATE',
+  defaultValue: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+);
+const _mapTileUserAgent = String.fromEnvironment(
+  'MAP_TILE_USER_AGENT',
+  defaultValue: 'com.tytaneth.surftravel',
+);
+const _mapAttributionLabel = String.fromEnvironment(
+  'MAP_ATTRIBUTION',
+  defaultValue: '© OpenStreetMap contributors',
+);
+const _mapAttributionUrl = String.fromEnvironment(
+  'MAP_ATTRIBUTION_URL',
+  defaultValue: 'https://www.openstreetmap.org/copyright',
+);
 
 class SpotsMapPage extends ConsumerStatefulWidget {
   const SpotsMapPage({super.key, this.initialSpotId});
@@ -896,8 +913,8 @@ class _MapCanvas extends StatelessWidget {
       ),
       children: [
         TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.example.mobile_flutter',
+          urlTemplate: _mapTileUrlTemplate,
+          userAgentPackageName: _mapTileUserAgent,
         ),
         MarkerLayer(
           markers: spots
@@ -917,7 +934,47 @@ class _MapCanvas extends StatelessWidget {
               )
               .toList(),
         ),
+        const _MapAttributionPill(),
       ],
+    );
+  }
+}
+
+class _MapAttributionPill extends StatelessWidget {
+  const _MapAttributionPill();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Positioned(
+      right: 10,
+      bottom: 10,
+      child: SafeArea(
+        child: Material(
+          color: Colors.white.withValues(alpha: 0.88),
+          borderRadius: BorderRadius.circular(999),
+          elevation: 2,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(999),
+            onTap: _mapAttributionUrl.isEmpty
+                ? null
+                : () => launchUrl(
+                    Uri.parse(_mapAttributionUrl),
+                    mode: LaunchMode.externalApplication,
+                  ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+              child: Text(
+                _mapAttributionLabel,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurface,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
