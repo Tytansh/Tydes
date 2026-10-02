@@ -9,6 +9,7 @@ from app.core.models import (
     SocialEngagementState,
     SocialNotification,
     SocialPost,
+    SocialReport,
     SocialRepost,
     User,
 )
@@ -130,6 +131,42 @@ class PostgresSocialRepository:
             SocialNotification.model_validate(_payload_dict(row["payload"]))
             for row in rows
         ]
+
+    def list_reports(self) -> list[SocialReport]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT payload FROM social_reports
+                ORDER BY created_at DESC
+                LIMIT 500
+                """
+            ).fetchall()
+        return [
+            SocialReport.model_validate(_payload_dict(row["payload"]))
+            for row in rows
+        ]
+
+    def save_report(self, report: SocialReport) -> None:
+        payload = report.model_dump(mode="json")
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO social_reports
+                    (id, reporter_user_id, target_type, target_id, payload, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO UPDATE
+                SET payload = EXCLUDED.payload,
+                    updated_at = NOW()
+                """,
+                (
+                    report.id,
+                    report.reporter_user_id,
+                    report.target_type,
+                    report.target_id,
+                    self._jsonb(payload),
+                    _aware_datetime(report.created_at),
+                ),
+            )
 
     def save_notification(self, notification: SocialNotification) -> None:
         payload = notification.model_dump(mode="json")
@@ -329,6 +366,36 @@ class PostgresSocialRepository:
                 (follower_user_id, user_id),
             )
 
+    def set_block(self, user_id: str, blocked_user_id: str, blocked: bool) -> None:
+        if user_id == blocked_user_id:
+            return
+        with self._connect() as connection:
+            if blocked:
+                connection.execute(
+                    """
+                    INSERT INTO social_blocks (user_id, blocked_user_id)
+                    VALUES (%s, %s)
+                    ON CONFLICT (user_id, blocked_user_id) DO NOTHING
+                    """,
+                    (user_id, blocked_user_id),
+                )
+                connection.execute(
+                    """
+                    DELETE FROM social_follows
+                    WHERE (follower_user_id = %s AND followed_user_id = %s)
+                       OR (follower_user_id = %s AND followed_user_id = %s)
+                    """,
+                    (user_id, blocked_user_id, blocked_user_id, user_id),
+                )
+            else:
+                connection.execute(
+                    """
+                    DELETE FROM social_blocks
+                    WHERE user_id = %s AND blocked_user_id = %s
+                    """,
+                    (user_id, blocked_user_id),
+                )
+
     def relationship_state(self, user_id: str) -> dict[str, list[str]]:
         with self._connect() as connection:
             following_rows = connection.execute(
@@ -347,6 +414,14 @@ class PostgresSocialRepository:
                 """,
                 (user_id,),
             ).fetchall()
+            blocked_rows = connection.execute(
+                """
+                SELECT blocked_user_id FROM social_blocks
+                WHERE user_id = %s
+                ORDER BY blocked_user_id
+                """,
+                (user_id,),
+            ).fetchall()
         return {
             "followed_user_ids": [
                 row["followed_user_id"]
@@ -355,6 +430,10 @@ class PostgresSocialRepository:
             "follower_user_ids": [
                 row["follower_user_id"]
                 for row in follower_rows
+            ],
+            "blocked_user_ids": [
+                row["blocked_user_id"]
+                for row in blocked_rows
             ],
         }
 
@@ -454,8 +533,16 @@ class PostgresSocialRepository:
                 (user_id, user_id),
             )
             connection.execute(
+                "DELETE FROM social_blocks WHERE user_id = %s OR blocked_user_id = %s",
+                (user_id, user_id),
+            )
+            connection.execute(
                 "DELETE FROM social_notifications WHERE recipient_user_id = %s OR actor_user_id = %s",
                 (user_id, user_id),
+            )
+            connection.execute(
+                "DELETE FROM social_reports WHERE reporter_user_id = %s",
+                (user_id,),
             )
 
     def delete_post(self, post_id: str) -> None:
@@ -626,6 +713,38 @@ class PostgresSocialRepository:
             )
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS social_follows_followed_idx ON social_follows (followed_user_id)"
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS social_blocks (
+                    user_id TEXT NOT NULL,
+                    blocked_user_id TEXT NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    PRIMARY KEY (user_id, blocked_user_id)
+                )
+                """
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS social_blocks_blocked_idx ON social_blocks (blocked_user_id)"
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS social_reports (
+                    id TEXT PRIMARY KEY,
+                    reporter_user_id TEXT NOT NULL,
+                    target_type TEXT NOT NULL,
+                    target_id TEXT NOT NULL,
+                    payload JSONB NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS social_reports_target_idx ON social_reports (target_type, target_id)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS social_reports_reporter_idx ON social_reports (reporter_user_id, created_at DESC)"
             )
 
     def _create_user_post_table(self, connection, table: str) -> None:

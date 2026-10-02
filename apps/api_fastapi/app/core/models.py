@@ -208,6 +208,15 @@ class SocialNotification(BaseModel):
     created_at: datetime
 
 
+class SocialReport(BaseModel):
+    id: str
+    reporter_user_id: str
+    target_type: Literal["post", "profile", "comment", "message"]
+    target_id: str
+    reason: str = ""
+    created_at: datetime
+
+
 class SocialEngagementState(BaseModel):
     liked_post_ids: list[str] = Field(default_factory=list)
     reposted_post_ids: list[str] = Field(default_factory=list)

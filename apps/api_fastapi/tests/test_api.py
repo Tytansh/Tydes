@@ -885,6 +885,75 @@ def test_social_feed_and_create_post(monkeypatch):
     assert actor_like_response.status_code == 200
     assert post_id in actor_like_response.json()["liked_post_ids"]
 
+    report_response = client.post(
+        "/api/v1/social/reports",
+        json={
+            "target_type": "post",
+            "target_id": post_id,
+            "reason": "Spam or unsafe meetup",
+        },
+        headers={"Authorization": f"Bearer {actor_token}"},
+    )
+    assert report_response.status_code == 200
+    assert report_response.json()["target_id"] == post_id
+    assert report_response.json()["reporter_user_id"] != owner_user_id
+
+    monkeypatch.setenv("TYDES_ADMIN_TOKEN", "dev-admin-token")
+    reports_response = client.get(
+        "/api/v1/admin/reports",
+        headers={"X-Tydes-Admin-Token": "dev-admin-token"},
+    )
+    assert reports_response.status_code == 200
+    assert any(
+        report["target_id"] == post_id
+        for report in reports_response.json()["reports"]
+    )
+
+    block_response = client.post(
+        f"/api/v1/social/blocks/{owner_user_id}",
+        headers={"Authorization": f"Bearer {actor_token}"},
+    )
+    assert block_response.status_code == 200
+    assert owner_user_id in block_response.json()["blocked_user_ids"]
+    assert owner_user_id not in block_response.json()["followed_user_ids"]
+
+    blocked_posts_response = client.get(
+        "/api/v1/social/posts",
+        headers={"Authorization": f"Bearer {actor_token}"},
+    )
+    assert blocked_posts_response.status_code == 200
+    assert all(
+        post["user_id"] != owner_user_id
+        for post in blocked_posts_response.json()
+    )
+
+    blocked_profiles_response = client.get(
+        "/api/v1/social/profiles",
+        headers={"Authorization": f"Bearer {actor_token}"},
+    )
+    assert blocked_profiles_response.status_code == 200
+    assert all(
+        profile["user_id"] != owner_user_id
+        for profile in blocked_profiles_response.json()
+    )
+
+    unblock_response = client.delete(
+        f"/api/v1/social/blocks/{owner_user_id}",
+        headers={"Authorization": f"Bearer {actor_token}"},
+    )
+    assert unblock_response.status_code == 200
+    assert owner_user_id not in unblock_response.json()["blocked_user_ids"]
+
+    restored_posts_response = client.get(
+        "/api/v1/social/posts",
+        headers={"Authorization": f"Bearer {actor_token}"},
+    )
+    assert restored_posts_response.status_code == 200
+    assert any(
+        post["id"] == post_id
+        for post in restored_posts_response.json()
+    )
+
     notifications_response = client.get(
         "/api/v1/social/notifications",
         headers={"Authorization": f"Bearer {access_token}"},

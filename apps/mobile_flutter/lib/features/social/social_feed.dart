@@ -332,6 +332,8 @@ class TravelFeedSection extends ConsumerWidget {
     final spots = ref.watch(travelFeedSpotsProvider);
     final spotItems = spots.valueOrNull ?? const <SpotModel>[];
     ref.watch(socialEngagementHydrationProvider);
+    ref.watch(socialRelationshipHydrationProvider);
+    final blockedUserIds = ref.watch(blockedUserIdsProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -362,11 +364,14 @@ class TravelFeedSection extends ConsumerWidget {
         ],
         posts.when(
           data: (items) {
-            if (items.isEmpty) return const _EmptyFeedCard();
+            final visiblePosts = items
+                .where((post) => !blockedUserIds.contains(post.userId))
+                .toList();
+            if (visiblePosts.isEmpty) return const _EmptyFeedCard();
             final repostedItems = compact
                 ? const <RepostedPostItem>[]
                 : repostedItemsForFeed(
-                    items,
+                    visiblePosts,
                     ref.watch(visibleRepostedPostIdsProvider),
                     ref.watch(visibleRepostActivityTimesProvider),
                   );
@@ -377,7 +382,7 @@ class TravelFeedSection extends ConsumerWidget {
                   repostHeader: item.header,
                   activityAt: item.activityAt,
                 ),
-              for (final post in items)
+              for (final post in visiblePosts)
                 _FeedPostItem(post: post, activityAt: _postCreatedAt(post)),
             ]..sort((a, b) => b.activityAt.compareTo(a.activityAt));
             final shown = compact ? feedItems.take(4).toList() : feedItems;
@@ -423,6 +428,8 @@ class _FeedPostItem {
   final DateTime activityAt;
   final String? repostHeader;
 }
+
+enum _PostSafetyAction { report, block }
 
 class _RepostHeader extends StatelessWidget {
   const _RepostHeader({required this.label});
@@ -601,8 +608,11 @@ class _PostCard extends ConsumerWidget {
                   ),
                   if (isOwnPost)
                     _SharePostButton(post: post, spot: spot)
-                  else
+                  else ...[
                     FollowButton(userId: post.userId, compact: true),
+                    const SizedBox(width: 4),
+                    _PostSafetyMenu(post: post),
+                  ],
                 ],
               ),
               if (spot != null) ...[
@@ -633,6 +643,158 @@ class _PostCard extends ConsumerWidget {
               PostEngagementBar(post: post),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PostSafetyMenu extends ConsumerWidget {
+  const _PostSafetyMenu({required this.post});
+
+  final SocialPostModel post;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return PopupMenuButton<_PostSafetyAction>(
+      tooltip: 'Post options',
+      icon: const Icon(Icons.more_horiz_rounded),
+      itemBuilder: (context) => const [
+        PopupMenuItem(
+          value: _PostSafetyAction.report,
+          child: Text('Report post'),
+        ),
+        PopupMenuItem(
+          value: _PostSafetyAction.block,
+          child: Text('Block surfer'),
+        ),
+      ],
+      onSelected: (action) {
+        switch (action) {
+          case _PostSafetyAction.report:
+            unawaited(_reportPost(context, ref, post));
+          case _PostSafetyAction.block:
+            unawaited(_confirmAndBlockPostAuthor(context, ref, post));
+        }
+      },
+    );
+  }
+}
+
+Future<void> _reportPost(
+  BuildContext context,
+  WidgetRef ref,
+  SocialPostModel post,
+) async {
+  final reason = await showModalBottomSheet<String>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (context) => _ReportReasonSheet(authorName: post.authorName),
+  );
+  if (reason == null || !context.mounted) return;
+  try {
+    await ref
+        .read(surfRepositoryProvider)
+        .reportSocialContent(
+          targetType: 'post',
+          targetId: post.id,
+          reason: reason,
+        );
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Report sent. Thanks for helping Tydes.')),
+    );
+  } catch (_) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Could not report this post right now.')),
+    );
+  }
+}
+
+Future<void> _confirmAndBlockPostAuthor(
+  BuildContext context,
+  WidgetRef ref,
+  SocialPostModel post,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Block ${post.authorName}?'),
+      content: const Text(
+        'You will not see their posts or profile in Tydes. You can undo this later from future safety settings.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Block'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  await blockSocialUser(ref, post.userId);
+  ref.invalidate(travelFeedPostsProvider);
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text('@${post.authorHandle ?? post.authorName} blocked.'),
+    ),
+  );
+}
+
+class _ReportReasonSheet extends StatelessWidget {
+  const _ReportReasonSheet({required this.authorName});
+
+  final String authorName;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        decoration: BoxDecoration(
+          color: theme.scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text('Report post', style: theme.textTheme.headlineSmall),
+            const SizedBox(height: 8),
+            Text('Tell us what is wrong with $authorName’s post.'),
+            const SizedBox(height: 12),
+            for (final reason in const [
+              'Spam or scam',
+              'Harassment or hate',
+              'Nudity or sexual content',
+              'Dangerous surf meetup',
+            ])
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(reason),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => Navigator.of(context).pop(reason),
+              ),
+          ],
         ),
       ),
     );

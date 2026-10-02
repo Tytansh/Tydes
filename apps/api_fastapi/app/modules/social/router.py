@@ -57,6 +57,12 @@ class SocialCommentCreateRequest(BaseModel):
     reply_to_comment_id: str | None = None
 
 
+class SocialReportCreateRequest(BaseModel):
+    target_type: Literal["post", "profile", "comment", "message"]
+    target_id: str = Field(min_length=1, max_length=120)
+    reason: str = Field(default="", max_length=500)
+
+
 def require_authenticated_user(request: Request):
     if not getattr(request.state, "authenticated_user", False):
         raise HTTPException(status_code=401, detail="Sign in required")
@@ -69,8 +75,13 @@ def list_friends():
 
 
 @router.get("/posts")
-def list_posts():
-    return list(store.list_posts())
+def list_posts(request: Request):
+    current_user_id = (
+        store.user.id
+        if getattr(request.state, "authenticated_user", False)
+        else None
+    )
+    return list(store.list_posts(current_user_id=current_user_id))
 
 
 @router.get("/engagement")
@@ -111,6 +122,34 @@ def unfollow_user(user_id: str, _user=Depends(require_authenticated_user)):
 @router.delete("/followers/{user_id}")
 def remove_follower(user_id: str, _user=Depends(require_authenticated_user)):
     return store.remove_follower(user_id)
+
+
+@router.post("/blocks/{user_id}")
+def block_user(user_id: str, _user=Depends(require_authenticated_user)):
+    return store.set_user_block(user_id, True)
+
+
+@router.delete("/blocks/{user_id}")
+def unblock_user(user_id: str, _user=Depends(require_authenticated_user)):
+    return store.set_user_block(user_id, False)
+
+
+@router.post("/reports")
+def report_social_content(
+    payload: SocialReportCreateRequest,
+    _user=Depends(require_authenticated_user),
+):
+    try:
+        ensure_allowed_content(payload.reason)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    return store.create_social_report(
+        report_id=f"report_{uuid4().hex[:10]}",
+        target_type=payload.target_type,
+        target_id=payload.target_id,
+        reason=payload.reason,
+    )
 
 
 @router.post("/posts/{post_id}/likes")

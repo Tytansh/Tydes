@@ -22,3 +22,13 @@ def list_users(x_tydes_admin_token: str | None = Header(default=None)):
     require_admin_token(x_tydes_admin_token)
     users = store.list_auth_users()
     return {"count": len(users), "users": users}
+
+
+@router.get("/reports")
+def list_reports(x_tydes_admin_token: str | None = Header(default=None)):
+    require_admin_token(x_tydes_admin_token)
+    reports = [
+        report.model_dump(mode="json")
+        for report in store.list_social_reports()
+    ]
+    return {"count": len(reports), "reports": reports}

@@ -265,13 +265,18 @@ class _PeopleSearchPageState extends ConsumerState<PeopleSearchPage> {
     final friends = ref.watch(feedFriendsProvider);
     final socialProfiles = ref.watch(socialProfilesProvider);
     final posts = ref.watch(travelFeedPostsProvider);
+    ref.watch(socialRelationshipHydrationProvider);
+    final blockedUserIds = ref.watch(blockedUserIdsProvider);
     final profiles = _searchProfiles(
       me: me.valueOrNull,
       friends: friends.valueOrNull ?? const [],
       socialProfiles: socialProfiles.valueOrNull ?? const [],
       posts: posts.valueOrNull ?? const [],
     );
-    final results = _filterProfiles(profiles: profiles, query: _query);
+    final results = _filterProfiles(
+      profiles: profiles,
+      query: _query,
+    ).where((profile) => !blockedUserIds.contains(profile.userId)).toList();
     return Scaffold(
       appBar: AppBar(title: const Text('Find surfers')),
       body: ListView(

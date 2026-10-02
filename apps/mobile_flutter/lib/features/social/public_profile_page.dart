@@ -48,6 +48,7 @@ class PublicProfilePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final bundle = ref.watch(_publicProfileBundleProvider);
     ref.watch(socialEngagementHydrationProvider);
+    ref.watch(socialRelationshipHydrationProvider);
     final loadedData = bundle.valueOrNull;
     final headerProfile = loadedData == null
         ? seedProfile
@@ -65,6 +66,8 @@ class PublicProfilePage extends ConsumerWidget {
               icon: const Icon(Icons.send_rounded),
               tooltip: 'Message',
             ),
+          if (headerProfile != null && headerIsMe != true)
+            _PublicProfileSafetyMenu(profile: headerProfile),
         ],
       ),
       body: RefreshIndicator.adaptive(
@@ -72,8 +75,10 @@ class PublicProfilePage extends ConsumerWidget {
         child: bundle.when(
           data: (data) {
             final profile = _buildResolvedProfile(userId, seedProfile, data);
+            final blockedUserIds = ref.watch(blockedUserIdsProvider);
+            final profileIsBlocked = blockedUserIds.contains(userId);
             final userPosts = data.posts
-                .where((post) => post.userId == userId)
+                .where((post) => post.userId == userId && !profileIsBlocked)
                 .toList();
             if (initialPostId != null) {
               userPosts.sort((a, b) {
@@ -125,7 +130,10 @@ class PublicProfilePage extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 18),
-                if (!isMe) FollowButton(userId: profile.userId, expanded: true),
+                if (profileIsBlocked)
+                  const _BlockedProfileNotice()
+                else if (!isMe)
+                  FollowButton(userId: profile.userId, expanded: true),
                 const SizedBox(height: 22),
                 Text('Posts', style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 12),
@@ -168,6 +176,129 @@ class PublicProfilePage extends ConsumerWidget {
             padding: const EdgeInsets.all(20),
             children: [Text('Could not load profile: $error')],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+enum _PublicProfileSafetyAction { report, block }
+
+class _PublicProfileSafetyMenu extends ConsumerWidget {
+  const _PublicProfileSafetyMenu({required this.profile});
+
+  final PublicProfilePreview profile;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return PopupMenuButton<_PublicProfileSafetyAction>(
+      tooltip: 'Profile options',
+      icon: const Icon(Icons.more_horiz_rounded),
+      itemBuilder: (context) => const [
+        PopupMenuItem(
+          value: _PublicProfileSafetyAction.report,
+          child: Text('Report profile'),
+        ),
+        PopupMenuItem(
+          value: _PublicProfileSafetyAction.block,
+          child: Text('Block surfer'),
+        ),
+      ],
+      onSelected: (action) async {
+        switch (action) {
+          case _PublicProfileSafetyAction.report:
+            await _reportProfile(context, ref, profile);
+          case _PublicProfileSafetyAction.block:
+            await _confirmAndBlockProfile(context, ref, profile);
+        }
+      },
+    );
+  }
+}
+
+Future<void> _reportProfile(
+  BuildContext context,
+  WidgetRef ref,
+  PublicProfilePreview profile,
+) async {
+  try {
+    await ref
+        .read(surfRepositoryProvider)
+        .reportSocialContent(
+          targetType: 'profile',
+          targetId: profile.userId,
+          reason: 'Profile report',
+        );
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Report sent. Thanks for helping Tydes.')),
+    );
+  } catch (_) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Could not report this profile right now.')),
+    );
+  }
+}
+
+Future<void> _confirmAndBlockProfile(
+  BuildContext context,
+  WidgetRef ref,
+  PublicProfilePreview profile,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Block ${profile.displayName}?'),
+      content: const Text(
+        'You will not see their posts or profile in Tydes. You can undo this later from future safety settings.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Block'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  await blockSocialUser(ref, profile.userId);
+  ref.invalidate(_publicProfileBundleProvider);
+  ref.invalidate(travelFeedPostsProvider);
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text('@${profile.handle ?? profile.displayName} blocked.'),
+    ),
+  );
+  if (Navigator.of(context).canPop()) {
+    Navigator.of(context).pop();
+  }
+}
+
+class _BlockedProfileNotice extends StatelessWidget {
+  const _BlockedProfileNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          children: [
+            const Icon(Icons.block_rounded),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'You blocked this surfer. Their posts are hidden from your feed.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+          ],
         ),
       ),
     );

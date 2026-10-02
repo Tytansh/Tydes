@@ -596,9 +596,12 @@ class _NewMessageSheetState extends ConsumerState<_NewMessageSheet> {
   Widget build(BuildContext context) {
     final q = _query.trim().toLowerCase().replaceFirst('@', '');
     final realProfiles = ref.watch(dmSocialProfilesProvider);
+    ref.watch(socialRelationshipHydrationProvider);
+    final blockedUserIds = ref.watch(blockedUserIdsProvider);
     final profiles = _filteredMessageableProfiles(
       realProfiles: realProfiles.valueOrNull ?? const [],
       fallbackProfiles: _messageableProfiles,
+      blockedUserIds: blockedUserIds,
       query: q,
     );
 
@@ -702,12 +705,14 @@ class _MessagePeopleErrorCard extends StatelessWidget {
 List<PublicProfilePreview> _filteredMessageableProfiles({
   required List<SocialProfileModel> realProfiles,
   required List<PublicProfilePreview> fallbackProfiles,
+  required Set<String> blockedUserIds,
   required String query,
 }) {
   final ranked = <String, _RankedMessageProfile>{};
 
   void addProfile(PublicProfilePreview profile, int priority) {
     if (profile.userId == 'usr_demo') return;
+    if (blockedUserIds.contains(profile.userId)) return;
     final handle = _normalizeMessageSearch(profile.handle ?? '');
     final key = handle.isEmpty ? 'id:${profile.userId}' : 'handle:$handle';
     final existing = ranked[key];
@@ -1629,6 +1634,7 @@ void _setMiniFollowed(WidgetRef ref, String userId, bool followed) {
           followedUserIds: ref.read(followedUserIdsProvider),
           hiddenFollowingUserIds: ref.read(hiddenFollowingUserIdsProvider),
           hiddenFollowerUserIds: ref.read(hiddenFollowerUserIdsProvider),
+          blockedUserIds: ref.read(blockedUserIdsProvider),
         ),
   );
   unawaited(_syncMiniFollowToBackend(ref, userId, followed));

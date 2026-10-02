@@ -22,6 +22,7 @@ from app.core.models import (
     SocialEngagementState,
     SocialNotification,
     SocialPost,
+    SocialReport,
     SocialRepost,
     Spot,
     SurfWindowForecast,
@@ -78,6 +79,8 @@ class DemoStore:
         self.rsvp_post_ids: set[str] = set()
         self.followed_user_ids: set[str] = set()
         self.follower_user_ids: set[str] = set()
+        self.blocked_user_ids: set[str] = set()
+        self.social_reports: list[SocialReport] = []
         self.weather_provider = OpenMeteoMarineProvider()
         self.tide_provider = TideCheckProvider()
         self.waitlist_emails: list[str] = []
@@ -843,6 +846,7 @@ class DemoStore:
     def list_social_profiles(self, current_user_id: str | None = None) -> list[dict[str, object]]:
         if self.postgres_auth is not None:
             self._sync_auth_from_postgres()
+        blocked_user_ids = self._blocked_user_ids_for(current_user_id)
         profiles: list[dict[str, object]] = []
         for email, account in sorted(self.auth_accounts.items()):
             user_payload = account.get("user")
@@ -857,6 +861,7 @@ class DemoStore:
             if (
                 (current_user_id is not None and user.id == current_user_id)
                 or user.id == "usr_demo"
+                or user.id in blocked_user_ids
                 or email.endswith("@surftravel.app")
                 or not handle
                 or not display_name
@@ -882,16 +887,23 @@ class DemoStore:
         return {
             "followed_user_ids": sorted(self.followed_user_ids),
             "follower_user_ids": sorted(self.follower_user_ids),
+            "blocked_user_ids": sorted(self.blocked_user_ids),
         }
 
     def list_social_notifications(self) -> list[SocialNotification]:
+        blocked_user_ids = self._blocked_user_ids_for(self.user.id)
         if self.postgres_social is not None:
-            return self.postgres_social.list_notifications(self.user.id)
+            return [
+                notification
+                for notification in self.postgres_social.list_notifications(self.user.id)
+                if notification.actor_user_id not in blocked_user_ids
+            ]
         return sorted(
             [
                 notification
                 for notification in self.social_notifications
                 if notification.recipient_user_id == self.user.id
+                and notification.actor_user_id not in blocked_user_ids
             ],
             key=lambda notification: notification.created_at,
             reverse=True,
@@ -902,14 +914,33 @@ class DemoStore:
         if not normalized_user_id or normalized_user_id == self.user.id:
             return self.social_relationship_state()
         if self.postgres_social is not None:
+            if following:
+                self.postgres_social.set_block(self.user.id, normalized_user_id, False)
             self.postgres_social.set_follow(self.user.id, normalized_user_id, following)
             self._set_follow_notification(normalized_user_id, following)
             return self.social_relationship_state()
         if following:
+            self.blocked_user_ids.discard(normalized_user_id)
             self.followed_user_ids.add(normalized_user_id)
         else:
             self.followed_user_ids.discard(normalized_user_id)
         self._set_follow_notification(normalized_user_id, following)
+        self._save_state()
+        return self.social_relationship_state()
+
+    def set_user_block(self, blocked_user_id: str, blocked: bool) -> dict[str, list[str]]:
+        normalized_user_id = blocked_user_id.strip()
+        if not normalized_user_id or normalized_user_id == self.user.id:
+            return self.social_relationship_state()
+        if self.postgres_social is not None:
+            self.postgres_social.set_block(self.user.id, normalized_user_id, blocked)
+            return self.social_relationship_state()
+        if blocked:
+            self.blocked_user_ids.add(normalized_user_id)
+            self.followed_user_ids.discard(normalized_user_id)
+            self.follower_user_ids.discard(normalized_user_id)
+        else:
+            self.blocked_user_ids.discard(normalized_user_id)
         self._save_state()
         return self.social_relationship_state()
 
@@ -924,10 +955,15 @@ class DemoStore:
         self._save_state()
         return self.social_relationship_state()
 
-    def list_posts(self) -> Iterable[SocialPost]:
+    def list_posts(self, current_user_id: str | None = None) -> Iterable[SocialPost]:
         if self.postgres_social is not None:
             self._sync_social_from_postgres()
+        blocked_user_ids = self._blocked_user_ids_for(current_user_id)
         posts = sorted(self.posts, key=lambda post: post.created_at, reverse=True)
+        if blocked_user_ids:
+            posts = [
+                post for post in posts if post.user_id not in blocked_user_ids
+            ]
         if uses_local_media_storage():
             return posts
         return [
@@ -1111,6 +1147,38 @@ class DemoStore:
             None,
         )
 
+    def create_social_report(
+        self,
+        *,
+        report_id: str,
+        target_type: Literal["post", "profile", "comment", "message"],
+        target_id: str,
+        reason: str,
+    ) -> SocialReport:
+        report = SocialReport(
+            id=report_id,
+            reporter_user_id=self.user.id,
+            target_type=target_type,
+            target_id=target_id.strip(),
+            reason=reason.strip()[:500],
+            created_at=datetime.now(timezone.utc),
+        )
+        if self.postgres_social is not None:
+            self.postgres_social.save_report(report)
+            return report
+        self.social_reports.insert(0, report)
+        self._save_state()
+        return report
+
+    def list_social_reports(self) -> list[SocialReport]:
+        if self.postgres_social is not None:
+            return self.postgres_social.list_reports()
+        return sorted(
+            self.social_reports,
+            key=lambda report: report.created_at,
+            reverse=True,
+        )
+
     def _set_follow_notification(self, recipient_user_id: str, active: bool) -> None:
         notification_id = f"notif_follow_{self.user.id}_{recipient_user_id}"
         if not active:
@@ -1182,6 +1250,20 @@ class DemoStore:
         self.posts = self.postgres_social.list_posts()
         self.comments = self.postgres_social.list_comments()
 
+    def _blocked_user_ids_for(self, user_id: str | None) -> set[str]:
+        if user_id is None:
+            return set()
+        if self.postgres_social is not None:
+            relationship_state = self.postgres_social.relationship_state(user_id)
+            return {
+                str(item).strip()
+                for item in relationship_state.get("blocked_user_ids", [])
+                if str(item).strip()
+            }
+        if user_id == self.user.id:
+            return set(self.blocked_user_ids)
+        return set()
+
     def _load_state(self) -> None:
         if not self.state_file.exists():
             return
@@ -1227,6 +1309,13 @@ class DemoStore:
                 for item in notifications_data
             ]
 
+        reports_data = data.get("social_reports")
+        if isinstance(reports_data, list):
+            self.social_reports = [
+                SocialReport.model_validate(item)
+                for item in reports_data
+            ]
+
         engagement_data = data.get("social_engagement")
         if isinstance(engagement_data, dict):
             state = SocialEngagementState.model_validate(engagement_data)
@@ -1259,6 +1348,13 @@ class DemoStore:
                 self.follower_user_ids = {
                     str(user_id).strip()
                     for user_id in follower_user_ids
+                    if str(user_id).strip()
+                }
+            blocked_user_ids = relationship_data.get("blocked_user_ids")
+            if isinstance(blocked_user_ids, list):
+                self.blocked_user_ids = {
+                    str(user_id).strip()
+                    for user_id in blocked_user_ids
                     if str(user_id).strip()
                 }
 
@@ -1340,6 +1436,10 @@ class DemoStore:
             "social_notifications": [
                 notification.model_dump(mode="json")
                 for notification in self.social_notifications
+            ],
+            "social_reports": [
+                report.model_dump(mode="json")
+                for report in self.social_reports
             ],
             "social_engagement": self.social_engagement_state().model_dump(
                 mode="json"

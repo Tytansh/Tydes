@@ -801,6 +801,31 @@ class SurfRepository {
     return SocialRelationshipModel.fromJson(response.data!);
   }
 
+  Future<SocialRelationshipModel> setUserBlocked({
+    required String userId,
+    required bool blocked,
+  }) async {
+    final response = blocked
+        ? await _dio.post<Map<String, dynamic>>('/social/blocks/$userId')
+        : await _dio.delete<Map<String, dynamic>>('/social/blocks/$userId');
+    return SocialRelationshipModel.fromJson(response.data!);
+  }
+
+  Future<void> reportSocialContent({
+    required String targetType,
+    required String targetId,
+    String reason = '',
+  }) async {
+    await _dio.post<Map<String, dynamic>>(
+      '/social/reports',
+      data: {
+        'target_type': targetType,
+        'target_id': targetId,
+        'reason': reason,
+      },
+    );
+  }
+
   Future<SocialEngagementModel> setPostLike({
     required String postId,
     required bool liked,

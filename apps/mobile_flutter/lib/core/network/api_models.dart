@@ -747,10 +747,12 @@ class SocialRelationshipModel {
   SocialRelationshipModel({
     required this.followedUserIds,
     required this.followerUserIds,
+    required this.blockedUserIds,
   });
 
   final Set<String> followedUserIds;
   final Set<String> followerUserIds;
+  final Set<String> blockedUserIds;
 
   factory SocialRelationshipModel.fromJson(Map<String, dynamic> json) =>
       SocialRelationshipModel(
@@ -759,6 +761,9 @@ class SocialRelationshipModel {
         ),
         followerUserIds: Set<String>.from(
           json['follower_user_ids'] as List<dynamic>? ?? const [],
+        ),
+        blockedUserIds: Set<String>.from(
+          json['blocked_user_ids'] as List<dynamic>? ?? const [],
         ),
       );
 }

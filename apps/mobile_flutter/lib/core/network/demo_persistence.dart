@@ -10,11 +10,13 @@ class DemoSocialRelationshipState {
     required this.followedUserIds,
     required this.hiddenFollowingUserIds,
     required this.hiddenFollowerUserIds,
+    required this.blockedUserIds,
   });
 
   final Set<String> followedUserIds;
   final Set<String> hiddenFollowingUserIds;
   final Set<String> hiddenFollowerUserIds;
+  final Set<String> blockedUserIds;
 }
 
 class DemoPersistence {
@@ -130,6 +132,7 @@ class DemoPersistence {
           followedUserIds: {},
           hiddenFollowingUserIds: {},
           hiddenFollowerUserIds: {},
+          blockedUserIds: {},
         );
       }
       final payload =
@@ -140,12 +143,14 @@ class DemoPersistence {
           payload['hidden_following_user_ids'],
         ),
         hiddenFollowerUserIds: _stringSet(payload['hidden_follower_user_ids']),
+        blockedUserIds: _stringSet(payload['blocked_user_ids']),
       );
     } catch (_) {
       return const DemoSocialRelationshipState(
         followedUserIds: {},
         hiddenFollowingUserIds: {},
         hiddenFollowerUserIds: {},
+        blockedUserIds: {},
       );
     }
   }
@@ -154,6 +159,7 @@ class DemoPersistence {
     required Set<String> followedUserIds,
     required Set<String> hiddenFollowingUserIds,
     required Set<String> hiddenFollowerUserIds,
+    required Set<String> blockedUserIds,
   }) async {
     try {
       final file = await _socialRelationshipsFile();
@@ -161,6 +167,7 @@ class DemoPersistence {
         'followed_user_ids': followedUserIds.toList()..sort(),
         'hidden_following_user_ids': hiddenFollowingUserIds.toList()..sort(),
         'hidden_follower_user_ids': hiddenFollowerUserIds.toList()..sort(),
+        'blocked_user_ids': blockedUserIds.toList()..sort(),
       };
       await file.writeAsString(jsonEncode(payload));
     } catch (_) {

@@ -9,6 +9,7 @@ import '../../core/network/surf_repository.dart';
 
 final followedUserIdsProvider = StateProvider<Set<String>>((ref) => {});
 final followerUserIdsProvider = StateProvider<Set<String>>((ref) => {});
+final blockedUserIdsProvider = StateProvider<Set<String>>((ref) => {});
 final hiddenFollowingUserIdsProvider = StateProvider<Set<String>>((ref) => {});
 final hiddenFollowerUserIdsProvider = StateProvider<Set<String>>((ref) => {});
 final socialRelationshipHydrationProvider = FutureProvider<void>((ref) async {
@@ -19,6 +20,7 @@ final socialRelationshipHydrationProvider = FutureProvider<void>((ref) async {
       saved.hiddenFollowingUserIds;
   ref.read(hiddenFollowerUserIdsProvider.notifier).state =
       saved.hiddenFollowerUserIds;
+  ref.read(blockedUserIdsProvider.notifier).state = saved.blockedUserIds;
   try {
     final relationships = await ref
         .read(surfRepositoryProvider)
@@ -216,6 +218,7 @@ const _defaultFollowedUserIds = {
 };
 
 bool _isFollowingUser(WidgetRef ref, String userId) {
+  if (ref.watch(blockedUserIdsProvider).contains(userId)) return false;
   final hiddenFollowingUserIds = ref.watch(hiddenFollowingUserIdsProvider);
   if (hiddenFollowingUserIds.contains(userId)) return false;
   return ref.watch(followedUserIdsProvider).contains(userId) ||
@@ -223,6 +226,9 @@ bool _isFollowingUser(WidgetRef ref, String userId) {
 }
 
 void _followUser(WidgetRef ref, String userId) {
+  ref.read(blockedUserIdsProvider.notifier).state = {
+    ...ref.read(blockedUserIdsProvider),
+  }..remove(userId);
   ref.read(hiddenFollowingUserIdsProvider.notifier).state = {
     ...ref.read(hiddenFollowingUserIdsProvider),
   }..remove(userId);
@@ -275,6 +281,34 @@ Future<void> _removeFollowerOnBackend(WidgetRef ref, String userId) async {
   }
 }
 
+Future<void> blockSocialUser(WidgetRef ref, String userId) async {
+  if (userId.trim().isEmpty) return;
+  ref.read(blockedUserIdsProvider.notifier).state = {
+    ...ref.read(blockedUserIdsProvider),
+    userId,
+  };
+  ref.read(followedUserIdsProvider.notifier).state = {
+    ...ref.read(followedUserIdsProvider),
+  }..remove(userId);
+  ref.read(followerUserIdsProvider.notifier).state = {
+    ...ref.read(followerUserIdsProvider),
+  }..remove(userId);
+  ref.read(hiddenFollowingUserIdsProvider.notifier).state = {
+    ...ref.read(hiddenFollowingUserIdsProvider),
+    userId,
+  };
+  _persistSocialRelationships(ref);
+  try {
+    final relationships = await ref
+        .read(surfRepositoryProvider)
+        .setUserBlocked(userId: userId, blocked: true);
+    _applySocialRelationships(ref, relationships);
+    _persistSocialRelationships(ref);
+  } catch (_) {
+    // Keep the local block active if the network request fails.
+  }
+}
+
 void _applySocialRelationships(
   dynamic ref,
   SocialRelationshipModel relationships,
@@ -283,6 +317,8 @@ void _applySocialRelationships(
       relationships.followedUserIds;
   ref.read(followerUserIdsProvider.notifier).state =
       relationships.followerUserIds;
+  ref.read(blockedUserIdsProvider.notifier).state =
+      relationships.blockedUserIds;
 }
 
 void _persistSocialRelationships(WidgetRef ref) {
@@ -293,6 +329,7 @@ void _persistSocialRelationships(WidgetRef ref) {
           followedUserIds: ref.read(followedUserIdsProvider),
           hiddenFollowingUserIds: ref.read(hiddenFollowingUserIdsProvider),
           hiddenFollowerUserIds: ref.read(hiddenFollowerUserIdsProvider),
+          blockedUserIds: ref.read(blockedUserIdsProvider),
         ),
   );
 }
@@ -348,11 +385,13 @@ class _ProfilePeopleSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final blockedUserIds = ref.watch(blockedUserIdsProvider);
     final hiddenFollowingUserIds = ref.watch(hiddenFollowingUserIdsProvider);
     final hiddenFollowerUserIds = ref.watch(hiddenFollowerUserIdsProvider);
     final visiblePeople = people
         .where(
           (person) =>
+              !blockedUserIds.contains(person.profile.userId) &&
               (!person.forceFollowing ||
                   !hiddenFollowingUserIds.contains(person.profile.userId)) &&
               (!person.forceFollowerActions ||
