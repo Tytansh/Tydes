@@ -990,9 +990,7 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
     final bio = _bioController.text.trim();
 
     if (displayName.isEmpty || handle.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Name and @tag are required.')),
-      );
+      _showProfileErrorDialog('Name and @tag are required.');
       return;
     }
 
@@ -1031,12 +1029,33 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
         setState(() => _handleError = 'Tag already taken');
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+      _showProfileErrorDialog(message);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  void _showProfileErrorDialog(String message) {
+    final isCommunityRulesError = message.toLowerCase().contains(
+      'community rules',
+    );
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          isCommunityRulesError
+              ? 'Tydes community guidelines'
+              : 'Could not save profile',
+        ),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _pickAvatar() async {
