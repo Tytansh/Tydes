@@ -28,6 +28,12 @@ final socialPostsProvider = FutureProvider((ref) {
   return ref.watch(surfRepositoryProvider).fetchSocialPosts();
 });
 
+final blockedSocialProfilesProvider = FutureProvider((ref) {
+  ref.watch(socialRefreshKeyProvider);
+  ref.watch(blockedUserIdsProvider);
+  return ref.watch(surfRepositoryProvider).fetchBlockedSocialProfiles();
+});
+
 final unreadSocialNotificationsProvider = StateProvider<int>((ref) => 0);
 
 class SettingsPage extends ConsumerWidget {
@@ -72,6 +78,10 @@ class SettingsPage extends ConsumerWidget {
         onManagePremium: () {
           Navigator.of(context).pop();
           context.push('/paywall');
+        },
+        onBlockedUsers: () {
+          Navigator.of(context).pop();
+          _openBlockedUsers(context, ref);
         },
         onLogout: () async {
           await ref.read(surfRepositoryProvider).logout();
@@ -131,6 +141,14 @@ class SettingsPage extends ConsumerWidget {
     );
   }
 
+  Future<void> _openBlockedUsers(BuildContext context, WidgetRef ref) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => const _BlockedUsersSheet(),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final me = ref.watch(meProvider);
@@ -139,6 +157,7 @@ class SettingsPage extends ConsumerWidget {
     final spots = ref.watch(spotsProvider);
     final followedUserIds = ref.watch(followedUserIdsProvider);
     final followerUserIds = ref.watch(followerUserIdsProvider);
+    final blockedUserIds = ref.watch(blockedUserIdsProvider);
     final hiddenFollowingUserIds = ref.watch(hiddenFollowingUserIdsProvider);
     final hiddenFollowerUserIds = ref.watch(hiddenFollowerUserIdsProvider);
     final unreadMessageThreads = ref.watch(
@@ -150,6 +169,7 @@ class SettingsPage extends ConsumerWidget {
       visibleRepostActivityTimesProvider,
     );
     ref.watch(socialEngagementHydrationProvider);
+    ref.watch(socialRelationshipHydrationProvider);
     final followingPeople = _profileFriendPeople(
       friends.valueOrNull ?? const [],
       followedUserIds,
@@ -163,6 +183,7 @@ class SettingsPage extends ConsumerWidget {
       ...followingPeople.map((person) => person.profile.userId),
       ...followerPeople.map((person) => person.profile.userId),
       ...followedUserIds,
+      ...blockedUserIds,
     };
     final suggestions = _profileSuggestions(excludedSuggestionIds);
 
@@ -851,6 +872,7 @@ class _ProfileSettingsSheet extends StatelessWidget {
     required this.premium,
     required this.onEditProfile,
     required this.onManagePremium,
+    required this.onBlockedUsers,
     required this.onLogout,
     required this.onDeleteAccount,
   });
@@ -859,6 +881,7 @@ class _ProfileSettingsSheet extends StatelessWidget {
   final bool premium;
   final VoidCallback? onEditProfile;
   final VoidCallback onManagePremium;
+  final VoidCallback onBlockedUsers;
   final VoidCallback onLogout;
   final VoidCallback onDeleteAccount;
 
@@ -911,6 +934,15 @@ class _ProfileSettingsSheet extends StatelessWidget {
             const Divider(),
             ListTile(
               contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.block_outlined),
+              title: const Text('Blocked surfers'),
+              subtitle: const Text('View or unblock accounts'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: onBlockedUsers,
+            ),
+            const Divider(),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.logout),
               title: const Text('Log out'),
               subtitle: const Text('Sign in with a different account'),
@@ -935,6 +967,198 @@ class _ProfileSettingsSheet extends StatelessWidget {
       ),
     );
   }
+}
+
+class _BlockedUsersSheet extends ConsumerWidget {
+  const _BlockedUsersSheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final blockedIds = ref.watch(blockedUserIdsProvider);
+    final blockedProfiles = ref.watch(blockedSocialProfilesProvider);
+    ref.watch(socialRelationshipHydrationProvider);
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD5D0C6),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text('Blocked surfers', style: theme.textTheme.titleLarge),
+            const SizedBox(height: 6),
+            Text(
+              'Blocked accounts cannot appear in your feed, search, or new-message picker.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Flexible(
+              child: blockedProfiles.when(
+                data: (profiles) {
+                  final people = _blockedProfilePreviews(profiles, blockedIds);
+                  if (people.isEmpty) return const _NoBlockedUsersCard();
+                  return ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: people.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) =>
+                        _BlockedUserTile(profile: people[index]),
+                  );
+                },
+                loading: () {
+                  if (blockedIds.isEmpty) return const _NoBlockedUsersCard();
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 28),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                },
+                error: (_, _) {
+                  final people = _blockedProfilePreviews(const [], blockedIds);
+                  if (people.isEmpty) return const _NoBlockedUsersCard();
+                  return ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: people.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) =>
+                        _BlockedUserTile(profile: people[index]),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NoBlockedUsersCard extends StatelessWidget {
+  const _NoBlockedUsersCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Card(
+      child: Padding(
+        padding: EdgeInsets.all(18),
+        child: Text('No blocked surfers.'),
+      ),
+    );
+  }
+}
+
+class _BlockedUserTile extends ConsumerWidget {
+  const _BlockedUserTile({required this.profile});
+
+  final PublicProfilePreview profile;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: tydesAvatarBackground,
+              backgroundImage: profile.avatarUrl == null
+                  ? null
+                  : NetworkImage(profile.avatarUrl!),
+              child: profile.avatarUrl == null
+                  ? Text(
+                      tydesProfileInitial(profile.displayName),
+                      style: const TextStyle(
+                        color: tydesAvatarForeground,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    profile.displayName,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  Text(
+                    (profile.handle ?? '').isEmpty
+                        ? 'Blocked on Tydes'
+                        : '@${profile.handle}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton(
+              onPressed: () => _unblockProfile(context, ref, profile),
+              child: const Text('Unblock'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _unblockProfile(
+    BuildContext context,
+    WidgetRef ref,
+    PublicProfilePreview profile,
+  ) async {
+    await unblockSocialUser(ref, profile.userId);
+    ref.invalidate(blockedSocialProfilesProvider);
+    ref.invalidate(socialProfilesProvider);
+    ref.invalidate(travelFeedPostsProvider);
+    ref.invalidate(socialPostsProvider);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('@${profile.handle ?? profile.displayName} unblocked.'),
+      ),
+    );
+  }
+}
+
+List<PublicProfilePreview> _blockedProfilePreviews(
+  List<SocialProfileModel> profiles,
+  Set<String> blockedIds,
+) {
+  final byId = <String, PublicProfilePreview>{};
+  for (final profile in profiles) {
+    if (!blockedIds.contains(profile.userId)) continue;
+    byId[profile.userId] = PublicProfilePreview(
+      userId: profile.userId,
+      displayName: profile.displayName,
+      handle: profile.handle,
+      avatarUrl: profile.avatarUrl,
+      premium: profile.premium,
+      subtitle: profile.subtitle,
+      location: profile.location,
+      surfSkill: profile.surfSkill ?? 'beginner',
+    );
+  }
+  for (final userId in blockedIds) {
+    byId.putIfAbsent(userId, () => _profilePreviewFromUserId(userId));
+  }
+  return byId.values.toList()
+    ..sort((a, b) => a.displayName.compareTo(b.displayName));
 }
 
 class _EditProfileSheet extends ConsumerStatefulWidget {

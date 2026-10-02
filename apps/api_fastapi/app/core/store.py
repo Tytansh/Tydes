@@ -881,6 +881,57 @@ class DemoStore:
             )
         return profiles
 
+    def list_blocked_social_profiles(self) -> list[dict[str, object]]:
+        if self.postgres_auth is not None:
+            self._sync_auth_from_postgres()
+        blocked_user_ids = self._blocked_user_ids_for(self.user.id)
+        profiles = self._social_profiles_for_user_ids(blocked_user_ids)
+        known_user_ids = {str(profile.get("user_id")) for profile in profiles}
+        for user_id in sorted(blocked_user_ids - known_user_ids):
+            profiles.append(
+                {
+                    "user_id": user_id,
+                    "display_name": "Blocked surfer",
+                    "handle": None,
+                    "avatar_url": None,
+                    "premium": False,
+                    "location": None,
+                    "subtitle": "Blocked on Tydes",
+                    "surf_skill": None,
+                }
+            )
+        return profiles
+
+    def _social_profiles_for_user_ids(self, user_ids: set[str]) -> list[dict[str, object]]:
+        profiles: list[dict[str, object]] = []
+        if not user_ids:
+            return profiles
+        for account in self.auth_accounts.values():
+            user_payload = account.get("user")
+            if not isinstance(user_payload, dict):
+                continue
+            try:
+                user = User.model_validate(user_payload)
+            except ValueError:
+                continue
+            if user.id not in user_ids:
+                continue
+            handle = user.handle.strip().lower().lstrip("@")
+            display_name = user.display_name.strip() or "Blocked surfer"
+            profiles.append(
+                {
+                    "user_id": user.id,
+                    "display_name": display_name,
+                    "handle": handle or None,
+                    "avatar_url": user.avatar_url,
+                    "premium": user.premium,
+                    "location": user.home_region or None,
+                    "subtitle": "Blocked on Tydes",
+                    "surf_skill": user.surf_skill or None,
+                }
+            )
+        return profiles
+
     def social_relationship_state(self) -> dict[str, list[str]]:
         if self.postgres_social is not None:
             return self.postgres_social.relationship_state(self.user.id)

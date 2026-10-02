@@ -786,7 +786,7 @@ class _ReportReasonSheet extends StatelessWidget {
               'Spam or scam',
               'Harassment or hate',
               'Nudity or sexual content',
-              'Dangerous surf meetup',
+              'Dangerous event or sexual services',
             ])
               ListTile(
                 contentPadding: EdgeInsets.zero,

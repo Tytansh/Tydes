@@ -309,6 +309,23 @@ Future<void> blockSocialUser(WidgetRef ref, String userId) async {
   }
 }
 
+Future<void> unblockSocialUser(WidgetRef ref, String userId) async {
+  if (userId.trim().isEmpty) return;
+  ref.read(blockedUserIdsProvider.notifier).state = {
+    ...ref.read(blockedUserIdsProvider),
+  }..remove(userId);
+  _persistSocialRelationships(ref);
+  try {
+    final relationships = await ref
+        .read(surfRepositoryProvider)
+        .setUserBlocked(userId: userId, blocked: false);
+    _applySocialRelationships(ref, relationships);
+    _persistSocialRelationships(ref);
+  } catch (_) {
+    // Keep the optimistic unblock; the next hydration will reconcile it.
+  }
+}
+
 void _applySocialRelationships(
   dynamic ref,
   SocialRelationshipModel relationships,

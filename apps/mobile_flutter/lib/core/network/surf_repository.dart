@@ -772,6 +772,15 @@ class SurfRepository {
         .toList();
   }
 
+  Future<List<SocialProfileModel>> fetchBlockedSocialProfiles() async {
+    final response = await _dio.get<List<dynamic>>('/social/blocked-profiles');
+    return response.data!
+        .map(
+          (item) => SocialProfileModel.fromJson(item as Map<String, dynamic>),
+        )
+        .toList();
+  }
+
   Future<List<SocialNotificationModel>> fetchSocialNotifications() async {
     final response = await _dio.get<List<dynamic>>('/social/notifications');
     return response.data!

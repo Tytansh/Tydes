@@ -104,6 +104,11 @@ def get_profiles(request: Request):
     return list(store.list_social_profiles(current_user_id=current_user_id))
 
 
+@router.get("/blocked-profiles")
+def get_blocked_profiles(_user=Depends(require_authenticated_user)):
+    return list(store.list_blocked_social_profiles())
+
+
 @router.get("/notifications")
 def get_notifications(_user=Depends(require_authenticated_user)):
     return list(store.list_social_notifications())

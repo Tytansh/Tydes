@@ -937,6 +937,16 @@ def test_social_feed_and_create_post(monkeypatch):
         for profile in blocked_profiles_response.json()
     )
 
+    blocked_list_response = client.get(
+        "/api/v1/social/blocked-profiles",
+        headers={"Authorization": f"Bearer {actor_token}"},
+    )
+    assert blocked_list_response.status_code == 200
+    assert any(
+        profile["user_id"] == owner_user_id
+        for profile in blocked_list_response.json()
+    )
+
     unblock_response = client.delete(
         f"/api/v1/social/blocks/{owner_user_id}",
         headers={"Authorization": f"Bearer {actor_token}"},
