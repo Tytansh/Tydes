@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image/image.dart' as image_tools;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/billing/revenuecat_service.dart';
 import '../../core/network/api_models.dart';
@@ -35,6 +36,19 @@ final blockedSocialProfilesProvider = FutureProvider((ref) {
 });
 
 final unreadSocialNotificationsProvider = StateProvider<int>((ref) => 0);
+
+const _privacyPolicyUrl = String.fromEnvironment(
+  'PRIVACY_POLICY_URL',
+  defaultValue: 'https://tydes.io/privacy',
+);
+const _termsOfUseUrl = String.fromEnvironment(
+  'TERMS_OF_USE_URL',
+  defaultValue: 'https://tydes.io/terms',
+);
+const _supportEmail = String.fromEnvironment(
+  'SUPPORT_EMAIL',
+  defaultValue: 'support@tydes.io',
+);
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -82,6 +96,10 @@ class SettingsPage extends ConsumerWidget {
         onBlockedUsers: () {
           Navigator.of(context).pop();
           _openBlockedUsers(context, ref);
+        },
+        onLegalSupport: () {
+          Navigator.of(context).pop();
+          _openLegalSupport(context);
         },
         onLogout: () async {
           await ref.read(surfRepositoryProvider).logout();
@@ -146,6 +164,14 @@ class SettingsPage extends ConsumerWidget {
       context: context,
       isScrollControlled: true,
       builder: (context) => const _BlockedUsersSheet(),
+    );
+  }
+
+  Future<void> _openLegalSupport(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => const _LegalSupportSheet(),
     );
   }
 
@@ -873,6 +899,7 @@ class _ProfileSettingsSheet extends StatelessWidget {
     required this.onEditProfile,
     required this.onManagePremium,
     required this.onBlockedUsers,
+    required this.onLegalSupport,
     required this.onLogout,
     required this.onDeleteAccount,
   });
@@ -882,6 +909,7 @@ class _ProfileSettingsSheet extends StatelessWidget {
   final VoidCallback? onEditProfile;
   final VoidCallback onManagePremium;
   final VoidCallback onBlockedUsers;
+  final VoidCallback onLegalSupport;
   final VoidCallback onLogout;
   final VoidCallback onDeleteAccount;
 
@@ -943,6 +971,15 @@ class _ProfileSettingsSheet extends StatelessWidget {
             const Divider(),
             ListTile(
               contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.policy_outlined),
+              title: const Text('Legal & support'),
+              subtitle: const Text('Privacy, terms, safety, and contact'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: onLegalSupport,
+            ),
+            const Divider(),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.logout),
               title: const Text('Log out'),
               subtitle: const Text('Sign in with a different account'),
@@ -967,6 +1004,158 @@ class _ProfileSettingsSheet extends StatelessWidget {
       ),
     );
   }
+}
+
+class _LegalSupportSheet extends StatelessWidget {
+  const _LegalSupportSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD5D0C6),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text('Legal & support', style: theme.textTheme.titleLarge),
+            const SizedBox(height: 14),
+            _LegalSupportTile(
+              icon: Icons.privacy_tip_outlined,
+              title: 'Privacy Policy',
+              subtitle: _privacyPolicyUrl,
+              onTap: () => _launchExternalLink(context, _privacyPolicyUrl),
+            ),
+            const Divider(),
+            _LegalSupportTile(
+              icon: Icons.description_outlined,
+              title: 'Terms of Use',
+              subtitle: _termsOfUseUrl,
+              onTap: () => _launchExternalLink(context, _termsOfUseUrl),
+            ),
+            const Divider(),
+            _LegalSupportTile(
+              icon: Icons.mail_outline_rounded,
+              title: 'Contact support',
+              subtitle: _supportEmail,
+              onTap: () => _launchSupportEmail(context),
+            ),
+            const SizedBox(height: 16),
+            const _SafetyAndCommunityCard(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LegalSupportTile extends StatelessWidget {
+  const _LegalSupportTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icon),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: const Icon(Icons.open_in_new_rounded),
+      onTap: onTap,
+    );
+  }
+}
+
+class _SafetyAndCommunityCard extends StatelessWidget {
+  const _SafetyAndCommunityCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Card(
+      color: const Color(0xFFFFF4E4),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, color: scheme.onSurface),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Safety disclaimer',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Surf forecasts, tide times, map locations, alerts, and Best Time Today are estimates for planning only. Conditions can change quickly. Check local hazards, tide, weather, and local advice before paddling out. Tydes is not for navigation or safety-critical decisions.',
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Tydes does not allow sexual services, nudity, harassment, hate, scams, or unsafe events. Use report and block if something feels wrong.',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _launchExternalLink(BuildContext context, String url) async {
+  final uri = Uri.tryParse(url);
+  if (uri == null) {
+    _showLaunchError(context);
+    return;
+  }
+  final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+  if (!launched && context.mounted) _showLaunchError(context);
+}
+
+Future<void> _launchSupportEmail(BuildContext context) async {
+  final uri = Uri(
+    scheme: 'mailto',
+    path: _supportEmail,
+    queryParameters: {
+      'subject': 'Tydes support',
+      'body': 'Tell us what happened and we will help.',
+    },
+  );
+  final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+  if (!launched && context.mounted) _showLaunchError(context);
+}
+
+void _showLaunchError(BuildContext context) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Could not open this link right now.')),
+  );
 }
 
 class _BlockedUsersSheet extends ConsumerWidget {
