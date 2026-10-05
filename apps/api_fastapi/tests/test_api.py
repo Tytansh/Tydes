@@ -1,13 +1,19 @@
 from pathlib import Path
 from datetime import date, datetime, timedelta, timezone
 import json
+import os
 import sys
+import tempfile
 from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+os.environ.setdefault(
+    "TYDES_DATA_DIR",
+    tempfile.mkdtemp(prefix="tydes-test-state-"),
+)
 
 from app.main import app
 from app.core.models import SurfWindowForecast, SurfWindowHour, TideForecast
