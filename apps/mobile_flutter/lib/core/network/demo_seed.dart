@@ -9,7 +9,7 @@ class DemoSeed {
     bio:
         'Looking for clean waves, easy travel days, and people to paddle out with.',
     surfSkill: 'intermediate',
-    avatarUrl: 'http://127.0.0.1:8000/media/media_ba729993a2_thumb.jpg',
+    avatarUrl: 'https://media.tydes.io/media_ba729993a2_thumb.jpg',
     homeRegion: 'Bali',
     locale: 'en',
     premium: true,
@@ -5598,7 +5598,7 @@ class DemoSeed {
     ),
   ];
 
-  static const _mediaBase = 'http://127.0.0.1:8000/media';
+  static const _mediaBase = 'https://media.tydes.io';
 
   static SocialMediaAttachmentModel _photo(
     String mediaId, {

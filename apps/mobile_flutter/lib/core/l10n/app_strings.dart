@@ -12,8 +12,7 @@ class AppStrings {
     return AppStrings(locale);
   }
 
-  String get appName =>
-      locale.languageCode == 'id' ? 'Perjalanan Ombak' : 'Surf Travel';
+  String get appName => 'Tydes';
   String get welcome => locale.languageCode == 'id'
       ? 'Rencanakan trip ombak berikutnya.'
       : 'Plan your next wave-driven trip.';
