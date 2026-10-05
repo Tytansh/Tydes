@@ -1,6 +1,6 @@
-# Surf Travel Starter
+# Tydes
 
-Greenfield monorepo for a global surf + travel mobile app with a Flutter client and FastAPI backend.
+Monorepo for the Tydes mobile app with a Flutter client and FastAPI backend.
 
 ## Structure
 
@@ -21,6 +21,12 @@ uvicorn app.main:app --reload
 
 API docs will be available at `http://127.0.0.1:8000/docs`.
 
+For local media/upload URLs, set:
+
+```bash
+export PUBLIC_BACKEND_URL=http://127.0.0.1:8000
+```
+
 ## Flutter
 
 ```bash
@@ -29,5 +35,8 @@ flutter pub get
 flutter run
 ```
 
-The app expects the backend at `http://127.0.0.1:8000/api/v1` on simulators. If you need a device-specific host, update `lib/core/network/api_config.dart`.
+By default the app points at `https://api.tydes.io/api/v1`. For local backend work, pass a dev override:
 
+```bash
+flutter run --dart-define=API_BASE_URL=http://127.0.0.1:8000/api/v1
+```

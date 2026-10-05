@@ -1002,16 +1002,13 @@ def test_media_upload_stores_video_thumbnail_locally(monkeypatch, tmp_path):
     assert len(list((tmp_path / "media").iterdir())) == 2
 
 
-def test_r2_posts_hide_legacy_backend_videos(monkeypatch):
+def test_r2_posts_hide_legacy_backend_media(monkeypatch):
     monkeypatch.setenv("MEDIA_STORAGE_BACKEND", "r2")
 
     posts = list(store.list_posts())
 
     assert all(
-        not (
-            media.media_type == "video"
-            and media.url.startswith("http://127.0.0.1:8000/media/")
-        )
+        not media.url.startswith("http://127.0.0.1:8000/media/")
         for post in posts
         for media in post.media
     )

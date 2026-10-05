@@ -21,7 +21,7 @@ from app.modules.spots.router import router as spots_router
 from app.modules.trips.router import router as trips_router
 from app.modules.users.router import router as users_router
 
-app = FastAPI(title="Surf Travel API", version="0.1.0")
+app = FastAPI(title="Tydes API", version="0.1.0")
 MEDIA_DIR = media_dir_path()
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 sync_seed_media_files()
@@ -54,7 +54,7 @@ def health():
 @app.get("/")
 def root():
     return {
-        "name": "Surf Travel API",
+        "name": "Tydes API",
         "version": "0.1.0",
         "docs": "/docs",
         "api_base": "/api/v1",

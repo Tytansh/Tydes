@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.core.media_storage import configured_media_storage
 from app.core.moderation import ensure_allowed_content
-from app.core.runtime import public_backend_url
+from app.core.runtime import DEFAULT_PUBLIC_BACKEND_URL, public_backend_url
 from app.core.models import SocialMediaAttachment, SocialPost
 from app.core.store import store
 
@@ -330,7 +330,7 @@ def _video_extension(file: UploadFile) -> str | None:
 
 def _request_public_base_url(request: Request) -> str:
     configured_url = public_backend_url()
-    if configured_url != "http://127.0.0.1:8000":
+    if configured_url != DEFAULT_PUBLIC_BACKEND_URL:
         return configured_url
     return str(request.base_url).rstrip("/")
 

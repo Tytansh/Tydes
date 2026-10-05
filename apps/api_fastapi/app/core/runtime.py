@@ -6,6 +6,11 @@ import shutil
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_PUBLIC_BACKEND_URL = "https://api.tydes.io"
+LEGACY_LOCAL_MEDIA_PREFIXES = (
+    "http://127.0.0.1:8000/media/",
+    "http://localhost:8000/media/",
+)
 
 
 def csv_env(name: str, default: str = "") -> list[str]:
@@ -14,7 +19,7 @@ def csv_env(name: str, default: str = "") -> list[str]:
 
 
 def public_backend_url() -> str:
-    return os.getenv("PUBLIC_BACKEND_URL", "http://127.0.0.1:8000").strip().rstrip("/")
+    return os.getenv("PUBLIC_BACKEND_URL", DEFAULT_PUBLIC_BACKEND_URL).strip().rstrip("/")
 
 
 def public_media_url(filename: str) -> str:
@@ -30,8 +35,9 @@ def uses_local_media_storage() -> bool:
 
 
 def is_legacy_backend_media_url(url: str) -> bool:
+    normalized_url = url.strip()
     media_prefix = f"{public_backend_url()}/media/"
-    return url.strip().startswith(media_prefix)
+    return normalized_url.startswith((media_prefix, *LEGACY_LOCAL_MEDIA_PREFIXES))
 
 
 def data_dir_path() -> Path:

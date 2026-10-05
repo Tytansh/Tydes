@@ -365,7 +365,7 @@ class DemoStore:
             if word
         ]
         if not words:
-            return "Surf Traveler"
+            return "Tydes Surfer"
         return " ".join(word.capitalize() for word in words)
 
     def _email_has_premium_override(self, email: str) -> bool:
@@ -1023,10 +1023,7 @@ class DemoStore:
                     "media": [
                         media
                         for media in post.media
-                        if not (
-                            media.media_type == "video"
-                            and is_legacy_backend_media_url(media.url)
-                        )
+                        if not is_legacy_backend_media_url(media.url)
                     ]
                 }
             )
