@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import 'spots_page.dart';
@@ -349,7 +350,8 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(child: Text('Could not load map: $error')),
+        error: (error, _) =>
+            Center(child: Text(friendlyLoadErrorMessage(error, label: 'map'))),
       ),
     );
   }

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/router.dart';
+import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import 'social_feed.dart';
@@ -174,7 +175,7 @@ class PublicProfilePage extends ConsumerWidget {
           error: (error, _) => ListView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(20),
-            children: [Text('Could not load profile: $error')],
+            children: [Text(friendlyLoadErrorMessage(error, label: 'profile'))],
           ),
         ),
       ),

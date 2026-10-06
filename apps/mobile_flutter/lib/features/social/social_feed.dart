@@ -11,10 +11,11 @@ import 'package:path_provider/path_provider.dart';
 import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../app/router.dart';
+import '../../core/moderation/content_moderation.dart';
+import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
-import '../../core/moderation/content_moderation.dart';
-import '../../app/router.dart';
 import 'direct_messages_page.dart';
 import 'social_profile.dart';
 
@@ -410,7 +411,8 @@ class TravelFeedSection extends ConsumerWidget {
               child: CircularProgressIndicator(),
             ),
           ),
-          error: (error, _) => Text('Could not load posts: $error'),
+          error: (error, _) =>
+              Text(friendlyLoadErrorMessage(error, label: 'posts')),
         ),
       ],
     );

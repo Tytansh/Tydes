@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import 'create_alert_sheet.dart';
@@ -88,8 +89,9 @@ class AlertsPage extends ConsumerWidget {
             error: (_, _) => const SizedBox.shrink(),
           ),
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) =>
-              Center(child: Text('Could not load alerts: $error')),
+          error: (error, _) => Center(
+            child: Text(friendlyLoadErrorMessage(error, label: 'alerts')),
+          ),
         ),
       ),
     );

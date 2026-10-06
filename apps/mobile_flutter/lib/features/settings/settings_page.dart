@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/billing/revenuecat_service.dart';
+import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../home/home_page.dart';
@@ -311,7 +312,8 @@ class SettingsPage extends ConsumerWidget {
                   repostActivityTimes: visibleRepostActivityTimes,
                 ),
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (error, _) => Text('Could not load posts: $error'),
+                error: (error, _) =>
+                    Text(friendlyLoadErrorMessage(error, label: 'posts')),
               ),
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (_, _) => const _SignedOutPostsCard(),

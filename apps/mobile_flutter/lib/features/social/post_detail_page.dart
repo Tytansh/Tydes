@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import 'social_feed.dart';
@@ -47,7 +48,8 @@ class PostDetailPage extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(child: Text('Could not load post: $error')),
+        error: (error, _) =>
+            Center(child: Text(friendlyLoadErrorMessage(error, label: 'post'))),
       ),
     );
   }

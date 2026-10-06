@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../alerts/create_alert_sheet.dart';
@@ -210,8 +211,9 @@ class SpotDetailPage extends ConsumerWidget {
             );
           },
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) =>
-              Center(child: Text('Could not load spot details: $error')),
+          error: (error, _) => Center(
+            child: Text(friendlyLoadErrorMessage(error, label: 'spot details')),
+          ),
         ),
       ),
     );
