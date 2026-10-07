@@ -23,9 +23,15 @@ final directMessageThreadsProvider =
     );
 
 final unreadDirectMessageThreadCountProvider = Provider<int>((ref) {
+  final blockedUserIds = ref.watch(blockedUserIdsProvider);
   return ref
       .watch(directMessageThreadsProvider)
-      .where((thread) => !thread.requestDeclined && thread.unreadCount > 0)
+      .where(
+        (thread) =>
+            !thread.requestDeclined &&
+            thread.unreadCount > 0 &&
+            !_isBlockedThread(thread, blockedUserIds),
+      )
       .length;
 });
 
@@ -193,6 +199,17 @@ class DirectMessageThreadsNotifier
     _persist();
   }
 
+  void hideThread(String threadId) {
+    state = [
+      for (final thread in state)
+        if (thread.id == threadId)
+          thread.copyWith(requestDeclined: true, unreadCount: 0)
+        else
+          thread,
+    ];
+    _persist();
+  }
+
   void declineRequest(String threadId) {
     state = [
       for (final thread in state)
@@ -211,6 +228,7 @@ class DirectMessageThreadsNotifier
     final existing = threadByIdOrHandle(threadId);
     if (existing != null) {
       final revived = existing.copyWith(
+        profileUserId: profile.userId,
         requestAccepted: true,
         requestDeclined: false,
         unreadCount: 0,
@@ -229,6 +247,7 @@ class DirectMessageThreadsNotifier
         : threadId;
     final thread = DirectMessageThread(
       id: threadId,
+      profileUserId: profile.userId,
       name: profile.displayName,
       handle: handle,
       initial: _initialFor(profile.displayName),
@@ -370,6 +389,7 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage> {
     final threads = ref.watch(directMessageThreadsProvider);
     final followedUserIds = ref.watch(followedUserIdsProvider);
     final hiddenFollowingUserIds = ref.watch(hiddenFollowingUserIdsProvider);
+    final blockedUserIds = ref.watch(blockedUserIdsProvider);
     final initialThreadId = widget.initialThreadId;
     if (initialThreadId != null && initialThreadId.isNotEmpty) {
       final thread = _threadByIdOrHandle(threads, initialThreadId);
@@ -380,7 +400,11 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage> {
     }
 
     final visibleThreads = threads
-        .where((thread) => !thread.requestDeclined)
+        .where(
+          (thread) =>
+              !thread.requestDeclined &&
+              !_isBlockedThread(thread, blockedUserIds),
+        )
         .toList();
     final primaryThreads = visibleThreads
         .where(
@@ -513,6 +537,17 @@ bool _isFollowingThread(
   return threadKeys.any(_defaultFollowingThreadIds.contains);
 }
 
+bool _isBlockedThread(DirectMessageThread thread, Set<String> blockedUserIds) {
+  final blockedKeys = blockedUserIds.map(_normalizeThreadId).toSet();
+  final threadKeys = {
+    _normalizeThreadId(thread.id),
+    _normalizeThreadId(thread.handle),
+    if (thread.profileUserId?.trim().isNotEmpty ?? false)
+      _normalizeThreadId(thread.profileUserId!),
+  };
+  return threadKeys.any(blockedKeys.contains);
+}
+
 const _defaultFollowingThreadIds = {
   'ari',
   'aridawn',
@@ -547,7 +582,9 @@ PublicProfilePreview _profileFromThread(DirectMessageThread thread) {
   if (match != null) return match;
 
   return PublicProfilePreview(
-    userId: thread.id,
+    userId: thread.profileUserId?.trim().isNotEmpty == true
+        ? thread.profileUserId!
+        : thread.id,
     displayName: thread.name,
     handle: thread.handle,
     subtitle: 'Surf traveler on Tydes',
@@ -1007,6 +1044,10 @@ class _DirectChatPageState extends ConsumerState<_DirectChatPage> {
     }
     final isRequest = widget.showRequestActions && !thread.requestAccepted;
     final profile = _profileFromThread(thread);
+    final isBlocked = _isBlockedThread(
+      thread,
+      ref.watch(blockedUserIdsProvider),
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -1042,12 +1083,14 @@ class _DirectChatPageState extends ConsumerState<_DirectChatPage> {
           ),
         ),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Center(
-              child: FollowButton(userId: profile.userId, compact: true),
+          if (!isBlocked)
+            Padding(
+              padding: const EdgeInsets.only(right: 2),
+              child: Center(
+                child: FollowButton(userId: profile.userId, compact: true),
+              ),
             ),
-          ),
+          _DirectChatSafetyMenu(thread: thread, profile: profile),
         ],
       ),
       body: Column(
@@ -1064,7 +1107,9 @@ class _DirectChatPageState extends ConsumerState<_DirectChatPage> {
               },
             ),
           ),
-          if (isRequest)
+          if (isBlocked)
+            _BlockedDirectThreadNotice(profile: profile)
+          else if (isRequest)
             _MessageRequestActions(
               thread: thread,
               onAccept: () {
@@ -1186,6 +1231,145 @@ class _DirectChatPageState extends ConsumerState<_DirectChatPage> {
     }
     ref.read(directMessageThreadsProvider.notifier).sendMessage(threadId, text);
     _messageController.clear();
+  }
+}
+
+enum _DirectChatSafetyAction { report, block }
+
+class _DirectChatSafetyMenu extends ConsumerWidget {
+  const _DirectChatSafetyMenu({required this.thread, required this.profile});
+
+  final DirectMessageThread thread;
+  final PublicProfilePreview profile;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return PopupMenuButton<_DirectChatSafetyAction>(
+      tooltip: 'Chat options',
+      icon: const Icon(Icons.more_horiz_rounded),
+      itemBuilder: (context) => const [
+        PopupMenuItem(
+          value: _DirectChatSafetyAction.report,
+          child: Text('Report conversation'),
+        ),
+        PopupMenuItem(
+          value: _DirectChatSafetyAction.block,
+          child: Text('Block surfer'),
+        ),
+      ],
+      onSelected: (action) {
+        switch (action) {
+          case _DirectChatSafetyAction.report:
+            unawaited(_reportDirectThread(context, ref, thread, profile));
+          case _DirectChatSafetyAction.block:
+            unawaited(
+              _confirmAndBlockDirectProfile(context, ref, thread, profile),
+            );
+        }
+      },
+    );
+  }
+}
+
+Future<void> _reportDirectThread(
+  BuildContext context,
+  WidgetRef ref,
+  DirectMessageThread thread,
+  PublicProfilePreview profile,
+) async {
+  try {
+    await ref
+        .read(surfRepositoryProvider)
+        .reportSocialContent(
+          targetType: 'message_thread',
+          targetId: thread.id,
+          reason:
+              'Conversation report with @${profile.handle ?? thread.handle}',
+        );
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Report sent. Thanks for helping Tydes.')),
+    );
+  } catch (_) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Could not report this conversation right now.'),
+      ),
+    );
+  }
+}
+
+Future<void> _confirmAndBlockDirectProfile(
+  BuildContext context,
+  WidgetRef ref,
+  DirectMessageThread thread,
+  PublicProfilePreview profile,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Block ${profile.displayName}?'),
+      content: const Text(
+        'You will not see their messages, posts, or profile in Tydes. You can undo this later from safety settings.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Block'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  await blockSocialUser(ref, profile.userId);
+  ref.read(directMessageThreadsProvider.notifier).hideThread(thread.id);
+  ref.invalidate(dmSocialProfilesProvider);
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text('@${profile.handle ?? profile.displayName} blocked.'),
+    ),
+  );
+  if (Navigator.of(context).canPop()) {
+    Navigator.of(context).pop();
+  }
+}
+
+class _BlockedDirectThreadNotice extends StatelessWidget {
+  const _BlockedDirectThreadNotice({required this.profile});
+
+  final PublicProfilePreview profile;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                const Icon(Icons.block_rounded),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    '@${profile.handle ?? profile.displayName} is blocked. Their messages are hidden from your inbox.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -1996,10 +2180,16 @@ class _MessageRequestsPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final liveThreads = ref.watch(directMessageThreadsProvider);
+    final blockedUserIds = ref.watch(blockedUserIdsProvider);
     final requests = requestThreads
         .map((thread) => _threadByIdOrHandle(liveThreads, thread.id))
         .whereType<DirectMessageThread>()
-        .where((thread) => !thread.requestAccepted && !thread.requestDeclined)
+        .where(
+          (thread) =>
+              !thread.requestAccepted &&
+              !thread.requestDeclined &&
+              !_isBlockedThread(thread, blockedUserIds),
+        )
         .toList();
 
     return Scaffold(
@@ -2042,6 +2232,7 @@ class _MessageRequestsPage extends ConsumerWidget {
 class DirectMessageThread {
   const DirectMessageThread({
     required this.id,
+    this.profileUserId,
     required this.name,
     required this.handle,
     required this.initial,
@@ -2056,6 +2247,7 @@ class DirectMessageThread {
   });
 
   final String id;
+  final String? profileUserId;
   final String name;
   final String handle;
   final String initial;
@@ -2069,6 +2261,7 @@ class DirectMessageThread {
   final List<DirectChatMessage> messages;
 
   DirectMessageThread copyWith({
+    String? profileUserId,
     String? preview,
     String? time,
     int? unreadCount,
@@ -2078,6 +2271,7 @@ class DirectMessageThread {
   }) {
     return DirectMessageThread(
       id: id,
+      profileUserId: profileUserId ?? this.profileUserId,
       name: name,
       handle: handle,
       initial: initial,
@@ -2095,6 +2289,7 @@ class DirectMessageThread {
   factory DirectMessageThread.fromJson(Map<String, dynamic> json) {
     return DirectMessageThread(
       id: json['id'] as String,
+      profileUserId: json['profile_user_id'] as String?,
       name: json['name'] as String,
       handle: json['handle'] as String,
       initial: json['initial'] as String,
@@ -2116,6 +2311,7 @@ class DirectMessageThread {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'profile_user_id': profileUserId,
       'name': name,
       'handle': handle,
       'initial': initial,
