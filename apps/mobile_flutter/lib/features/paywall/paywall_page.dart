@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/billing/revenuecat_service.dart';
+import '../../core/legal/legal_links.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../home/home_page.dart';
@@ -191,6 +192,8 @@ class PaywallPage extends ConsumerWidget {
             onRestore: () => _restorePurchases(context, ref),
           ),
           const SizedBox(height: 16),
+          const _PremiumLegalCard(),
+          const SizedBox(height: 16),
           _FreeCard(isCurrent: !isPremium),
           if (plans.hasError) ...[
             const SizedBox(height: 16),
@@ -204,6 +207,56 @@ class PaywallPage extends ConsumerWidget {
             const Center(child: CircularProgressIndicator()),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _PremiumLegalCard extends StatelessWidget {
+  const _PremiumLegalCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: const Color(0xFFFFF8ED),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Subscription and safety notes',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Premium renews monthly through your app-store account unless canceled. Restore Purchases checks for an active subscription.',
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Forecasts, tides, alerts, and Best Time Today are planning estimates, not navigation or safety-critical advice. Check local hazards before paddling out.',
+            ),
+            const SizedBox(height: 6),
+            const TydesLegalLinks(
+              includeSupport: true,
+              alignment: WrapAlignment.start,
+              dense: true,
+            ),
+          ],
+        ),
       ),
     );
   }

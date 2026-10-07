@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/router.dart';
+import '../../core/legal/legal_links.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../home/home_page.dart';
@@ -379,6 +380,8 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                                       : _submitSignIn,
                                   child: Text(actionLabel),
                                 ),
+                                const SizedBox(height: 10),
+                                _AuthLegalNote(isSignup: isSignup),
                               ],
                             ),
                           ),
@@ -394,6 +397,32 @@ class _AuthPageState extends ConsumerState<AuthPage> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _AuthLegalNote extends StatelessWidget {
+  const _AuthLegalNote({required this.isSignup});
+
+  final bool isSignup;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          isSignup
+              ? 'By creating an account, you agree to Tydes Terms and Privacy Policy.'
+              : 'Need help or want to review Tydes policies?',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: const Color(0xFF5E6A68),
+            height: 1.35,
+          ),
+        ),
+        const SizedBox(height: 2),
+        const TydesLegalLinks(includeSupport: true, dense: true),
+      ],
     );
   }
 }

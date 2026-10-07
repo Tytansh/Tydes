@@ -6,9 +6,9 @@ import 'package:go_router/go_router.dart';
 import 'package:image/image.dart' as image_tools;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/billing/revenuecat_service.dart';
+import '../../core/legal/legal_links.dart';
 import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
@@ -37,19 +37,6 @@ final blockedSocialProfilesProvider = FutureProvider((ref) {
 });
 
 final unreadSocialNotificationsProvider = StateProvider<int>((ref) => 0);
-
-const _privacyPolicyUrl = String.fromEnvironment(
-  'PRIVACY_POLICY_URL',
-  defaultValue: 'https://tydes.io/privacy',
-);
-const _termsOfUseUrl = String.fromEnvironment(
-  'TERMS_OF_USE_URL',
-  defaultValue: 'https://tydes.io/terms',
-);
-const _supportEmail = String.fromEnvironment(
-  'SUPPORT_EMAIL',
-  defaultValue: 'support@tydes.io',
-);
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -1036,22 +1023,22 @@ class _LegalSupportSheet extends StatelessWidget {
             _LegalSupportTile(
               icon: Icons.privacy_tip_outlined,
               title: 'Privacy Policy',
-              subtitle: _privacyPolicyUrl,
-              onTap: () => _launchExternalLink(context, _privacyPolicyUrl),
+              subtitle: tydesPrivacyPolicyUrl,
+              onTap: () => launchTydesPrivacyPolicy(context),
             ),
             const Divider(),
             _LegalSupportTile(
               icon: Icons.description_outlined,
               title: 'Terms of Use',
-              subtitle: _termsOfUseUrl,
-              onTap: () => _launchExternalLink(context, _termsOfUseUrl),
+              subtitle: tydesTermsOfUseUrl,
+              onTap: () => launchTydesTermsOfUse(context),
             ),
             const Divider(),
             _LegalSupportTile(
               icon: Icons.mail_outline_rounded,
               title: 'Contact support',
-              subtitle: _supportEmail,
-              onTap: () => _launchSupportEmail(context),
+              subtitle: tydesSupportEmail,
+              onTap: () => launchTydesSupportEmail(context),
             ),
             const SizedBox(height: 16),
             const _SafetyAndCommunityCard(),
@@ -1129,35 +1116,6 @@ class _SafetyAndCommunityCard extends StatelessWidget {
       ),
     );
   }
-}
-
-Future<void> _launchExternalLink(BuildContext context, String url) async {
-  final uri = Uri.tryParse(url);
-  if (uri == null) {
-    _showLaunchError(context);
-    return;
-  }
-  final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-  if (!launched && context.mounted) _showLaunchError(context);
-}
-
-Future<void> _launchSupportEmail(BuildContext context) async {
-  final uri = Uri(
-    scheme: 'mailto',
-    path: _supportEmail,
-    queryParameters: {
-      'subject': 'Tydes support',
-      'body': 'Tell us what happened and we will help.',
-    },
-  );
-  final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-  if (!launched && context.mounted) _showLaunchError(context);
-}
-
-void _showLaunchError(BuildContext context) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('Could not open this link right now.')),
-  );
 }
 
 class _BlockedUsersSheet extends ConsumerWidget {
