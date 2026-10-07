@@ -45,3 +45,4 @@ flutter run --dart-define=API_BASE_URL=http://127.0.0.1:8000/api/v1
 
 - Public legal pages live under `docs/privacy`, `docs/terms`, and `docs/support`.
 - Premium setup details live in `docs/app-store-subscriptions.md`.
+- Production map tile setup lives in `docs/map-provider.md`.

@@ -55,8 +55,15 @@ flutter run \
   --dart-define=REVENUECAT_ANDROID_API_KEY=<real_android_revenuecat_sdk_key_if_available> \
   --dart-define=REVENUECAT_ENTITLEMENT_ID=premium \
   --dart-define=REVENUECAT_OFFERING_ID=premium \
-  --dart-define=REVENUECAT_PACKAGE_ID='$rc_monthly'
+  --dart-define=REVENUECAT_PACKAGE_ID='$rc_monthly' \
+  --dart-define=MAP_TILE_URL_TEMPLATE='<production_tile_url_template>' \
+  --dart-define=MAP_ATTRIBUTION='<production_map_attribution>' \
+  --dart-define=MAP_ATTRIBUTION_URL='<production_map_attribution_url>'
 ```
+
+See `docs/map-provider.md` before TestFlight/App Store builds. The app has a
+development fallback, but production should use a provider that is safe for
+mobile app traffic.
 
 ## App Store reviewer account
 
