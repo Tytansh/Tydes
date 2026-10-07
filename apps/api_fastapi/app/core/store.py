@@ -4,6 +4,7 @@ from collections.abc import Iterable
 import hashlib
 import hmac
 import json
+import logging
 import secrets
 
 from datetime import date, datetime, timedelta, timezone
@@ -43,6 +44,8 @@ from app.integrations.tide_providers.tidecheck import TideCheckProvider
 from app.integrations.weather_providers.open_meteo import FREE_FORECAST_MAX_AGE, FRESH_FORECAST_MAX_AGE, OpenMeteoMarineProvider, PREVIEW_FORECAST_MAX_AGE
 
 ForecastFreshness = Literal["fresh", "preview"]
+
+logger = logging.getLogger(__name__)
 
 _PASSWORD_HASH_ALGORITHM = "pbkdf2_sha256"
 _PASSWORD_HASH_ITERATIONS = 260_000
@@ -590,7 +593,7 @@ class DemoStore:
                 return forecasts
             return [self._locked_free_forecast_estimate(forecast) for forecast in forecasts]
         except Exception as error:
-            print(f"Live forecast unavailable for {spot.id}: {error}")
+            logger.warning("Live forecast unavailable for %s: %s", spot.id, error)
             # Fall back to seeded values only if Open-Meteo is unreachable.
             return [item for item in self.forecasts if item.spot_id == spot.id]
 
@@ -653,7 +656,7 @@ class DemoStore:
                 days=3,
             )
         except Exception as error:
-            print(f"Live tide data unavailable for {spot.id}: {error}")
+            logger.warning("Live tide data unavailable for %s: %s", spot.id, error)
             return TideForecast(
                 spot_id=spot_id,
                 available=False,
@@ -684,7 +687,7 @@ class DemoStore:
             )
             return window
         except Exception as error:
-            print(f"Best surf window unavailable for {spot.id}: {error}")
+            logger.warning("Best surf window unavailable for %s: %s", spot.id, error)
             return SurfWindowForecast(
                 spot_id=spot.id,
                 available=False,

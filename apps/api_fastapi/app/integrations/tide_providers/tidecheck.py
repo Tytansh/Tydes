@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,8 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from app.core.models import Spot, TideEvent, TideForecast
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -71,7 +74,7 @@ class TideCheckProvider:
             else:
                 internal_note = f"TideCheck returned HTTP {status_code}."
                 user_note = "TideCheck is unavailable right now."
-            print(f"Tide data unavailable for {spot.id}: {internal_note}")
+            logger.warning("Tide data unavailable for %s: %s", spot.id, internal_note)
             forecast = TideForecast(
                 spot_id=spot.id,
                 available=False,
@@ -79,7 +82,7 @@ class TideCheckProvider:
                 note=user_note,
             )
         except Exception as error:
-            print(f"Tide data unavailable for {spot.id}: {error}")
+            logger.warning("Tide data unavailable for %s: %s", spot.id, error)
             forecast = TideForecast(
                 spot_id=spot.id,
                 available=False,
