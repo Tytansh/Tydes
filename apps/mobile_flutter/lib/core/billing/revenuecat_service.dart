@@ -39,7 +39,14 @@ class RevenueCatService {
   static const androidApiKey = String.fromEnvironment(
     'REVENUECAT_ANDROID_API_KEY',
   );
-  static const offeringId = String.fromEnvironment('REVENUECAT_OFFERING_ID');
+  static const offeringId = String.fromEnvironment(
+    'REVENUECAT_OFFERING_ID',
+    defaultValue: 'premium',
+  );
+  static const packageId = String.fromEnvironment(
+    'REVENUECAT_PACKAGE_ID',
+    defaultValue: r'$rc_monthly',
+  );
   static const entitlementId = String.fromEnvironment(
     'REVENUECAT_ENTITLEMENT_ID',
     defaultValue: 'premium',
@@ -84,7 +91,10 @@ class RevenueCatService {
     final offering = offeringId.isNotEmpty
         ? offerings.getOffering(offeringId)
         : offerings.current;
+    final packages = offering?.availablePackages ?? const <Package>[];
+    final configuredPackage = _packageWithIdentifier(packages, packageId);
     final package =
+        configuredPackage ??
         offering?.monthly ??
         (offering?.availablePackages.isNotEmpty == true
             ? offering!.availablePackages.first
@@ -153,5 +163,17 @@ class RevenueCatService {
       case TargetPlatform.windows:
         return '';
     }
+  }
+
+  Package? _packageWithIdentifier(List<Package> packages, String identifier) {
+    if (identifier.isEmpty) {
+      return null;
+    }
+    for (final package in packages) {
+      if (package.identifier == identifier) {
+        return package;
+      }
+    }
+    return null;
   }
 }

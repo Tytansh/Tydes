@@ -40,3 +40,8 @@ By default the app points at `https://api.tydes.io/api/v1`. For local backend wo
 ```bash
 flutter run --dart-define=API_BASE_URL=http://127.0.0.1:8000/api/v1
 ```
+
+## Launch Notes
+
+- Public legal pages live under `docs/privacy`, `docs/terms`, and `docs/support`.
+- Premium setup details live in `docs/app-store-subscriptions.md`.

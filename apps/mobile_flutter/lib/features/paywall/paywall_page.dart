@@ -149,7 +149,7 @@ class PaywallPage extends ConsumerWidget {
       orElse: () => BillingPlanModel(
         id: 'premium',
         name: 'Premium',
-        priceUsdMonthly: 7.99,
+        priceUsdMonthly: 4.99,
         features: const [
           'Live data on every spot',
           'Best Time Today windows',
@@ -161,7 +161,7 @@ class PaywallPage extends ConsumerWidget {
     final price =
         offer.valueOrNull?.price ??
         (premiumPlan == null
-            ? '\$7.99 / month'
+            ? '\$4.99 / month'
             : '\$${premiumPlan.priceUsdMonthly.toStringAsFixed(2)} / month');
     final features =
         premiumPlan?.features ??

@@ -5776,11 +5776,12 @@ class DemoSeed {
     BillingPlanModel(
       id: 'premium',
       name: 'Premium',
-      priceUsdMonthly: 7.99,
+      priceUsdMonthly: 4.99,
       features: const [
-        'Unlimited alerts',
-        'Trip planner',
-        'Ad-light home feed',
+        'Live data on every spot',
+        'Best Time Today windows',
+        'Tide-aware planning',
+        'Ad-light experience',
       ],
     ),
   ];
