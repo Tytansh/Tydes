@@ -44,5 +44,7 @@ flutter run --dart-define=API_BASE_URL=http://127.0.0.1:8000/api/v1
 ## Launch Notes
 
 - Public legal pages live under `docs/privacy`, `docs/terms`, and `docs/support`.
+- Launch checklist lives in `docs/launch-checklist.md`.
+- Email setup lives in `docs/email-setup.md`.
 - Premium setup details live in `docs/app-store-subscriptions.md`.
 - Production map tile setup lives in `docs/map-provider.md`.
