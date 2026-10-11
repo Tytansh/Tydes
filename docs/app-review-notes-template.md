@@ -16,7 +16,7 @@ Open Settings -> Manage premium -> Upgrade to Premium or Restore Purchases.
 Premium unlocks live forecasts, tide data, and Best Time Today across more spots.
 
 Safety and moderation:
-Users can report and block posts, profiles, and direct messages.
+Users can report and block posts, comments, profiles, and direct messages.
 Blocked users are hidden from feeds, search, message lists, and new-message picker.
 Settings includes Blocked surfers, Legal & support, and Delete account.
 

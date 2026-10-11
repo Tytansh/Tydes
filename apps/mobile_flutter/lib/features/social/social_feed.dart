@@ -64,8 +64,10 @@ class SocialComment {
     required this.userId,
     required this.authorName,
     required this.text,
+    this.authorHandle,
     this.authorAvatarUrl,
     this.authorInitial,
+    this.authorPremium = false,
     this.replyToCommentId,
     this.isMe = false,
   });
@@ -75,8 +77,10 @@ class SocialComment {
   final String userId;
   final String authorName;
   final String text;
+  final String? authorHandle;
   final String? authorAvatarUrl;
   final String? authorInitial;
+  final bool authorPremium;
   final String? replyToCommentId;
   final bool isMe;
 
@@ -85,7 +89,9 @@ class SocialComment {
     postId: model.postId,
     userId: model.userId,
     authorName: model.authorName,
+    authorHandle: model.authorHandle,
     authorAvatarUrl: model.authorAvatarUrl,
+    authorPremium: model.authorPremium,
     authorInitial: model.authorName.trim().isEmpty
         ? '?'
         : model.authorName.characters.first.toUpperCase(),
@@ -969,9 +975,12 @@ class _PostEngagementBarState extends ConsumerState<PostEngagementBar> {
         .contains(widget.post.id);
     final likeCount = _baseLikeCount(widget.post) + (liked ? 1 : 0);
     final repostCount = _baseRepostCount(widget.post) + (reposted ? 1 : 0);
+    final blockedUserIds = ref.watch(blockedUserIdsProvider);
     final comments =
-        ref.watch(postCommentsProvider)[widget.post.id] ??
-        const <SocialComment>[];
+        (ref.watch(postCommentsProvider)[widget.post.id] ??
+                const <SocialComment>[])
+            .where((comment) => !blockedUserIds.contains(comment.userId))
+            .toList();
     final currentViewer = ref.watch(currentViewerProvider).valueOrNull;
     final canModerateComments = currentViewer?.id == widget.post.userId;
     final topLevelComments = _topLevelComments(comments);
@@ -1211,6 +1220,9 @@ class _CommentPreviewTile extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final liked = ref.watch(likedCommentIdsProvider).contains(comment.id);
     final likeCount = _baseCommentLikeCount(comment) + (liked ? 1 : 0);
+    final currentViewer = ref.watch(currentViewerProvider).valueOrNull;
+    final isOwnComment = comment.isMe || currentViewer?.id == comment.userId;
+    final showOptions = onDelete != null || !isOwnComment;
     final initial =
         comment.authorInitial ??
         (comment.authorName.trim().isEmpty
@@ -1315,22 +1327,49 @@ class _CommentPreviewTile extends ConsumerWidget {
                         ),
                       ),
                     ),
-                    if (onDelete != null) ...[
+                    if (showOptions) ...[
                       const SizedBox(width: 2),
-                      InkWell(
-                        onTap: onDelete,
-                        borderRadius: BorderRadius.circular(999),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 3,
-                            vertical: 6,
-                          ),
-                          child: Icon(
-                            Icons.close_rounded,
-                            size: 16,
-                            color: scheme.outline,
-                          ),
+                      PopupMenuButton<_CommentSafetyAction>(
+                        tooltip: 'Comment options',
+                        padding: EdgeInsets.zero,
+                        iconSize: 18,
+                        icon: Icon(
+                          Icons.more_horiz_rounded,
+                          color: scheme.outline,
                         ),
+                        itemBuilder: (context) => [
+                          if (!isOwnComment)
+                            const PopupMenuItem(
+                              value: _CommentSafetyAction.report,
+                              child: Text('Report comment'),
+                            ),
+                          if (!isOwnComment)
+                            const PopupMenuItem(
+                              value: _CommentSafetyAction.block,
+                              child: Text('Block surfer'),
+                            ),
+                          if (onDelete != null)
+                            const PopupMenuItem(
+                              value: _CommentSafetyAction.delete,
+                              child: Text('Delete comment'),
+                            ),
+                        ],
+                        onSelected: (action) {
+                          switch (action) {
+                            case _CommentSafetyAction.report:
+                              unawaited(_reportComment(context, ref, comment));
+                            case _CommentSafetyAction.block:
+                              unawaited(
+                                _confirmAndBlockCommentAuthor(
+                                  context,
+                                  ref,
+                                  comment,
+                                ),
+                              );
+                            case _CommentSafetyAction.delete:
+                              onDelete?.call();
+                          }
+                        },
                       ),
                     ],
                   ],
@@ -1360,6 +1399,68 @@ class _CommentPreviewTile extends ConsumerWidget {
       ),
     );
   }
+}
+
+enum _CommentSafetyAction { report, block, delete }
+
+Future<void> _reportComment(
+  BuildContext context,
+  WidgetRef ref,
+  SocialComment comment,
+) async {
+  try {
+    await ref
+        .read(surfRepositoryProvider)
+        .reportSocialContent(
+          targetType: 'comment',
+          targetId: comment.id,
+          reason: 'Comment report',
+        );
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Report sent. Thanks for helping Tydes.')),
+    );
+  } catch (_) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Could not report this comment right now.')),
+    );
+  }
+}
+
+Future<void> _confirmAndBlockCommentAuthor(
+  BuildContext context,
+  WidgetRef ref,
+  SocialComment comment,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Block ${comment.authorName}?'),
+      content: const Text(
+        'You will not see their posts, comments, profile, or messages in Tydes. You can undo this later from safety settings.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Block'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  await blockSocialUser(ref, comment.userId);
+  ref.invalidate(travelFeedPostsProvider);
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text('@${comment.authorHandle ?? comment.authorName} blocked.'),
+    ),
+  );
 }
 
 class _CommentThread extends StatelessWidget {
@@ -1490,9 +1591,12 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final blockedUserIds = ref.watch(blockedUserIdsProvider);
     final comments =
-        ref.watch(postCommentsProvider)[widget.postId] ??
-        const <SocialComment>[];
+        (ref.watch(postCommentsProvider)[widget.postId] ??
+                const <SocialComment>[])
+            .where((comment) => !blockedUserIds.contains(comment.userId))
+            .toList();
     final topLevelComments = _topLevelComments(comments);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
@@ -1622,6 +1726,12 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
   void _addComment() {
     final comment = _replyController.text.trim();
     if (comment.isEmpty) return;
+    if (hasBlockedContent(comment)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text(contentBlockedMessage)));
+      return;
+    }
     unawaited(_saveComment(comment));
     _replyController.clear();
     setState(() => _replyTarget = null);

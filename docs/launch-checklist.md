@@ -9,7 +9,7 @@ Use this as the working launch list before TestFlight and App Store review.
 - Account signup, email verification, reset password, and delete account
 - Premium screen with Restore Purchases
 - RevenueCat entitlement wiring for `premium`
-- Report/block controls for posts, profiles, and direct messages
+- Report/block controls for posts, comments, profiles, and direct messages
 - Blocked surfers sheet in Settings
 - Content moderation checks for profile text, posts, comments, events, and messages
 - Surf/tide safety disclaimers in Settings and legal pages
