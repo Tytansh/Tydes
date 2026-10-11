@@ -23,6 +23,8 @@ Use this as the working launch list before TestFlight and App Store review.
 - Create App Store Connect app record for Tydes.
 - Create real App Store subscription product `tydes_premium_monthly`.
 - Put the real RevenueCat iOS SDK key into the Flutter build command.
+- Set `TYDES_PREMIUM_EMAILS=reviewer@tydes.io` in Render if the reviewer
+  account should bypass sandbox purchase setup.
 - Choose a production map tile provider and set the map `--dart-define` values.
 - Create one reviewer account in Tydes and include it in App Review Notes.
 - Run a fresh install test on a real iPhone.

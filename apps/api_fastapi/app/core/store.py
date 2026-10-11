@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import secrets
 
 from datetime import date, datetime, timedelta, timezone
@@ -372,7 +373,17 @@ class DemoStore:
         return " ".join(word.capitalize() for word in words)
 
     def _email_has_premium_override(self, email: str) -> bool:
-        return "+premium" in email or email.startswith("premium@")
+        normalized_email = email.strip().lower()
+        configured_emails = {
+            item.strip().lower()
+            for item in os.getenv("TYDES_PREMIUM_EMAILS", "").split(",")
+            if item.strip()
+        }
+        return (
+            "+premium" in normalized_email
+            or normalized_email.startswith("premium@")
+            or normalized_email in configured_emails
+        )
 
     def _can_use_demo_login(self, email: str) -> bool:
         return (

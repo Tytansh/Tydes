@@ -152,6 +152,32 @@ def test_premium_user_hides_ads_and_can_use_live_data(monkeypatch):
     assert called["value"] is True
 
 
+def test_configured_premium_email_gets_premium_access(monkeypatch):
+    email = "launch-reviewer@example.com"
+    monkeypatch.setenv("TYDES_PREMIUM_EMAILS", f"{email}, vip@example.com")
+    _stub_email_senders(monkeypatch)
+    signup_response = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "email": email,
+            "password": "longboard123",
+            "locale": "en",
+        },
+    )
+    assert signup_response.status_code == 200
+    access_token = signup_response.json()["session"]["access_token"]
+
+    response = client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["email"] == email
+    assert response.json()["premium"] is True
+    assert response.json()["ads_enabled"] is False
+
+
 def test_preview_forecasts_use_longer_cache_window(monkeypatch):
     store.login("demo+premium@surftravel.app")
     captured = {}

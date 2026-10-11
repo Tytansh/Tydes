@@ -41,6 +41,15 @@ REVENUECAT_ENTITLEMENT_ID=premium
 REVENUECAT_SECRET_API_KEY=<RevenueCat secret API key>
 ```
 
+Optional reviewer/demo premium override:
+
+```text
+TYDES_PREMIUM_EMAILS=reviewer@tydes.io
+```
+
+Use this only for accounts we control, such as the App Store reviewer account.
+Do not put normal customer emails here.
+
 After changing either value, redeploy `tydes-api`.
 
 ## Flutter production run
@@ -75,6 +84,12 @@ Recommended:
 Email: reviewer@tydes.io or another email you control
 Password: a real password only stored in App Store Connect review notes
 Premium: active test subscription or backend/admin premium override for review
+```
+
+For the backend override path, set this in Render:
+
+```text
+TYDES_PREMIUM_EMAILS=reviewer@tydes.io
 ```
 
 Do not put reviewer passwords in GitHub.
