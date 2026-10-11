@@ -12,27 +12,31 @@ This keeps App Store, support, reviewer, and transactional email separated.
 
 ## Simple launch setup
 
-Use Cloudflare Email Routing for receiving mail and Resend for app verification emails.
+Use Google Workspace for receiving `@tydes.io` mail and Resend for app
+verification emails.
 
-### Cloudflare Email Routing
+### Google Workspace aliases
 
-In Cloudflare:
+In Google Admin:
 
-1. Open `tydes.io`.
-2. Go to `Email` -> `Email Routing`.
-3. Add your destination mailbox, usually `tytansherter@gmail.com`.
-4. Verify the destination email from the email Cloudflare sends you.
-5. Create custom addresses:
-   - `appstore@tydes.io` -> `tytansherter@gmail.com`
-   - `support@tydes.io` -> `tytansherter@gmail.com`
-   - `reviewer@tydes.io` -> `tytansherter@gmail.com`
-   - `security@tydes.io` -> `tytansherter@gmail.com`
-6. Leave Cloudflare Email Routing DNS records enabled.
+1. Open `Directory` -> `Users`.
+2. Open the main Tydes user, currently `tytan@tydes.io`.
+3. Use `Add alternative emails` / `Alternative email addresses`.
+4. Add these aliases under the real `tydes.io` domain:
+   - `appstore@tydes.io`
+   - `support@tydes.io`
+   - `reviewer@tydes.io`
+   - `security@tydes.io`
+5. Test each alias from a non-Workspace email address and confirm it lands in
+   the `tytan@tydes.io` Gmail inbox.
 
-Cloudflare Email Routing is mainly for receiving and forwarding. If we want to
-reply from `support@tydes.io` instead of Gmail later, use Google Workspace,
-Fastmail, Zoho Mail, iCloud custom email domain, or another real mailbox
-provider.
+Cloudflare should only handle DNS for this setup. Do not enable Cloudflare
+Email Routing for `tydes.io` while Google Workspace is the active mail provider,
+or mail routing can get confusing.
+
+If Google Workspace ever gets removed, Cloudflare Email Routing can be used as a
+free receiving/forwarding fallback, but it does not replace a real mailbox for
+replying as `support@tydes.io`.
 
 ### Resend transactional email
 

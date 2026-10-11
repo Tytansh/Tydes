@@ -15,6 +15,8 @@ Use this as the working launch list before TestFlight and App Store review.
 - Surf/tide safety disclaimers in Settings and legal pages
 - Cloudflare R2 media storage support
 - Postgres-backed users/auth/accounts/profile handles
+- Google Workspace aliases for `support@tydes.io`, `appstore@tydes.io`,
+  `reviewer@tydes.io`, and `security@tydes.io`
 
 ## Before TestFlight
 
@@ -22,7 +24,6 @@ Use this as the working launch list before TestFlight and App Store review.
 - Create real App Store subscription product `tydes_premium_monthly`.
 - Put the real RevenueCat iOS SDK key into the Flutter build command.
 - Choose a production map tile provider and set the map `--dart-define` values.
-- Create the support/reviewer/App Store email aliases in `docs/email-setup.md`.
 - Create one reviewer account in Tydes and include it in App Review Notes.
 - Run a fresh install test on a real iPhone.
 - Test signup, login, reset password, delete account, premium purchase, Restore Purchases, posting, events, DMs, reports, blocks, map, forecasts, tides, and media uploads.
@@ -31,7 +32,6 @@ Use this as the working launch list before TestFlight and App Store review.
 
 - Confirm TideCheck commercial terms or paid plan.
 - Confirm the map tile provider allows production mobile app traffic.
-- Confirm support email receives mail.
 - Confirm Privacy Policy URL, Terms URL, and Support URL are reachable publicly.
 - Upload App Store screenshots and app icon.
 - Remove any test-only RevenueCat keys from release commands.
