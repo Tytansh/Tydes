@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -122,6 +124,11 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
               : displayedVisibleSpots.firstWhere(
                   (spot) => spot.id == _selectedSpotId,
                 );
+          final selectedForecast = selectedSpot == null
+              ? null
+              : ref
+                    .watch(spotCardForecastProvider(selectedSpot.id))
+                    .valueOrNull;
 
           return ListView(
             padding: const EdgeInsets.only(bottom: 16),
@@ -304,6 +311,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                             ? 3.2
                             : 8.0,
                         selectedSpotId: _selectedSpotId,
+                        selectedForecast: selectedForecast,
                         onSpotTap: _focusSpot,
                         onPositionChanged: (camera, _) {
                           if (_zoom != camera.zoom) {
@@ -893,6 +901,7 @@ class _MapCanvas extends StatelessWidget {
     required this.initialCenter,
     required this.initialZoom,
     required this.selectedSpotId,
+    required this.selectedForecast,
     required this.onSpotTap,
     required this.onPositionChanged,
   });
@@ -902,6 +911,7 @@ class _MapCanvas extends StatelessWidget {
   final LatLng initialCenter;
   final double initialZoom;
   final String? selectedSpotId;
+  final ForecastModel? selectedForecast;
   final ValueChanged<SpotModel> onSpotTap;
   final void Function(MapCamera, bool) onPositionChanged;
 
@@ -930,12 +940,15 @@ class _MapCanvas extends StatelessWidget {
                 (spot) => Marker(
                   point: LatLng(spot.latitude, spot.longitude),
                   width: selectedSpotId == spot.id ? 120 : 22,
-                  height: selectedSpotId == spot.id ? 92 : 22,
+                  height: selectedSpotId == spot.id ? 112 : 22,
                   child: GestureDetector(
                     onTap: () => onSpotTap(spot),
                     child: _SpotMarker(
                       spot: spot,
                       isSelected: selectedSpotId == spot.id,
+                      forecast: selectedSpotId == spot.id
+                          ? selectedForecast
+                          : null,
                     ),
                   ),
                 ),
@@ -1560,10 +1573,15 @@ class _NestedResultGroupCardState extends State<_NestedResultGroupCard> {
 }
 
 class _SpotMarker extends StatelessWidget {
-  const _SpotMarker({required this.spot, required this.isSelected});
+  const _SpotMarker({
+    required this.spot,
+    required this.isSelected,
+    required this.forecast,
+  });
 
   final SpotModel spot;
   final bool isSelected;
+  final ForecastModel? forecast;
 
   @override
   Widget build(BuildContext context) {
@@ -1591,9 +1609,20 @@ class _SpotMarker extends StatelessWidget {
       );
     }
 
+    final swellDirection = forecast?.swellDirectionDisplay;
+    final swellDirectionDeg =
+        forecast?.swellWaveDirectionDeg ?? forecast?.waveDirectionDeg;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (swellDirection != null) ...[
+          _SwellDirectionPill(
+            direction: swellDirection,
+            degrees: swellDirectionDeg,
+          ),
+          const SizedBox(height: 4),
+        ],
         AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -1620,6 +1649,57 @@ class _SpotMarker extends StatelessWidget {
         const SizedBox(height: 4),
         const Icon(Icons.place_rounded, color: _mapMarkerColor, size: 40),
       ],
+    );
+  }
+}
+
+class _SwellDirectionPill extends StatelessWidget {
+  const _SwellDirectionPill({required this.direction, required this.degrees});
+
+  final String direction;
+  final int? degrees;
+
+  @override
+  Widget build(BuildContext context) {
+    final angle = ((degrees ?? 0) % 360) * math.pi / 180;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0x332AA7A1)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x22000000),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Transform.rotate(
+              angle: angle,
+              child: const Icon(
+                Icons.arrow_upward_rounded,
+                color: _mapMarkerSelectedColor,
+                size: 16,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              '$direction swell',
+              style: const TextStyle(
+                color: _mapMarkerSelectedColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
