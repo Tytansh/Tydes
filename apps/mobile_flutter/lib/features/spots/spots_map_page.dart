@@ -629,7 +629,10 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
     required Set<String> favoriteSpotIds,
     required SpotModel? selectedSpot,
   }) {
-    return spots.map((spot) {
+    final listSpots = selectedSpot == null
+        ? spots
+        : spots.where((spot) => spot.id != selectedSpot.id).toList();
+    return listSpots.map((spot) {
       final isSelected = spot.id == selectedSpot?.id;
       return _MapSpotTile(
         spot: spot,
