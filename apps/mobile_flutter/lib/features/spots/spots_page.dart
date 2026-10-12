@@ -1107,7 +1107,18 @@ class _SpotCard extends ConsumerWidget {
         trailing: forecast.when(
           data: (row) => row == null
               ? const SizedBox.shrink()
-              : Text(row.waveDisplay, style: forecastTextStyle),
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(row.waveDisplay, style: forecastTextStyle),
+                    if (row.swellDirectionDisplay != null)
+                      Text(
+                        row.swellDirectionDisplay!,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                  ],
+                ),
           loading: () => const SizedBox(
             width: 18,
             height: 18,

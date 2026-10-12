@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+import math
 from typing import Any
 
 import httpx
@@ -17,7 +18,7 @@ FREE_FORECAST_MAX_AGE = timedelta(days=5)
 class _CacheItem:
     fetched_at: datetime
     data: list[ForecastEntry]
-    hourly_rows: list[dict[str, float | str]]
+    hourly_rows: list[dict[str, float | str | None]]
 
 
 class OpenMeteoMarineProvider:
@@ -54,8 +55,10 @@ class OpenMeteoMarineProvider:
                     [
                         "wave_height",
                         "wave_period",
+                        "wave_direction",
                         "wind_wave_height",
                         "swell_wave_height",
+                        "swell_wave_direction",
                         "sea_surface_temperature",
                     ]
                 ),
@@ -124,13 +127,15 @@ class OpenMeteoMarineProvider:
         self,
         marine_payload: dict[str, Any],
         weather_payload: dict[str, Any],
-    ) -> list[dict[str, float | str]]:
+    ) -> list[dict[str, float | str | None]]:
         hourly = marine_payload.get("hourly", {})
         times = hourly.get("time", [])
         wave_heights = hourly.get("wave_height", [])
         wave_periods = hourly.get("wave_period", [])
+        wave_directions = hourly.get("wave_direction", [])
         wind_wave_heights = hourly.get("wind_wave_height", [])
         swell_wave_heights = hourly.get("swell_wave_height", [])
+        swell_wave_directions = hourly.get("swell_wave_direction", [])
         sea_surface_temps = hourly.get("sea_surface_temperature", [])
         weather_hourly = weather_payload.get("hourly", {})
         wind_speeds_by_time = {
@@ -149,8 +154,13 @@ class OpenMeteoMarineProvider:
                 "day": stamp.split("T")[0],
                 "wave_height": _safe_value(wave_heights, index),
                 "wave_period": _safe_value(wave_periods, index),
+                "wave_direction": _optional_value(wave_directions, index),
                 "wind_wave_height": _safe_value(wind_wave_heights, index),
                 "swell_wave_height": _safe_value(swell_wave_heights, index),
+                "swell_wave_direction": _optional_value(
+                    swell_wave_directions,
+                    index,
+                ),
                 "sea_surface_temperature": _safe_value(sea_surface_temps, index),
                 "wind_speed": wind_speeds_by_time.get(stamp, 0.0),
             }
@@ -160,17 +170,21 @@ class OpenMeteoMarineProvider:
     def _to_daily_forecasts_from_rows(
         self,
         spot: Spot,
-        hourly_rows: list[dict[str, float | str]],
+        hourly_rows: list[dict[str, float | str | None]],
     ) -> list[ForecastEntry]:
-        grouped: dict[str, list[dict[str, float]]] = {}
+        grouped: dict[str, list[dict[str, float | None]]] = {}
         for row in hourly_rows:
             day_key = str(row["day"])
             grouped.setdefault(day_key, []).append(
                 {
                     "wave_height": float(row["wave_height"]),
                     "wave_period": float(row["wave_period"]),
+                    "wave_direction": _direction_value(row["wave_direction"]),
                     "wind_wave_height": float(row["wind_wave_height"]),
                     "swell_wave_height": float(row["swell_wave_height"]),
+                    "swell_wave_direction": _direction_value(
+                        row["swell_wave_direction"],
+                    ),
                     "sea_surface_temperature": float(row["sea_surface_temperature"]),
                     "wind_speed": float(row["wind_speed"]),
                 }
@@ -182,6 +196,12 @@ class OpenMeteoMarineProvider:
             avg_period = _average(row["wave_period"] for row in rows)
             avg_wind_wave = _average(row["wind_wave_height"] for row in rows)
             avg_swell_wave = _average(row["swell_wave_height"] for row in rows)
+            avg_wave_direction = _average_direction(
+                row["wave_direction"] for row in rows
+            )
+            avg_swell_direction = _average_direction(
+                row["swell_wave_direction"] for row in rows
+            )
             avg_temp = _average(row["sea_surface_temperature"] for row in rows)
             avg_wind_speed = _average(row["wind_speed"] for row in rows)
 
@@ -195,7 +215,9 @@ class OpenMeteoMarineProvider:
                     wind_kts=max(0, round(avg_wind_speed, 1)),
                     quality=_quality_for(avg_wave, avg_period),
                     swell_wave_height_m=round(avg_swell_wave, 1),
+                    swell_wave_direction_deg=avg_swell_direction,
                     wind_wave_height_m=round(avg_wind_wave, 1),
+                    wave_direction_deg=avg_wave_direction,
                     sea_surface_temperature_c=round(avg_temp, 1),
                     source="open-meteo",
                     confidence="live",
@@ -214,11 +236,41 @@ def _safe_value(values: list[Any], index: int) -> float:
     return float(value)
 
 
+def _optional_value(values: list[Any], index: int) -> float | None:
+    try:
+        value = values[index]
+    except IndexError:
+        return None
+    if value is None:
+        return None
+    return float(value)
+
+
+def _direction_value(value: Any) -> float | None:
+    if value is None:
+        return None
+    return float(value) % 360
+
+
 def _average(values: Any) -> float:
     data = list(values)
     if not data:
         return 0.0
     return sum(data) / len(data)
+
+
+def _average_direction(values: Any) -> int | None:
+    data = [float(value) % 360 for value in values if value is not None]
+    if not data:
+        return None
+
+    sin_sum = sum(math.sin(math.radians(value)) for value in data)
+    cos_sum = sum(math.cos(math.radians(value)) for value in data)
+    if abs(sin_sum) < 1e-9 and abs(cos_sum) < 1e-9:
+        return None
+
+    degrees = round(math.degrees(math.atan2(sin_sum, cos_sum)) % 360)
+    return 0 if degrees == 360 else degrees
 
 
 def _quality_for(wave_height_m: float, period_s: float) -> str:

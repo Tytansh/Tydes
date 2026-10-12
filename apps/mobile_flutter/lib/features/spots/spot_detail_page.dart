@@ -151,6 +151,12 @@ class SpotDetailPage extends ConsumerWidget {
                   children: [
                     _StatChip(label: 'Wave level', value: waveLevelValue),
                     _StatChip(label: 'Wave', value: waveValue),
+                    if (currentForecast?.swellDirectionDisplay != null)
+                      _StatChip(
+                        label: 'Swell',
+                        value:
+                            '${currentForecast!.swellDirectionDisplay!} swell',
+                      ),
                     _StatChip(label: 'Water', value: waterValue),
                   ],
                 ),
@@ -679,6 +685,13 @@ class _ForecastDetails extends StatelessWidget {
             help:
                 'Seconds between swell waves. Higher period usually means more push and power.',
           ),
+        if (row.swellDirectionDisplay != null)
+          _DetailLine(
+            label: 'Swell direction',
+            value: '${row.swellDirectionDisplay!} swell',
+            help:
+                'The direction the main swell is coming from. Best direction depends on each break.',
+          ),
         if (row.seaSurfaceTemperatureC != null)
           _DetailLine(
             label: 'Water temp',
@@ -744,6 +757,11 @@ class _ForecastSummary extends StatelessWidget {
           ),
         if (row.periodS != null)
           _StatChip(label: 'Power', value: _friendlyPeriod(row.periodS!)),
+        if (row.swellDirectionDisplay != null)
+          _StatChip(
+            label: 'Swell',
+            value: '${row.swellDirectionDisplay!} swell',
+          ),
       ],
     );
   }

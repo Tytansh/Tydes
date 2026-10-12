@@ -774,7 +774,13 @@ String _spotWaveLabel(
   ForecastModel? forecast, {
   bool isLoading = false,
 }) {
-  if (forecast != null) return 'Today: ${forecast.waveDisplay}';
+  if (forecast != null) {
+    final direction = forecast.swellDirectionDisplay;
+    if (direction != null) {
+      return 'Today: ${forecast.waveDisplay} • $direction';
+    }
+    return 'Today: ${forecast.waveDisplay}';
+  }
   if (isLoading) return 'Loading today...';
   return 'Typical: ${_formatMapWave(spot.waveHeightM)}m';
 }

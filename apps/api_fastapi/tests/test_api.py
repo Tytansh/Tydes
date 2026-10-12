@@ -18,6 +18,7 @@ os.environ.setdefault(
 from app.main import app
 from app.core.models import SurfWindowForecast, SurfWindowHour, TideForecast
 from app.core.store import store
+from app.integrations.weather_providers.open_meteo import OpenMeteoMarineProvider
 
 client = TestClient(app)
 
@@ -87,6 +88,37 @@ def test_forecasts_fallback_uses_estimated_spot_values(monkeypatch):
     assert all(row["wave_height_m"] is not None for row in rows)
     assert all(row["wave_height_min_m"] is None for row in rows)
     assert all(row["wave_height_max_m"] is None for row in rows)
+
+
+def test_open_meteo_forecast_keeps_swell_direction():
+    provider = OpenMeteoMarineProvider()
+    spot = store.spots[0]
+
+    forecasts = provider._to_daily_forecasts(
+        spot,
+        {
+            "hourly": {
+                "time": ["2026-01-01T06:00", "2026-01-01T07:00"],
+                "wave_height": [1.2, 1.4],
+                "wave_period": [10, 12],
+                "wave_direction": [350, 10],
+                "wind_wave_height": [0.3, 0.5],
+                "swell_wave_height": [1.0, 1.1],
+                "swell_wave_direction": [220, 230],
+                "sea_surface_temperature": [27.1, 27.3],
+            }
+        },
+        {
+            "hourly": {
+                "time": ["2026-01-01T06:00", "2026-01-01T07:00"],
+                "wind_speed_10m": [7.0, 9.0],
+            }
+        },
+    )
+
+    assert len(forecasts) == 1
+    assert forecasts[0].wave_direction_deg == 0
+    assert forecasts[0].swell_wave_direction_deg == 225
 
 
 def test_free_user_locked_spot_gets_real_forecast_on_five_day_cache(monkeypatch):

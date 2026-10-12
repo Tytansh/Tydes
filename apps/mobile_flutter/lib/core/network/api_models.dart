@@ -189,7 +189,9 @@ class ForecastModel {
     required this.windKtsMax,
     required this.quality,
     required this.swellWaveHeightM,
+    required this.swellWaveDirectionDeg,
     required this.windWaveHeightM,
+    required this.waveDirectionDeg,
     required this.seaSurfaceTemperatureC,
     required this.source,
     required this.confidence,
@@ -208,7 +210,9 @@ class ForecastModel {
   final double? windKtsMax;
   final String quality;
   final double? swellWaveHeightM;
+  final int? swellWaveDirectionDeg;
   final double? windWaveHeightM;
+  final int? waveDirectionDeg;
   final double? seaSurfaceTemperatureC;
   final String source;
   final String confidence;
@@ -265,6 +269,12 @@ class ForecastModel {
     return null;
   }
 
+  String? get swellDirectionDisplay {
+    final degrees = swellWaveDirectionDeg ?? waveDirectionDeg;
+    if (degrees == null) return null;
+    return _compassDirection(degrees);
+  }
+
   factory ForecastModel.fromJson(Map<String, dynamic> json) => ForecastModel(
     id: json['id'] as String,
     spotId: json['spot_id'] as String,
@@ -278,13 +288,22 @@ class ForecastModel {
     windKtsMax: (json['wind_kts_max'] as num?)?.toDouble(),
     quality: json['quality'] as String,
     swellWaveHeightM: (json['swell_wave_height_m'] as num?)?.toDouble(),
+    swellWaveDirectionDeg: (json['swell_wave_direction_deg'] as num?)?.round(),
     windWaveHeightM: (json['wind_wave_height_m'] as num?)?.toDouble(),
+    waveDirectionDeg: (json['wave_direction_deg'] as num?)?.round(),
     seaSurfaceTemperatureC: (json['sea_surface_temperature_c'] as num?)
         ?.toDouble(),
     source: json['source'] as String? ?? 'seed',
     confidence: json['confidence'] as String? ?? 'estimated',
     confidenceNote: json['confidence_note'] as String?,
   );
+}
+
+String _compassDirection(int degrees) {
+  const labels = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  final normalized = degrees % 360;
+  final index = ((normalized + 22.5) ~/ 45) % labels.length;
+  return labels[index];
 }
 
 class TideForecastModel {

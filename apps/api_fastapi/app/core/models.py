@@ -61,7 +61,9 @@ class ForecastEntry(BaseModel):
     wind_kts_max: float | None = None
     quality: Literal["poor", "fair", "good", "epic"]
     swell_wave_height_m: float | None = None
+    swell_wave_direction_deg: int | None = None
     wind_wave_height_m: float | None = None
+    wave_direction_deg: int | None = None
     sea_surface_temperature_c: float | None = None
     source: str = "seed"
     confidence: Literal["live", "estimated"] = "estimated"
