@@ -178,6 +178,28 @@ def test_configured_premium_email_gets_premium_access(monkeypatch):
     assert response.json()["ads_enabled"] is False
 
 
+def test_premium_email_override_applies_to_existing_session(monkeypatch):
+    email = "existing-reviewer@example.com"
+    monkeypatch.delenv("TYDES_PREMIUM_EMAILS", raising=False)
+    access_token = _signup_access_token(monkeypatch, email)
+    before_response = client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert before_response.status_code == 200
+    assert before_response.json()["premium"] is False
+
+    monkeypatch.setenv("TYDES_PREMIUM_EMAILS", email)
+    after_response = client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert after_response.status_code == 200
+    assert after_response.json()["premium"] is True
+    assert after_response.json()["ads_enabled"] is False
+
+
 def test_preview_forecasts_use_longer_cache_window(monkeypatch):
     store.login("demo+premium@surftravel.app")
     captured = {}

@@ -134,10 +134,7 @@ class DemoStore:
                 raise ValueError("Account profile is unavailable.")
             self.user = User.model_validate(user_payload)
             self.user.locale = locale
-            self.user.premium = self.user.premium or self._email_has_premium_override(
-                normalized_email
-            )
-            self.user.ads_enabled = not self.user.premium
+            self._apply_email_access_overrides(normalized_email)
             self._save_current_account_user()
             token = self._create_session_token(normalized_email)
             self._save_state()
@@ -303,6 +300,8 @@ class DemoStore:
         self._delete_password_reset_code(normalized_email)
         self._update_auth_password(normalized_email, _hash_password(new_password))
         self.user = User.model_validate(user_payload)
+        self._apply_email_access_overrides(normalized_email)
+        self._save_current_account_user()
         token = self._create_session_token(normalized_email)
         self._save_state()
         return Session(access_token=token, user=self.user)
@@ -385,6 +384,17 @@ class DemoStore:
             or normalized_email in configured_emails
         )
 
+    def _apply_email_access_overrides(self, email: str) -> bool:
+        premium_active = self.user.premium or self._email_has_premium_override(email)
+        ads_enabled = not premium_active
+        changed = (
+            self.user.premium != premium_active
+            or self.user.ads_enabled != ads_enabled
+        )
+        self.user.premium = premium_active
+        self.user.ads_enabled = ads_enabled
+        return changed
+
     def _can_use_demo_login(self, email: str) -> bool:
         return (
             email.endswith("@surftravel.app")
@@ -419,6 +429,13 @@ class DemoStore:
         if not isinstance(user_payload, dict):
             return False
         self.user = User.model_validate(user_payload)
+        access_changed = self._apply_email_access_overrides(email)
+        if access_changed:
+            self._save_current_account_user()
+            if self.postgres_social is not None:
+                self.postgres_social.update_author_snapshots(self.user)
+                self._sync_social_from_postgres()
+            self._save_state()
         return True
 
     def _save_current_account_user(self) -> None:
