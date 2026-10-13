@@ -43,7 +43,7 @@ class _CreateAlertSheetState extends ConsumerState<CreateAlertSheet> {
         .toDouble()
         .clamp(6.0, 24.0)
         .toDouble();
-    _tideEnabled = alert?.tideEnabled ?? false;
+    _tideEnabled = alert?.tideEnabled ?? true;
     _tideType = alert?.tideType ?? 'high';
     _tideOffsetHours = alert?.tideOffsetHours ?? 0;
   }
