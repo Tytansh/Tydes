@@ -5,6 +5,7 @@ Use this as the working launch list before TestFlight and App Store review.
 ## Already in place
 
 - Production API domain: `https://api.tydes.io/api/v1`
+- Open-Meteo paid customer API key support via Render `OPEN_METEO_API_KEY`
 - Public legal pages: Privacy Policy, Terms of Use, and Support
 - Account signup, email verification, reset password, and delete account
 - Premium screen with Restore Purchases
@@ -25,6 +26,7 @@ Use this as the working launch list before TestFlight and App Store review.
 - Put the real RevenueCat iOS SDK key into the Flutter build command.
 - Set `TYDES_PREMIUM_EMAILS=reviewer@tydes.io` in Render if the reviewer
   account should bypass sandbox purchase setup.
+- Add the Open-Meteo customer API key to Render as `OPEN_METEO_API_KEY`.
 - Choose a production map tile provider and set the map `--dart-define` values.
 - Create one reviewer account in Tydes and include it in App Review Notes.
 - Run a fresh install test on a real iPhone.

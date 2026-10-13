@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import math
+import os
 from typing import Any
 
 import httpx
@@ -12,6 +13,10 @@ from app.core.models import ForecastEntry, Spot, SurfWindowForecast, SurfWindowH
 FRESH_FORECAST_MAX_AGE = timedelta(hours=3)
 PREVIEW_FORECAST_MAX_AGE = timedelta(hours=24)
 FREE_FORECAST_MAX_AGE = timedelta(days=5)
+FREE_MARINE_BASE_URL = "https://marine-api.open-meteo.com/v1"
+FREE_FORECAST_BASE_URL = "https://api.open-meteo.com/v1"
+CUSTOMER_MARINE_BASE_URL = "https://customer-marine-api.open-meteo.com/v1"
+CUSTOMER_FORECAST_BASE_URL = "https://customer-api.open-meteo.com/v1"
 
 
 @dataclass
@@ -25,12 +30,21 @@ class OpenMeteoMarineProvider:
     """Fetch marine forecasts from Open-Meteo with a short in-memory cache."""
 
     def __init__(self) -> None:
+        self._api_key = os.getenv("OPEN_METEO_API_KEY", "").strip()
+        marine_base_url = os.getenv(
+            "OPEN_METEO_MARINE_BASE_URL",
+            CUSTOMER_MARINE_BASE_URL if self._api_key else FREE_MARINE_BASE_URL,
+        ).strip()
+        forecast_base_url = os.getenv(
+            "OPEN_METEO_FORECAST_BASE_URL",
+            CUSTOMER_FORECAST_BASE_URL if self._api_key else FREE_FORECAST_BASE_URL,
+        ).strip()
         self._marine_client = httpx.Client(
-            base_url="https://marine-api.open-meteo.com/v1",
+            base_url=marine_base_url,
             timeout=8.0,
         )
         self._forecast_client = httpx.Client(
-            base_url="https://api.open-meteo.com/v1",
+            base_url=forecast_base_url,
             timeout=8.0,
         )
         self._cache: dict[str, _CacheItem] = {}
@@ -48,38 +62,42 @@ class OpenMeteoMarineProvider:
 
         marine_response = self._marine_client.get(
             "/marine",
-            params={
-                "latitude": spot.latitude,
-                "longitude": spot.longitude,
-                "hourly": ",".join(
-                    [
-                        "wave_height",
-                        "wave_period",
-                        "wave_direction",
-                        "wind_wave_height",
-                        "swell_wave_height",
-                        "swell_wave_direction",
-                        "sea_surface_temperature",
-                    ]
-                ),
-                "forecast_days": 5,
-                "timezone": "auto",
-                "cell_selection": "sea",
-            },
+            params=self._with_api_key(
+                {
+                    "latitude": spot.latitude,
+                    "longitude": spot.longitude,
+                    "hourly": ",".join(
+                        [
+                            "wave_height",
+                            "wave_period",
+                            "wave_direction",
+                            "wind_wave_height",
+                            "swell_wave_height",
+                            "swell_wave_direction",
+                            "sea_surface_temperature",
+                        ]
+                    ),
+                    "forecast_days": 5,
+                    "timezone": "auto",
+                    "cell_selection": "sea",
+                }
+            ),
         )
         marine_response.raise_for_status()
 
         weather_response = self._forecast_client.get(
             "/forecast",
-            params={
-                "latitude": spot.latitude,
-                "longitude": spot.longitude,
-                "hourly": "wind_speed_10m",
-                "forecast_days": 5,
-                "timezone": "auto",
-                "wind_speed_unit": "kn",
-                "cell_selection": "sea",
-            },
+            params=self._with_api_key(
+                {
+                    "latitude": spot.latitude,
+                    "longitude": spot.longitude,
+                    "hourly": "wind_speed_10m",
+                    "forecast_days": 5,
+                    "timezone": "auto",
+                    "wind_speed_unit": "kn",
+                    "cell_selection": "sea",
+                }
+            ),
         )
         weather_response.raise_for_status()
 
@@ -113,6 +131,11 @@ class OpenMeteoMarineProvider:
                 note="Hourly forecast is unavailable right now.",
             )
         return _best_surf_window(spot, cached.hourly_rows)
+
+    def _with_api_key(self, params: dict[str, Any]) -> dict[str, Any]:
+        if not self._api_key:
+            return params
+        return {**params, "apikey": self._api_key}
 
     def _to_daily_forecasts(
         self,

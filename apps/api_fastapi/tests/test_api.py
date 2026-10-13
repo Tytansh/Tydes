@@ -121,6 +121,23 @@ def test_open_meteo_forecast_keeps_swell_direction():
     assert forecasts[0].swell_wave_direction_deg == 225
 
 
+def test_open_meteo_uses_customer_api_key(monkeypatch):
+    monkeypatch.setenv("OPEN_METEO_API_KEY", "om_test_key")
+
+    provider = OpenMeteoMarineProvider()
+
+    assert str(provider._marine_client.base_url) == (
+        "https://customer-marine-api.open-meteo.com/v1/"
+    )
+    assert str(provider._forecast_client.base_url) == (
+        "https://customer-api.open-meteo.com/v1/"
+    )
+    assert provider._with_api_key({"latitude": 1.0}) == {
+        "latitude": 1.0,
+        "apikey": "om_test_key",
+    }
+
+
 def test_free_user_locked_spot_gets_real_forecast_on_five_day_cache(monkeypatch):
     store.login("demo@surftravel.app")
     captured = {}
