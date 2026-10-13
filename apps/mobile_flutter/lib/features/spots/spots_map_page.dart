@@ -21,22 +21,62 @@ const _favoriteAccent = Color(0xFF2AA7A1);
 const _allCountriesLabel = 'All Southeast Asia';
 const _allRegionsLabel = 'All regions';
 const _allAreasLabel = 'All areas';
-const _mapTileUrlTemplate = String.fromEnvironment(
+const _defaultMapTileUrlTemplate =
+    'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const _defaultMapAttributionLabel = '© OpenStreetMap contributors';
+const _defaultMapAttributionUrl = 'https://www.openstreetmap.org/copyright';
+const _mapTileUrlTemplateOverride = String.fromEnvironment(
   'MAP_TILE_URL_TEMPLATE',
-  defaultValue: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+);
+const _mapTilerApiKey = String.fromEnvironment('MAPTILER_API_KEY');
+const _mapTilerMapId = String.fromEnvironment(
+  'MAPTILER_MAP_ID',
+  defaultValue: 'outdoor-v2',
 );
 const _mapTileUserAgent = String.fromEnvironment(
   'MAP_TILE_USER_AGENT',
   defaultValue: 'com.tytaneth.surftravel',
 );
-const _mapAttributionLabel = String.fromEnvironment(
-  'MAP_ATTRIBUTION',
-  defaultValue: '© OpenStreetMap contributors',
-);
-const _mapAttributionUrl = String.fromEnvironment(
+const _mapAttributionLabelOverride = String.fromEnvironment('MAP_ATTRIBUTION');
+const _mapAttributionUrlOverride = String.fromEnvironment(
   'MAP_ATTRIBUTION_URL',
-  defaultValue: 'https://www.openstreetmap.org/copyright',
 );
+
+String get _mapTileUrlTemplate {
+  if (_mapTileUrlTemplateOverride.isNotEmpty) {
+    return _mapTileUrlTemplateOverride;
+  }
+
+  if (_mapTilerApiKey.isNotEmpty) {
+    return 'https://api.maptiler.com/maps/$_mapTilerMapId/256/{z}/{x}/{y}.png?key=$_mapTilerApiKey';
+  }
+
+  return _defaultMapTileUrlTemplate;
+}
+
+String get _mapAttributionLabel {
+  if (_mapAttributionLabelOverride.isNotEmpty) {
+    return _mapAttributionLabelOverride;
+  }
+
+  if (_mapTilerApiKey.isNotEmpty) {
+    return '© MapTiler © OpenStreetMap contributors';
+  }
+
+  return _defaultMapAttributionLabel;
+}
+
+String get _mapAttributionUrl {
+  if (_mapAttributionUrlOverride.isNotEmpty) {
+    return _mapAttributionUrlOverride;
+  }
+
+  if (_mapTilerApiKey.isNotEmpty) {
+    return 'https://www.maptiler.com/copyright/';
+  }
+
+  return _defaultMapAttributionUrl;
+}
 
 class SpotsMapPage extends ConsumerStatefulWidget {
   const SpotsMapPage({super.key, this.initialSpotId});

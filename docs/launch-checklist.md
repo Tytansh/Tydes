@@ -27,7 +27,7 @@ Use this as the working launch list before TestFlight and App Store review.
 - Set `TYDES_PREMIUM_EMAILS=reviewer@tydes.io` in Render if the reviewer
   account should bypass sandbox purchase setup.
 - Add the Open-Meteo customer API key to Render as `OPEN_METEO_API_KEY`.
-- Choose a production map tile provider and set the map `--dart-define` values.
+- Create a MapTiler key and set the map `--dart-define` values.
 - Create one reviewer account in Tydes and include it in App Review Notes.
 - Run a fresh install test on a real iPhone.
 - Test signup, login, reset password, delete account, premium purchase, Restore Purchases, posting, events, DMs, reports, blocks, map, forecasts, tides, and media uploads.

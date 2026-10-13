@@ -65,9 +65,8 @@ flutter run \
   --dart-define=REVENUECAT_ENTITLEMENT_ID=premium \
   --dart-define=REVENUECAT_OFFERING_ID=premium \
   --dart-define=REVENUECAT_PACKAGE_ID='$rc_monthly' \
-  --dart-define=MAP_TILE_URL_TEMPLATE='<production_tile_url_template>' \
-  --dart-define=MAP_ATTRIBUTION='<production_map_attribution>' \
-  --dart-define=MAP_ATTRIBUTION_URL='<production_map_attribution_url>'
+  --dart-define=MAPTILER_API_KEY='<maptiler_api_key>' \
+  --dart-define=MAPTILER_MAP_ID='outdoor-v2'
 ```
 
 See `docs/map-provider.md` before TestFlight/App Store builds. The app has a
