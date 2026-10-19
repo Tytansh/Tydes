@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/network/api_models.dart';
@@ -26,13 +27,20 @@ class _TripsPageState extends ConsumerState<TripsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final trips = ref.watch(tripsProvider).asData?.value ?? const <TripModel>[];
     return Scaffold(
-      appBar: AppBar(title: const Text('Travel')),
+      appBar: AppBar(
+        title: const Text('Travel'),
+        backgroundColor: const Color(0xFFF8F7F2),
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+      ),
       body: ref
           .watch(travelSpotsProvider)
           .when(
             data: (spots) => _TravelLoadedBody(
               spots: spots,
+              trips: trips,
               selectedCountryId: _selectedCountryId,
               selectedRegionId: _selectedRegionId,
               selectedAreaId: _selectedAreaId,
@@ -60,6 +68,7 @@ class _TripsPageState extends ConsumerState<TripsPage> {
 class _TravelLoadedBody extends StatelessWidget {
   const _TravelLoadedBody({
     required this.spots,
+    required this.trips,
     required this.selectedCountryId,
     required this.selectedRegionId,
     required this.selectedAreaId,
@@ -68,6 +77,7 @@ class _TravelLoadedBody extends StatelessWidget {
   });
 
   final List<SpotModel> spots;
+  final List<TripModel> trips;
   final String? selectedCountryId;
   final String? selectedRegionId;
   final String? selectedAreaId;
@@ -80,41 +90,99 @@ class _TravelLoadedBody extends StatelessWidget {
     if (countries.isEmpty) {
       return const _TravelLoadError();
     }
-    final selectedCountry = selectedCountryId == null
-        ? null
-        : _firstWhereOrNull(
-            countries,
-            (country) => country.id == selectedCountryId,
-          );
-    final selectedRegion = selectedCountry == null || selectedRegionId == null
-        ? null
-        : _firstWhereOrNull(
-            selectedCountry.regions,
-            (region) => region.id == selectedRegionId,
-          );
-    final selectedArea = selectedRegion == null || selectedAreaId == null
-        ? null
-        : _firstWhereOrNull(
-            selectedRegion.areas,
-            (area) => area.id == selectedAreaId,
-          );
+    final selectedCountry =
+        _firstWhereOrNull(
+          countries,
+          (country) => country.id == selectedCountryId,
+        ) ??
+        _firstWhereOrNull(
+          countries,
+          (country) => country.name == 'Indonesia',
+        ) ??
+        countries.first;
+    final selectedRegion =
+        _firstWhereOrNull(
+          selectedCountry.regions,
+          (region) => region.id == selectedRegionId,
+        ) ??
+        _firstWhereOrNull(
+          selectedCountry.regions,
+          (region) => region.name == 'Bali',
+        ) ??
+        selectedCountry.regions.first;
+    final selectedArea =
+        _firstWhereOrNull(
+          selectedRegion.areas,
+          (area) => area.id == selectedAreaId,
+        ) ??
+        _firstWhereOrNull(
+          selectedRegion.areas,
+          (area) => area.name == 'Uluwatu',
+        ) ??
+        selectedRegion.areas.first;
+    final featuredBases = _buildFeaturedTravelBases(countries);
+    final totalBreaks = countries.fold<int>(
+      0,
+      (total, country) => total + country.breakCount,
+    );
+
+    void openBase(_FeaturedTravelBase base) {
+      onCountryChanged(base.country);
+      onLocationChanged(
+        _TravelLocationSelection(
+          regionId: base.region.id,
+          areaId: base.area.id,
+        ),
+      );
+    }
 
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(18, 6, 18, 32),
       children: [
-        const _TravelHero(),
-        const SizedBox(height: 18),
-        Text('Countries', style: Theme.of(context).textTheme.titleLarge),
+        _TravelHero(countryCount: countries.length, breakCount: totalBreaks),
+        const SizedBox(height: 16),
+        if (trips.isNotEmpty) ...[
+          _UpcomingTripCard(
+            trip: trips.first,
+            onExplore: featuredBases.isEmpty
+                ? null
+                : () => openBase(featuredBases.first),
+          ),
+          const SizedBox(height: 22),
+        ],
+        const _SectionHeading(
+          title: 'Surf bases worth a look',
+          subtitle: 'Tap one to start planning',
+        ),
         const SizedBox(height: 10),
         SizedBox(
-          height: 64,
+          height: 156,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: featuredBases.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            itemBuilder: (context, index) => _FeaturedBaseCard(
+              base: featuredBases[index],
+              index: index,
+              onTap: () => openBase(featuredBases[index]),
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        const _SectionHeading(
+          title: 'Choose your coast',
+          subtitle: 'Explore every country in Tydes',
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 58,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: countries.length,
             separatorBuilder: (_, _) => const SizedBox(width: 10),
             itemBuilder: (context, index) {
               final country = countries[index];
-              final selected = country.id == selectedCountry?.id;
+              final selected = country.id == selectedCountry.id;
               return _CountryChip(
                 country: country,
                 selected: selected,
@@ -123,45 +191,43 @@ class _TravelLoadedBody extends StatelessWidget {
             },
           ),
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 14),
         Row(
           children: [
             Expanded(
               child: Text(
-                'Where to stay',
+                'Your surf base',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
             ),
-            if (selectedCountry != null)
-              _StatusPill(label: '${selectedCountry.breakCount} breaks'),
+            _StatusPill(label: '${selectedCountry.breakCount} breaks'),
           ],
         ),
         const SizedBox(height: 10),
-        if (selectedCountry == null)
-          const _PickCountryCard()
-        else
-          _TravelLocationButton(
-            country: selectedCountry,
-            region: selectedRegion,
-            area: selectedArea,
-            onChanged: onLocationChanged,
-          ),
-        const SizedBox(height: 18),
-        if (selectedCountry == null)
-          const SizedBox.shrink()
-        else if (selectedArea == null)
-          _PickTravelAreaCard(country: selectedCountry)
-        else
-          ...selectedArea.listings.map(
-            (listing) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _TravelListingCard(listing: listing),
-            ),
-          ),
-        const SizedBox(height: 12),
-        Text('Saved living', style: Theme.of(context).textTheme.titleLarge),
+        _TravelLocationButton(
+          country: selectedCountry,
+          region: selectedRegion,
+          area: selectedArea,
+          onChanged: onLocationChanged,
+        ),
         const SizedBox(height: 10),
-        const _EmptyTripPlan(),
+        _TravelAreaOverview(
+          country: selectedCountry,
+          region: selectedRegion,
+          area: selectedArea,
+        ),
+        const SizedBox(height: 22),
+        _SectionHeading(
+          title: 'Stay near ${selectedArea.name}',
+          subtitle: 'Open official sites to check live availability',
+        ),
+        const SizedBox(height: 10),
+        ...selectedArea.listings.map(
+          (listing) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _TravelListingCard(listing: listing),
+          ),
+        ),
       ],
     );
   }
@@ -181,111 +247,410 @@ class _TravelLoadError extends StatelessWidget {
   }
 }
 
-class _PickCountryCard extends StatelessWidget {
-  const _PickCountryCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: const Color(0xFFD7EFEC),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Icon(
-                Icons.public_outlined,
-                color: Color(0xFF087E7A),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Choose a country to see surf regions and stay options.',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PickTravelAreaCard extends StatelessWidget {
-  const _PickTravelAreaCard({required this.country});
-
-  final _TravelCountryView country;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: const Color(0xFFD7EFEC),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Icon(
-                Icons.keyboard_arrow_down_rounded,
-                color: Color(0xFF087E7A),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Choose a ${country.name} region and local area to see stay options.',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _TravelHero extends StatelessWidget {
-  const _TravelHero();
+  const _TravelHero({required this.countryCount, required this.breakCount});
+
+  final int countryCount;
+  final int breakCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(30),
+      child: Container(
+        padding: const EdgeInsets.all(22),
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF073E59), Color(0xFF009AA4), Color(0xFF70CAB2)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Stack(
+          children: [
+            const Positioned(right: -24, top: -38, child: _HeroSun()),
+            const Positioned(
+              right: -14,
+              bottom: -20,
+              child: Icon(
+                Icons.waves_rounded,
+                color: Color(0x33FFFFFF),
+                size: 150,
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0x2BFFFFFF),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: const Color(0x35FFFFFF)),
+                  ),
+                  child: const Text(
+                    'TYDES TRIP PLANNER',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      letterSpacing: 1.1,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                Text(
+                  'Go where the swell is.',
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    color: Colors.white,
+                    fontSize: 29,
+                    fontWeight: FontWeight.w900,
+                    height: 1.05,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const SizedBox(
+                  width: 300,
+                  child: Text(
+                    'Pick a surf base, compare nearby breaks, and find a stay that fits the mission.',
+                    style: TextStyle(
+                      color: Color(0xE6FFFFFF),
+                      fontSize: 14,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    _HeroStat(label: '$countryCount countries'),
+                    const SizedBox(width: 8),
+                    _HeroStat(label: '$breakCount surf breaks'),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HeroSun extends StatelessWidget {
+  const _HeroSun();
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF064D63), Color(0xFF0AAFB3), Color(0xFFE9B872)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+      width: 126,
+      height: 126,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(
+          colors: [Color(0x99F5D38B), Color(0x12F5D38B)],
         ),
-        borderRadius: BorderRadius.circular(30),
+      ),
+    );
+  }
+}
+
+class _HeroStat extends StatelessWidget {
+  const _HeroStat({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0x26FFFFFF),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionHeading extends StatelessWidget {
+  const _SectionHeading({required this.title, required this.subtitle});
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 2),
+        Text(
+          subtitle,
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: const Color(0xFF6D716D)),
+        ),
+      ],
+    );
+  }
+}
+
+class _UpcomingTripCard extends StatelessWidget {
+  const _UpcomingTripCard({required this.trip, required this.onExplore});
+
+  final TripModel trip;
+  final VoidCallback? onExplore;
+
+  @override
+  Widget build(BuildContext context) {
+    final start = DateTime.tryParse(trip.startDate);
+    final end = DateTime.tryParse(trip.endDate);
+    final dates = start == null || end == null
+        ? '${trip.startDate} – ${trip.endDate}'
+        : '${DateFormat('MMM d').format(start)} – ${DateFormat('MMM d').format(end)}';
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE9F5F2),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFCCE7E1)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: const Color(0xFF087E7A),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(
+              Icons.flight_takeoff_rounded,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'NEXT UP • ${trip.destination.toUpperCase()}',
+                  style: const TextStyle(
+                    color: Color(0xFF087E7A),
+                    fontSize: 10,
+                    letterSpacing: .8,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  trip.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$dates • ${trip.travelers} travelers',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          IconButton.filledTonal(
+            onPressed: onExplore,
+            tooltip: 'Explore ${trip.destination}',
+            icon: const Icon(Icons.arrow_forward_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FeaturedBaseCard extends StatelessWidget {
+  const _FeaturedBaseCard({
+    required this.base,
+    required this.index,
+    required this.onTap,
+  });
+
+  final _FeaturedTravelBase base;
+  final int index;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const gradients = [
+      [Color(0xFF143D5B), Color(0xFF0A9FA5)],
+      [Color(0xFF176B68), Color(0xFF6CC5A4)],
+      [Color(0xFF8F5C39), Color(0xFFE6A85D)],
+    ];
+    final colors = gradients[index % gradients.length];
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: Ink(
+        width: 214,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: colors,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  base.country.emoji,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: .7,
+                  ),
+                ),
+                const Spacer(),
+                const Icon(
+                  Icons.north_east_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
+              ],
+            ),
+            const Spacer(),
+            Text(
+              base.area.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '${base.region.name}, ${base.country.name}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Color(0xE6FFFFFF), fontSize: 12),
+            ),
+            const SizedBox(height: 9),
+            Row(
+              children: [
+                const Icon(Icons.waves_rounded, color: Colors.white, size: 16),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    base.area.breakCountLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TravelAreaOverview extends StatelessWidget {
+  const _TravelAreaOverview({
+    required this.country,
+    required this.region,
+    required this.area,
+  });
+
+  final _TravelCountryView country;
+  final _TravelRegionView region;
+  final _TravelAreaView area;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1EEE5),
+        borderRadius: BorderRadius.circular(22),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.travel_explore, color: Colors.white, size: 34),
-          const SizedBox(height: 26),
           Text(
-            'Build the surf trip',
-            style: Theme.of(
-              context,
-            ).textTheme.headlineMedium?.copyWith(color: Colors.white),
+            '${region.name.toUpperCase()} • ${country.name.toUpperCase()}',
+            style: const TextStyle(
+              color: Color(0xFF087E7A),
+              fontSize: 10,
+              letterSpacing: .7,
+              fontWeight: FontWeight.w900,
+            ),
           ),
-          const SizedBox(height: 8),
-          const Text(
-            'Find places to stay by country, surf region, and local break zone across the app.',
-            style: TextStyle(color: Colors.white70),
+          const SizedBox(height: 7),
+          Text(
+            area.summary,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: const Color(0xFF394340),
+              height: 1.35,
+            ),
           ),
+          if (area.nearSpots.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 7,
+              runSpacing: 7,
+              children: area.nearSpots
+                  .take(4)
+                  .map(
+                    (spot) => Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        spot,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
         ],
       ),
     );
@@ -321,7 +686,13 @@ class _CountryChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(country.emoji, style: const TextStyle(fontSize: 20)),
+            Text(
+              country.emoji,
+              style: TextStyle(
+                color: selected ? Colors.white : const Color(0xFF263331),
+                fontSize: 20,
+              ),
+            ),
             const SizedBox(width: 8),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -936,31 +1307,6 @@ class _StatusPill extends StatelessWidget {
   }
 }
 
-class _EmptyTripPlan extends StatelessWidget {
-  const _EmptyTripPlan();
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Row(
-          children: [
-            const Icon(Icons.bookmark_add_outlined),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Your future favorite places to stay will show up here.',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _TravelArea {
   const _TravelArea({
     required this.id,
@@ -1106,6 +1452,64 @@ class _TravelLocationSelection {
 
   final String regionId;
   final String areaId;
+}
+
+class _FeaturedTravelBase {
+  const _FeaturedTravelBase({
+    required this.country,
+    required this.region,
+    required this.area,
+  });
+
+  final _TravelCountryView country;
+  final _TravelRegionView region;
+  final _TravelAreaView area;
+}
+
+List<_FeaturedTravelBase> _buildFeaturedTravelBases(
+  List<_TravelCountryView> countries,
+) {
+  const preferred = [
+    (country: 'Indonesia', region: 'Bali', area: 'Uluwatu'),
+    (country: 'Philippines', region: 'Siargao', area: 'General Luna'),
+    (country: 'Australia', region: 'New South Wales', area: 'Bondi'),
+  ];
+  final bases = <_FeaturedTravelBase>[];
+
+  for (final target in preferred) {
+    final country = _firstWhereOrNull(
+      countries,
+      (item) => item.name == target.country,
+    );
+    if (country == null) continue;
+    final region =
+        _firstWhereOrNull(
+          country.regions,
+          (item) => item.name == target.region,
+        ) ??
+        country.regions.first;
+    final area =
+        _firstWhereOrNull(region.areas, (item) => item.name == target.area) ??
+        region.areas.first;
+    bases.add(
+      _FeaturedTravelBase(country: country, region: region, area: area),
+    );
+  }
+
+  if (bases.length >= 3) return bases;
+  for (final country in countries) {
+    if (bases.any((base) => base.country.id == country.id)) continue;
+    final region = country.regions.first;
+    bases.add(
+      _FeaturedTravelBase(
+        country: country,
+        region: region,
+        area: region.areas.first,
+      ),
+    );
+    if (bases.length == 3) break;
+  }
+  return bases;
 }
 
 List<_TravelCountryView> _buildTravelCountries(List<SpotModel> spots) {
