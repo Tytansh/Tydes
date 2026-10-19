@@ -4637,7 +4637,7 @@ def build_seed() -> dict[str, list[BaseModel] | User]:
         BillingPlan(
             id="premium",
             name="Premium",
-            price_usd_monthly=4.99,
+            price_usd_monthly=3.99,
             features=[
                 "Live data on every spot",
                 "Best Time Today windows",

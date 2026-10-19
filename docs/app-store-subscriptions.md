@@ -10,14 +10,14 @@ Keep these identifiers stable across App Store Connect, RevenueCat, backend, and
 - RevenueCat entitlement ID: `premium`
 - RevenueCat offering ID: `premium`
 - RevenueCat monthly package ID: `$rc_monthly`
-- Display price: `US$4.99 / month`
+- Display price: `US$3.99 / month`
 
 ## App Store Connect
 
 1. Create the Tydes app record.
 2. Add an auto-renewable subscription group for Premium.
 3. Add monthly product `tydes_premium_monthly`.
-4. Set price tier to US$4.99 monthly or the matching local price tier.
+4. Set price tier to US$3.99 monthly or the matching local price tier.
 5. Add subscription review screenshot and description.
 6. Make sure Paid Apps Agreements, tax, and banking are complete.
 
@@ -29,7 +29,8 @@ Keep these identifiers stable across App Store Connect, RevenueCat, backend, and
 4. Create offering `premium`.
 5. Add the monthly package using package ID `$rc_monthly`.
 6. Attach product `tydes_premium_monthly` to that package.
-7. Copy the iOS SDK API key for Flutter builds.
+7. Verify the public iOS SDK API key matches the default in
+   `RevenueCatService`; use a Dart define only when overriding it.
 8. Copy the RevenueCat secret API key into Render as `REVENUECAT_SECRET_API_KEY`.
 
 ## Render backend environment
@@ -54,13 +55,15 @@ After changing either value, redeploy `tydes-api`.
 
 ## Flutter production run
 
-Use the real iOS SDK API key from RevenueCat for TestFlight/App Store builds.
+The public RevenueCat iOS SDK key is compiled into the app by default. It is a
+client identifier, not the secret backend API key. The Dart define below is
+only needed to override the default for a different RevenueCat app.
 
 ```bash
 cd /Users/tytans/Documents/Playground/apps/mobile_flutter
 flutter run \
   --dart-define=API_BASE_URL=https://api.tydes.io/api/v1 \
-  --dart-define=REVENUECAT_IOS_API_KEY=<real_ios_revenuecat_sdk_key> \
+  --dart-define=REVENUECAT_IOS_API_KEY=<optional_ios_sdk_key_override> \
   --dart-define=REVENUECAT_ANDROID_API_KEY=<real_android_revenuecat_sdk_key_if_available> \
   --dart-define=REVENUECAT_ENTITLEMENT_ID=premium \
   --dart-define=REVENUECAT_OFFERING_ID=premium \
@@ -98,7 +101,8 @@ Do not put reviewer passwords in GitHub.
 1. Fresh install the app.
 2. Sign in as the reviewer account.
 3. Open Settings -> Manage premium.
-4. Confirm price shows `US$4.99` from RevenueCat.
+4. Confirm RevenueCat shows `US$3.99` in the US storefront or Apple's
+   localized equivalent (for example, `CA$4.99` in Canada).
 5. Tap Upgrade to Premium in sandbox/TestFlight.
 6. Confirm Tydes shows Premium active.
 7. Tap Restore Purchases and confirm Premium remains active.

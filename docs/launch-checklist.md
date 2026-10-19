@@ -10,6 +10,11 @@ Use this as the working launch list before TestFlight and App Store review.
 - Account signup, email verification, reset password, and delete account
 - Premium screen with Restore Purchases
 - RevenueCat entitlement wiring for `premium`
+- Production RevenueCat App Store app, entitlement, offering, and monthly
+  product connection
+- Public RevenueCat iOS SDK key embedded in the release build
+- App Store Connect app record and monthly subscription product at US$3.99
+- Blue 1024x1024 App Store icon and subscription review screenshot
 - Report/block controls for posts, comments, profiles, and direct messages
 - Blocked surfers sheet in Settings
 - Content moderation checks for profile text, posts, comments, events, and messages
@@ -21,9 +26,6 @@ Use this as the working launch list before TestFlight and App Store review.
 
 ## Before TestFlight
 
-- Create App Store Connect app record for Tydes.
-- Create real App Store subscription product `tydes_premium_monthly`.
-- Put the real RevenueCat iOS SDK key into the Flutter build command.
 - Set `TYDES_PREMIUM_EMAILS=reviewer@tydes.io` in Render if the reviewer
   account should bypass sandbox purchase setup.
 - Add the Open-Meteo customer API key to Render as `OPEN_METEO_API_KEY`.
@@ -37,8 +39,9 @@ Use this as the working launch list before TestFlight and App Store review.
 - Confirm TideCheck commercial terms or paid plan.
 - Confirm the map tile provider allows production mobile app traffic.
 - Confirm Privacy Policy URL, Terms URL, and Support URL are reachable publicly.
-- Upload App Store screenshots and app icon.
-- Remove any test-only RevenueCat keys from release commands.
+- Upload the remaining App Store product-page screenshots.
+- Confirm the embedded RevenueCat public SDK key points to the production
+  Tydes app.
 - Confirm debug banner is off.
 
 ## App Review Notes

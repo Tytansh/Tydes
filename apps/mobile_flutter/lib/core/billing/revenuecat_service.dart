@@ -35,7 +35,12 @@ class RevenueCatPremiumOffer {
 }
 
 class RevenueCatService {
-  static const iosApiKey = String.fromEnvironment('REVENUECAT_IOS_API_KEY');
+  // RevenueCat SDK keys are public client identifiers intended to ship in the
+  // app. The environment value remains available for alternate build targets.
+  static const iosApiKey = String.fromEnvironment(
+    'REVENUECAT_IOS_API_KEY',
+    defaultValue: 'appl_NQxXFQIZnLNDhqfKDSIcIDTvmnO',
+  );
   static const androidApiKey = String.fromEnvironment(
     'REVENUECAT_ANDROID_API_KEY',
   );

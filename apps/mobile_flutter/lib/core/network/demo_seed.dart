@@ -5776,7 +5776,7 @@ class DemoSeed {
     BillingPlanModel(
       id: 'premium',
       name: 'Premium',
-      priceUsdMonthly: 4.99,
+      priceUsdMonthly: 3.99,
       features: const [
         'Live data on every spot',
         'Best Time Today windows',
