@@ -18,21 +18,65 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="Tydes helps surfers find live wave, wind, tide, and travel conditions across Southeast Asia and Australia.">
+  <meta name="description" content="Explore surf spots, live forecasts, tides, community, travel plans and alerts with Tydes.">
+  <meta name="theme-color" content="#0b6f78">
+  <meta property="og:title" content="Tydes — Surf forecasts, community and travel">
+  <meta property="og:description" content="Plan the whole surf day with spot maps, forecasts, tides, alerts, community and travel tools.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://tydes.io/">
+  <meta property="og:image" content="https://tydes.io/icons/tydes-icon.png">
+  <link rel="canonical" href="https://tydes.io/">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="Tydes">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon" href="icons/tydes-icon.png">
 
   <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
+  <link rel="icon" type="image/png" href="icons/tydes-icon.png"/>
 
-  <title>Tydes</title>
+  <title>Tydes — Surf forecasts, community and travel</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: #f8f7f2;
+      color: #102f33;
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    #tydes-loader {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at 18% 20%, rgba(95, 214, 205, .28), transparent 30%),
+        radial-gradient(circle at 82% 78%, rgba(248, 196, 109, .22), transparent 34%),
+        #f8f7f2;
+      transition: opacity .25s ease;
+      z-index: 1;
+    }
+    .tydes-loader-card { text-align: center; }
+    .tydes-loader-mark {
+      width: 74px;
+      height: 74px;
+      border-radius: 22px;
+      box-shadow: 0 18px 50px rgba(10, 74, 82, .2);
+    }
+    .tydes-loader-card strong { display: block; margin-top: 16px; font-size: 22px; }
+    .tydes-loader-card span { display: block; margin-top: 6px; color: #607175; font-size: 14px; }
+  </style>
 </head>
 <body>
+  <div id="tydes-loader" aria-label="Loading Tydes">
+    <div class="tydes-loader-card">
+      <img class="tydes-loader-mark" src="icons/tydes-icon.png" alt="">
+      <strong>Tydes</strong>
+      <span>Loading surf spots and forecasts…</span>
+    </div>
+  </div>
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader
@@ -42,5 +86,13 @@
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
   <script src="flutter_bootstrap.js" async></script>
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      const loader = document.getElementById('tydes-loader');
+      if (!loader) return;
+      loader.style.opacity = '0';
+      window.setTimeout(() => loader.remove(), 260);
+    });
+  </script>
 </body>
 </html>
