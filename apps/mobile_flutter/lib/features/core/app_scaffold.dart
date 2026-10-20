@@ -197,18 +197,13 @@ class _DesktopBrandMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 42,
-      height: 42,
-      decoration: BoxDecoration(
-        color: const Color(0xFFE7F5FC),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Color(0xFFB8DFF3)),
-      ),
-      child: const Icon(
-        Icons.waves_rounded,
-        color: Color(0xFF1687C5),
-        size: 27,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Image.asset(
+        'assets/branding/tydes-wave-blue.png',
+        width: 42,
+        height: 42,
+        fit: BoxFit.cover,
       ),
     );
   }

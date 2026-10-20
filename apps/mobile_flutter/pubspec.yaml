@@ -67,6 +67,8 @@ dev_dependencies:
 # The following section is specific to Flutter packages.
 flutter:
   uses-material-design: true
+  assets:
+    - assets/branding/tydes-wave-blue.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

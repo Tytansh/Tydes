@@ -202,6 +202,124 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     await _finishAuth(profile);
   }
 
+  Widget _buildAuthFormContent({
+    required bool isSignup,
+    required String actionLabel,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!_verificationPending) ...[
+          _AuthModeToggle(mode: _mode, onChanged: _setMode),
+          const SizedBox(height: 22),
+          TextField(
+            controller: _emailController,
+            keyboardType: TextInputType.emailAddress,
+            autofillHints: const [AutofillHints.email],
+            decoration: const InputDecoration(
+              labelText: 'Email',
+              prefixIcon: Icon(Icons.email_outlined),
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _passwordController,
+            obscureText: _obscurePassword,
+            autofillHints: const [AutofillHints.password],
+            decoration: InputDecoration(
+              labelText: 'Password',
+              helperText: isSignup ? 'Use at least 8 characters.' : null,
+              prefixIcon: const Icon(Icons.lock_outline),
+              suffixIcon: IconButton(
+                onPressed: () =>
+                    setState(() => _obscurePassword = !_obscurePassword),
+                icon: Icon(
+                  _obscurePassword
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                ),
+              ),
+            ),
+          ),
+          if (!isSignup)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _loading ? null : _openPasswordReset,
+                child: const Text('Forgot password?'),
+              ),
+            ),
+          if (isSignup) ...[
+            const SizedBox(height: 14),
+            TextField(
+              controller: _confirmPasswordController,
+              obscureText: _obscurePassword,
+              autofillHints: const [AutofillHints.newPassword],
+              decoration: const InputDecoration(
+                labelText: 'Confirm password',
+                prefixIcon: Icon(Icons.lock_reset_rounded),
+              ),
+            ),
+          ],
+        ] else ...[
+          TextField(
+            controller: _verificationCodeController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Verification code',
+              prefixIcon: Icon(Icons.mark_email_read_outlined),
+            ),
+          ),
+          if (_verificationHint != null) ...[
+            const SizedBox(height: 10),
+            _AuthNotice(text: _verificationHint!),
+          ],
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: _loading
+                ? null
+                : () {
+                    setState(() {
+                      _verificationPending = false;
+                      _errorText = null;
+                    });
+                  },
+            child: const Text('Use a different email'),
+          ),
+        ],
+        if (_errorText != null) ...[
+          const SizedBox(height: 14),
+          _AuthError(text: _errorText!),
+        ],
+        const SizedBox(height: 24),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF073F43),
+            foregroundColor: Colors.white,
+            minimumSize: const Size.fromHeight(56),
+            textStyle: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+          ),
+          onPressed: _loading
+              ? null
+              : _verificationPending
+              ? _verifyEmail
+              : isSignup
+              ? _submitSignup
+              : _submitSignIn,
+          child: Text(actionLabel),
+        ),
+        const SizedBox(height: 10),
+        _AuthLegalNote(isSignup: isSignup),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isSignup = _mode == _AuthMode.signUp;
@@ -238,153 +356,56 @@ class _AuthPageState extends ConsumerState<AuthPage> {
           child: SafeArea(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final maxWidth = constraints.maxWidth > 560
-                    ? 500.0
-                    : double.infinity;
+                final desktop = constraints.maxWidth >= 980;
+                final formContent = _buildAuthFormContent(
+                  isSignup: isSignup,
+                  actionLabel: actionLabel,
+                );
+                if (desktop) {
+                  return SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(40, 32, 40, 40),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1180),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Expanded(child: _DesktopAuthShowcase()),
+                            const SizedBox(width: 38),
+                            SizedBox(
+                              width: 470,
+                              child: _AuthFormCard(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    _DesktopAuthHeading(
+                                      title: title,
+                                      subtitle: subtitle,
+                                    ),
+                                    const SizedBox(height: 30),
+                                    formContent,
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }
                 return SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(20, 10, 20, 28),
                   child: Center(
                     child: ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: maxWidth),
+                      constraints: const BoxConstraints(maxWidth: 500),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           _AuthBrandHeader(title: title, subtitle: subtitle),
                           const SizedBox(height: 18),
-                          _AuthFormCard(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                if (!_verificationPending) ...[
-                                  _AuthModeToggle(
-                                    mode: _mode,
-                                    onChanged: _setMode,
-                                  ),
-                                  const SizedBox(height: 22),
-                                  TextField(
-                                    controller: _emailController,
-                                    keyboardType: TextInputType.emailAddress,
-                                    autofillHints: const [AutofillHints.email],
-                                    decoration: const InputDecoration(
-                                      labelText: 'Email',
-                                      prefixIcon: Icon(Icons.email_outlined),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 14),
-                                  TextField(
-                                    controller: _passwordController,
-                                    obscureText: _obscurePassword,
-                                    autofillHints: const [
-                                      AutofillHints.password,
-                                    ],
-                                    decoration: InputDecoration(
-                                      labelText: 'Password',
-                                      helperText: isSignup
-                                          ? 'Use at least 8 characters.'
-                                          : null,
-                                      prefixIcon: const Icon(
-                                        Icons.lock_outline,
-                                      ),
-                                      suffixIcon: IconButton(
-                                        onPressed: () => setState(
-                                          () => _obscurePassword =
-                                              !_obscurePassword,
-                                        ),
-                                        icon: Icon(
-                                          _obscurePassword
-                                              ? Icons.visibility_outlined
-                                              : Icons.visibility_off_outlined,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  if (!isSignup) ...[
-                                    Align(
-                                      alignment: Alignment.centerRight,
-                                      child: TextButton(
-                                        onPressed: _loading
-                                            ? null
-                                            : _openPasswordReset,
-                                        child: const Text('Forgot password?'),
-                                      ),
-                                    ),
-                                  ],
-                                  if (isSignup) ...[
-                                    const SizedBox(height: 14),
-                                    TextField(
-                                      controller: _confirmPasswordController,
-                                      obscureText: _obscurePassword,
-                                      autofillHints: const [
-                                        AutofillHints.newPassword,
-                                      ],
-                                      decoration: const InputDecoration(
-                                        labelText: 'Confirm password',
-                                        prefixIcon: Icon(
-                                          Icons.lock_reset_rounded,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ] else ...[
-                                  TextField(
-                                    controller: _verificationCodeController,
-                                    keyboardType: TextInputType.number,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Verification code',
-                                      prefixIcon: Icon(
-                                        Icons.mark_email_read_outlined,
-                                      ),
-                                    ),
-                                  ),
-                                  if (_verificationHint != null) ...[
-                                    const SizedBox(height: 10),
-                                    _AuthNotice(text: _verificationHint!),
-                                  ],
-                                  const SizedBox(height: 8),
-                                  TextButton(
-                                    onPressed: _loading
-                                        ? null
-                                        : () {
-                                            setState(() {
-                                              _verificationPending = false;
-                                              _errorText = null;
-                                            });
-                                          },
-                                    child: const Text('Use a different email'),
-                                  ),
-                                ],
-                                if (_errorText != null) ...[
-                                  const SizedBox(height: 14),
-                                  _AuthError(text: _errorText!),
-                                ],
-                                const SizedBox(height: 24),
-                                FilledButton(
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: const Color(0xFF073F43),
-                                    foregroundColor: Colors.white,
-                                    minimumSize: const Size.fromHeight(56),
-                                    textStyle: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                  ),
-                                  onPressed: _loading
-                                      ? null
-                                      : _verificationPending
-                                      ? _verifyEmail
-                                      : isSignup
-                                      ? _submitSignup
-                                      : _submitSignIn,
-                                  child: Text(actionLabel),
-                                ),
-                                const SizedBox(height: 10),
-                                _AuthLegalNote(isSignup: isSignup),
-                              ],
-                            ),
-                          ),
+                          _AuthFormCard(child: formContent),
                           const SizedBox(height: 16),
                           if (!_verificationPending) const _AuthPerksCard(),
                         ],
@@ -422,6 +443,185 @@ class _AuthLegalNote extends StatelessWidget {
         ),
         const SizedBox(height: 2),
         const TydesLegalLinks(includeSupport: true, dense: true),
+      ],
+    );
+  }
+}
+
+class _DesktopAuthShowcase extends StatelessWidget {
+  const _DesktopAuthShowcase();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 660),
+      padding: const EdgeInsets.all(46),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(42),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF075C6E), Color(0xFF08A9AF), Color(0xFFE3BC74)],
+          stops: [0, 0.56, 1],
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x26073F43),
+            blurRadius: 42,
+            offset: Offset(0, 24),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: Image.asset(
+                  'assets/branding/tydes-wave-blue.png',
+                  width: 82,
+                  height: 82,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              const SizedBox(width: 20),
+              const Text(
+                'Tydes',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 35,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -1.2,
+                ),
+              ),
+            ],
+          ),
+          const Spacer(),
+          const Text(
+            'Find your next\npaddle out.',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 54,
+              height: 0.98,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -2.2,
+            ),
+          ),
+          const SizedBox(height: 22),
+          const Text(
+            'Live surf forecasts, saved spots, alerts, community, and trip '
+            'planning—built for the places surfers actually go.',
+            style: TextStyle(
+              color: Color(0xEFFFFFFF),
+              fontSize: 18,
+              height: 1.48,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 34),
+          const Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _DesktopFeaturePill(
+                icon: Icons.map_outlined,
+                label: '300+ surf breaks',
+              ),
+              _DesktopFeaturePill(
+                icon: Icons.waves_rounded,
+                label: 'Live conditions',
+              ),
+              _DesktopFeaturePill(
+                icon: Icons.people_alt_outlined,
+                label: 'Surf community',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DesktopFeaturePill extends StatelessWidget {
+  const _DesktopFeaturePill({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 19),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DesktopAuthHeading extends StatelessWidget {
+  const _DesktopAuthHeading({required this.title, required this.subtitle});
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const _SurfLogoBadge(),
+            const SizedBox(width: 14),
+            Text(
+              'Tydes',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                color: const Color(0xFF1687C5),
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.6,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 38),
+        Text(
+          title,
+          style: Theme.of(context).textTheme.displaySmall?.copyWith(
+            color: const Color(0xFF142127),
+            fontSize: 40,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -1.3,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          subtitle,
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+            color: const Color(0xFF58666A),
+            fontSize: 17,
+            height: 1.45,
+          ),
+        ),
       ],
     );
   }
@@ -501,99 +701,16 @@ class _SurfLogoBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 82,
-      height: 58,
-      decoration: BoxDecoration(
-        color: const Color(0xFFEAF6FC),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFB8DFF3)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x12000000),
-            blurRadius: 14,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      child: const Center(
-        child: SizedBox(
-          width: 60,
-          height: 34,
-          child: CustomPaint(painter: _SurfLogoPainter()),
-        ),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: Image.asset(
+        'assets/branding/tydes-wave-blue.png',
+        width: 72,
+        height: 72,
+        fit: BoxFit.cover,
       ),
     );
   }
-}
-
-class _SurfLogoPainter extends CustomPainter {
-  const _SurfLogoPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final wavePaint = Paint()
-      ..color = const Color(0xFF1687C5)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.2
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    final dotPaint = Paint()..color = const Color(0xFF1687C5);
-
-    canvas.drawCircle(
-      Offset(size.width * 0.08, size.height * 0.55),
-      2.4,
-      dotPaint,
-    );
-
-    final path = Path()
-      ..moveTo(size.width * 0.2, size.height * 0.55)
-      ..cubicTo(
-        size.width * 0.38,
-        size.height * 0.46,
-        size.width * 0.46,
-        size.height * 0.1,
-        size.width * 0.67,
-        size.height * 0.14,
-      )
-      ..cubicTo(
-        size.width * 0.84,
-        size.height * 0.17,
-        size.width * 0.86,
-        size.height * 0.42,
-        size.width * 0.8,
-        size.height * 0.48,
-      )
-      ..cubicTo(
-        size.width * 0.75,
-        size.height * 0.32,
-        size.width * 0.58,
-        size.height * 0.34,
-        size.width * 0.56,
-        size.height * 0.53,
-      )
-      ..cubicTo(
-        size.width * 0.54,
-        size.height * 0.73,
-        size.width * 0.75,
-        size.height * 0.74,
-        size.width * 0.9,
-        size.height * 0.63,
-      )
-      ..cubicTo(
-        size.width * 0.98,
-        size.height * 0.58,
-        size.width * 1.05,
-        size.height * 0.62,
-        size.width * 1.12,
-        size.height * 0.73,
-      );
-
-    canvas.drawPath(path, wavePaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _AuthFormCard extends StatelessWidget {
@@ -604,8 +721,9 @@ class _AuthFormCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final baseTheme = Theme.of(context);
+    final desktop = MediaQuery.sizeOf(context).width >= 980;
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: EdgeInsets.all(desktop ? 32 : 18),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(30),

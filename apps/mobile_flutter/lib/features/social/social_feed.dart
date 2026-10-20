@@ -2461,11 +2461,12 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
     final media = widget.media;
     if (media.isEmpty) return const SizedBox.shrink();
     if (_pageIndex >= media.length) _pageIndex = media.length - 1;
+    final desktop = MediaQuery.sizeOf(context).width >= 980;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(widget.borderRadius),
       child: AspectRatio(
-        aspectRatio: 4 / 5,
+        aspectRatio: desktop ? 1 : 4 / 5,
         child: Stack(
           children: [
             PageView.builder(
@@ -2716,6 +2717,25 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
     }
   }
 
+  Widget _fittedVideo(VideoPlayerController controller) {
+    final size = controller.value.size;
+    if (size.width <= 0 || size.height <= 0) {
+      return VideoPlayer(controller);
+    }
+    return ColoredBox(
+      color: Colors.black,
+      child: FittedBox(
+        fit: BoxFit.cover,
+        clipBehavior: Clip.hardEdge,
+        child: SizedBox(
+          width: size.width,
+          height: size.height,
+          child: VideoPlayer(controller),
+        ),
+      ),
+    );
+  }
+
   Future<void> _loadVideo({bool playWhenReady = false}) async {
     if (_loadRequested || _initializing) return;
     setState(() {
@@ -2789,7 +2809,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
         children: [
           Positioned.fill(
             child: readyController != null
-                ? VideoPlayer(readyController)
+                ? _fittedVideo(readyController)
                 : _videoFailed
                 ? Container(
                     color: Theme.of(
