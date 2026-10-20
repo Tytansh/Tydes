@@ -129,7 +129,7 @@ class _DesktopNavigation extends StatelessWidget {
       minExtendedWidth: 236,
       selectedIndex: selectedIndex,
       onDestinationSelected: onDestinationSelected,
-      groupAlignment: -0.7,
+      groupAlignment: -1,
       backgroundColor: const Color(0xFF102F33),
       indicatorColor: const Color(0xFFBDEBE6),
       selectedIconTheme: const IconThemeData(color: Color(0xFF102F33)),
@@ -143,7 +143,7 @@ class _DesktopNavigation extends StatelessWidget {
         fontWeight: FontWeight.w700,
       ),
       leading: const Padding(
-        padding: EdgeInsets.fromLTRB(18, 24, 18, 24),
+        padding: EdgeInsets.fromLTRB(18, 24, 18, 36),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -201,10 +201,15 @@ class _DesktopBrandMark extends StatelessWidget {
       width: 42,
       height: 42,
       decoration: BoxDecoration(
-        color: const Color(0xFF1FAAA7),
+        color: const Color(0xFFE7F5FC),
         borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Color(0xFFB8DFF3)),
       ),
-      child: const Icon(Icons.waves_rounded, color: Colors.white, size: 26),
+      child: const Icon(
+        Icons.waves_rounded,
+        color: Color(0xFF1687C5),
+        size: 27,
+      ),
     );
   }
 }

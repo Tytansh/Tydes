@@ -462,8 +462,9 @@ class _AuthBrandHeader extends StatelessWidget {
                     Text(
                       'Tydes',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: Colors.black,
+                        color: const Color(0xFF1687C5),
                         fontSize: 24,
+                        fontWeight: FontWeight.w900,
                         letterSpacing: -0.4,
                       ),
                     ),
@@ -504,9 +505,9 @@ class _SurfLogoBadge extends StatelessWidget {
       width: 82,
       height: 58,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFFEAF6FC),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFE8E5DA)),
+        border: Border.all(color: const Color(0xFFB8DFF3)),
         boxShadow: const [
           BoxShadow(
             color: Color(0x12000000),
@@ -532,12 +533,12 @@ class _SurfLogoPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final wavePaint = Paint()
-      ..color = Colors.black
+      ..color = const Color(0xFF1687C5)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3.2
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
-    final dotPaint = Paint()..color = Colors.black;
+    final dotPaint = Paint()..color = const Color(0xFF1687C5);
 
     canvas.drawCircle(
       Offset(size.width * 0.08, size.height * 0.55),

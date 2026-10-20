@@ -393,22 +393,24 @@ class TravelFeedSection extends ConsumerWidget {
                 _FeedPostItem(post: post, activityAt: _postCreatedAt(post)),
             ]..sort((a, b) => b.activityAt.compareTo(a.activityAt));
             final shown = compact ? feedItems.take(4).toList() : feedItems;
-            return Column(
-              children: shown
-                  .map(
-                    (item) => Padding(
-                      key: ValueKey(
-                        '${item.repostHeader ?? 'post'}_${item.post.id}',
+            return TydesDesktopPostWidth(
+              child: Column(
+                children: shown
+                    .map(
+                      (item) => Padding(
+                        key: ValueKey(
+                          '${item.repostHeader ?? 'post'}_${item.post.id}',
+                        ),
+                        padding: const EdgeInsets.only(bottom: 14),
+                        child: _PostCard(
+                          post: item.post,
+                          spots: spotItems,
+                          repostHeader: item.repostHeader,
+                        ),
                       ),
-                      padding: const EdgeInsets.only(bottom: 14),
-                      child: _PostCard(
-                        post: item.post,
-                        spots: spotItems,
-                        repostHeader: item.repostHeader,
-                      ),
-                    ),
-                  )
-                  .toList(),
+                    )
+                    .toList(),
+              ),
             );
           },
           loading: () => const Center(
@@ -421,6 +423,28 @@ class TravelFeedSection extends ConsumerWidget {
               Text(friendlyLoadErrorMessage(error, label: 'posts')),
         ),
       ],
+    );
+  }
+}
+
+class TydesDesktopPostWidth extends StatelessWidget {
+  const TydesDesktopPostWidth({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 980) return child;
+        return Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 680),
+            child: child,
+          ),
+        );
+      },
     );
   }
 }
@@ -4712,6 +4736,7 @@ class SurfInviteActions extends ConsumerWidget {
     if (!_isSurfInvite(post)) return const SizedBox.shrink();
 
     final scheme = Theme.of(context).colorScheme;
+    final desktop = MediaQuery.sizeOf(context).width >= 980;
     final currentViewer = ref.watch(currentViewerProvider).valueOrNull;
     final joinedInviteIds = ref.watch(surfInviteRsvpProvider);
     final joined = joinedInviteIds.contains(post.id);
@@ -4726,13 +4751,17 @@ class SurfInviteActions extends ConsumerWidget {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      constraints: BoxConstraints(minHeight: desktop ? 178 : 0),
+      padding: EdgeInsets.all(desktop ? 20 : 14),
       decoration: BoxDecoration(
         color: scheme.primary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: scheme.primary.withValues(alpha: 0.16)),
       ),
       child: Column(
+        mainAxisAlignment: desktop
+            ? MainAxisAlignment.spaceBetween
+            : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(

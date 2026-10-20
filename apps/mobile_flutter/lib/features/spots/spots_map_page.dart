@@ -336,29 +336,25 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: SizedBox(
-                    height: 300,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(28),
-                      child: _MapCanvas(
-                        mapController: _mapController,
-                        spots: displayedVisibleSpots,
-                        initialCenter: _centerOf(displayedVisibleSpots),
-                        initialZoom:
-                            _selectedCountry == _allCountriesLabel &&
-                                _selectedRegion == _allRegionsLabel &&
-                                _selectedArea == _allAreasLabel
-                            ? 3.2
-                            : 8.0,
-                        selectedSpotId: _selectedSpotId,
-                        selectedForecast: selectedForecast,
-                        onSpotTap: _focusSpot,
-                        onPositionChanged: (camera, _) {
-                          if (_zoom != camera.zoom) {
-                            setState(() => _zoom = camera.zoom);
-                          }
-                        },
-                      ),
+                  child: _ResponsiveMapFrame(
+                    child: _MapCanvas(
+                      mapController: _mapController,
+                      spots: displayedVisibleSpots,
+                      initialCenter: _centerOf(displayedVisibleSpots),
+                      initialZoom:
+                          _selectedCountry == _allCountriesLabel &&
+                              _selectedRegion == _allRegionsLabel &&
+                              _selectedArea == _allAreasLabel
+                          ? 3.2
+                          : 8.0,
+                      selectedSpotId: _selectedSpotId,
+                      selectedForecast: selectedForecast,
+                      onSpotTap: _focusSpot,
+                      onPositionChanged: (camera, _) {
+                        if (_zoom != camera.zoom) {
+                          setState(() => _zoom = camera.zoom);
+                        }
+                      },
                     ),
                   ),
                 ),
@@ -682,6 +678,34 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
         onLongPress: () => _focusSpot(spot),
       );
     }).toList();
+  }
+}
+
+class _ResponsiveMapFrame extends StatelessWidget {
+  const _ResponsiveMapFrame({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final map = ClipRRect(
+          borderRadius: BorderRadius.circular(28),
+          child: child,
+        );
+        if (constraints.maxWidth < 980) {
+          return SizedBox(height: 300, child: map);
+        }
+        return Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 860),
+            child: AspectRatio(aspectRatio: 1.25, child: map),
+          ),
+        );
+      },
+    );
   }
 }
 

@@ -442,42 +442,48 @@ class _ProfileHero extends StatelessWidget {
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.only(right: 56),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          _ProfileStat(
-                            value: postsCount.toString(),
-                            label: 'Posts',
-                          ),
-                          _ProfileStat(
-                            value: friends.length.toString(),
-                            label: 'Following',
-                            onTap: () => showProfilePeopleSheet(
-                              context: context,
-                              title: 'Following',
-                              people: friends,
-                              onProfileTap: (person) => context.push(
-                                '/profile/${person.userId}',
-                                extra: person,
+                      child: LayoutBuilder(
+                        builder: (context, constraints) => Align(
+                          alignment: Alignment.topLeft,
+                          child: Wrap(
+                            spacing: constraints.maxWidth >= 700 ? 42 : 22,
+                            runSpacing: 8,
+                            children: [
+                              _ProfileStat(
+                                value: postsCount.toString(),
+                                label: 'Posts',
                               ),
-                              emptyText: 'Not following anyone yet.',
-                            ),
-                          ),
-                          _ProfileStat(
-                            value: followers.length.toString(),
-                            label: 'Followers',
-                            onTap: () => showProfilePeopleSheet(
-                              context: context,
-                              title: 'Followers',
-                              people: followers,
-                              onProfileTap: (person) => context.push(
-                                '/profile/${person.userId}',
-                                extra: person,
+                              _ProfileStat(
+                                value: friends.length.toString(),
+                                label: 'Following',
+                                onTap: () => showProfilePeopleSheet(
+                                  context: context,
+                                  title: 'Following',
+                                  people: friends,
+                                  onProfileTap: (person) => context.push(
+                                    '/profile/${person.userId}',
+                                    extra: person,
+                                  ),
+                                  emptyText: 'Not following anyone yet.',
+                                ),
                               ),
-                              emptyText: 'No followers yet.',
-                            ),
+                              _ProfileStat(
+                                value: followers.length.toString(),
+                                label: 'Followers',
+                                onTap: () => showProfilePeopleSheet(
+                                  context: context,
+                                  title: 'Followers',
+                                  people: followers,
+                                  onProfileTap: (person) => context.push(
+                                    '/profile/${person.userId}',
+                                    extra: person,
+                                  ),
+                                  emptyText: 'No followers yet.',
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
@@ -1837,21 +1843,23 @@ class _ProfilePostFeed extends StatelessWidget {
       for (final post in posts) _ProfilePostFeedItem.post(post),
     ]..sort((a, b) => b.activityAt.compareTo(a.activityAt));
 
-    return Column(
-      children: [
-        for (final item in items)
-          Padding(
-            key: ValueKey(item.key),
-            padding: const EdgeInsets.only(bottom: 14),
-            child: _ProfilePostCard(
-              profile: profile,
-              post: item.post,
-              spots: spots,
-              repostHeader: item.repostHeader,
-              usePostAuthor: item.repostHeader != null,
+    return TydesDesktopPostWidth(
+      child: Column(
+        children: [
+          for (final item in items)
+            Padding(
+              key: ValueKey(item.key),
+              padding: const EdgeInsets.only(bottom: 14),
+              child: _ProfilePostCard(
+                profile: profile,
+                post: item.post,
+                spots: spots,
+                repostHeader: item.repostHeader,
+                usePostAuthor: item.repostHeader != null,
+              ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }
