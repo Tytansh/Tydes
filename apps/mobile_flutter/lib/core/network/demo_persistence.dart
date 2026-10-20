@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
 import 'api_models.dart';
+import 'session_token_store.dart';
 
 class DemoSocialRelationshipState {
   const DemoSocialRelationshipState({
@@ -20,18 +21,11 @@ class DemoSocialRelationshipState {
 }
 
 class DemoPersistence {
+  final SessionTokenStore _sessionTokenStore = SessionTokenStore();
+
   Future<String?> loadAccessToken() async {
     try {
-      final file = await _authSessionFile();
-      if (!file.existsSync()) {
-        return null;
-      }
-      final payload = jsonDecode(await file.readAsString());
-      if (payload is! Map<String, dynamic>) {
-        return null;
-      }
-      final token = payload['access_token'];
-      return token is String && token.isNotEmpty ? token : null;
+      return await _sessionTokenStore.load();
     } catch (_) {
       return null;
     }
@@ -39,8 +33,7 @@ class DemoPersistence {
 
   Future<void> saveAccessToken(String token) async {
     try {
-      final file = await _authSessionFile();
-      await file.writeAsString(jsonEncode({'access_token': token}));
+      await _sessionTokenStore.save(token);
     } catch (_) {
       // Ignore persistence failures in demo mode.
     }
@@ -48,10 +41,7 @@ class DemoPersistence {
 
   Future<void> clearAccessToken() async {
     try {
-      final file = await _authSessionFile();
-      if (file.existsSync()) {
-        await file.delete();
-      }
+      await _sessionTokenStore.clear();
     } catch (_) {
       // Ignore persistence failures in demo mode.
     }
@@ -207,15 +197,6 @@ class DemoPersistence {
   Future<File> _alertsFile() async {
     final directory = await getApplicationSupportDirectory();
     final file = File('${directory.path}/demo_alerts.json');
-    if (!file.parent.existsSync()) {
-      file.parent.createSync(recursive: true);
-    }
-    return file;
-  }
-
-  Future<File> _authSessionFile() async {
-    final directory = await getApplicationSupportDirectory();
-    final file = File('${directory.path}/auth_session.json');
     if (!file.parent.existsSync()) {
       file.parent.createSync(recursive: true);
     }
