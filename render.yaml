@@ -24,7 +24,7 @@ services:
       - key: PUBLIC_BACKEND_URL
         value: 'https://api.tydes.io'
       - key: ALLOWED_ORIGINS
-        value: 'https://tydes.io,https://www.tydes.io,http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:8080'
+        value: 'https://tydes.io,https://www.tydes.io,https://tydes-surf-travel.choicehippo64.chatgpt.site,http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:8080,http://127.0.0.1:4173,http://127.0.0.1:4174'
       - key: TYDES_DATA_DIR
         value: /var/data
       - key: DATABASE_URL
