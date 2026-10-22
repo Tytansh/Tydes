@@ -68,6 +68,26 @@ def test_spots_list():
     assert len(response.json()) >= 1
 
 
+def test_taiwan_spot_coverage_includes_twenty_known_breaks():
+    response = client.get("/api/v1/spots")
+    assert response.status_code == 200
+
+    taiwan_spots = {
+        spot["name"] for spot in response.json() if spot["country"] == "Taiwan"
+    }
+    assert len(taiwan_spots) == 20
+    assert {
+        "Wushi Harbor",
+        "Baishawan",
+        "Beibin Park",
+        "Baxiandong",
+        "Changbin",
+        "Xiaoyugang",
+        "Jihui",
+        "Duli",
+    } <= taiwan_spots
+
+
 def test_forecasts_fallback_uses_estimated_spot_values(monkeypatch):
     def raise_provider_error(_spot, **_kwargs):
         raise RuntimeError("provider unavailable")

@@ -6,6 +6,27 @@ import 'package:mobile_flutter/core/theme/app_theme.dart';
 import 'package:mobile_flutter/features/trips/trips_page.dart';
 
 void main() {
+  test('offline seed includes twenty known Taiwan surf spots', () {
+    final taiwanSpots = DemoSeed.spots
+        .where((spot) => spot.country == 'Taiwan')
+        .toList();
+
+    expect(taiwanSpots, hasLength(20));
+    expect(
+      taiwanSpots.map((spot) => spot.name),
+      containsAll(const [
+        'Wushi Harbor',
+        'Baishawan',
+        'Beibin Park',
+        'Baxiandong',
+        'Changbin',
+        'Xiaoyugang',
+        'Jihui',
+        'Duli',
+      ]),
+    );
+  });
+
   testWidgets('travel opens with useful trip and destination content', (
     tester,
   ) async {
