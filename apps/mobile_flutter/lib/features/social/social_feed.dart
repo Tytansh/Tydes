@@ -2457,12 +2457,22 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
     super.dispose();
   }
 
+  Future<void> _showPage(int index) async {
+    if (!_pageController.hasClients || index == _pageIndex) return;
+    await _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final media = widget.media;
     if (media.isEmpty) return const SizedBox.shrink();
     if (_pageIndex >= media.length) _pageIndex = media.length - 1;
     final desktop = MediaQuery.sizeOf(context).width >= 980;
+    final desktopWebCarousel = kIsWeb && desktop;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(widget.borderRadius),
@@ -2472,6 +2482,9 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
           children: [
             PageView.builder(
               controller: _pageController,
+              physics: desktopWebCarousel
+                  ? const NeverScrollableScrollPhysics()
+                  : const PageScrollPhysics(parent: ClampingScrollPhysics()),
               itemCount: media.length,
               onPageChanged: (index) => setState(() => _pageIndex = index),
               itemBuilder: (context, index) {
@@ -2488,6 +2501,34 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
                 return _PostPhoto(url: item.url);
               },
             ),
+            if (desktopWebCarousel && media.length > 1) ...[
+              if (_pageIndex > 0)
+                Positioned(
+                  left: 12,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: _CarouselArrowButton(
+                      tooltip: 'Previous photo',
+                      icon: Icons.chevron_left_rounded,
+                      onPressed: () => _showPage(_pageIndex - 1),
+                    ),
+                  ),
+                ),
+              if (_pageIndex < media.length - 1)
+                Positioned(
+                  right: 12,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: _CarouselArrowButton(
+                      tooltip: 'Next photo',
+                      icon: Icons.chevron_right_rounded,
+                      onPressed: () => _showPage(_pageIndex + 1),
+                    ),
+                  ),
+                ),
+            ],
             if (media.length > 1)
               Positioned(
                 left: 0,
@@ -2497,16 +2538,27 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: List.generate(media.length, (index) {
                     final selected = index == _pageIndex;
-                    return AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      width: selected ? 8 : 6,
-                      height: selected ? 8 : 6,
-                      margin: const EdgeInsets.symmetric(horizontal: 3),
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? Colors.white
-                            : Colors.white.withValues(alpha: 0.45),
-                        shape: BoxShape.circle,
+                    return Semantics(
+                      button: true,
+                      selected: selected,
+                      label: 'Media ${index + 1} of ${media.length}',
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => _showPage(index),
+                        child: Padding(
+                          padding: const EdgeInsets.all(5),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            width: selected ? 8 : 6,
+                            height: selected ? 8 : 6,
+                            decoration: BoxDecoration(
+                              color: selected
+                                  ? Colors.white
+                                  : Colors.white.withValues(alpha: 0.45),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
                       ),
                     );
                   }),
@@ -2514,6 +2566,43 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _CarouselArrowButton extends StatelessWidget {
+  const _CarouselArrowButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.92),
+        shape: BoxShape.circle,
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 14,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: IconButton(
+        onPressed: onPressed,
+        tooltip: tooltip,
+        icon: Icon(icon, color: const Color(0xFF16363A)),
+        iconSize: 28,
+        constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+        padding: EdgeInsets.zero,
       ),
     );
   }
