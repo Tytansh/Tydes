@@ -2473,6 +2473,7 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
     if (_pageIndex >= media.length) _pageIndex = media.length - 1;
     final desktop = MediaQuery.sizeOf(context).width >= 980;
     final desktopWebCarousel = kIsWeb && desktop;
+    final showWebArrows = kIsWeb && media.length > 1;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(widget.borderRadius),
@@ -2501,7 +2502,7 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
                 return _PostPhoto(url: item.url);
               },
             ),
-            if (desktopWebCarousel && media.length > 1) ...[
+            if (showWebArrows) ...[
               if (_pageIndex > 0)
                 Positioned(
                   left: 12,
