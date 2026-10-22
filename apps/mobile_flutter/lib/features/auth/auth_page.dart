@@ -454,7 +454,7 @@ class _DesktopAuthShowcase extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(minHeight: 660),
+      height: 660,
       padding: const EdgeInsets.all(46),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(42),
@@ -498,15 +498,24 @@ class _DesktopAuthShowcase extends StatelessWidget {
               ),
             ],
           ),
-          const Spacer(),
-          const Text(
-            'Where We Surfing',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 54,
-              height: 0.98,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -2.2,
+          const SizedBox(height: 78),
+          const SizedBox(
+            height: 82,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Where We Surfing',
+                maxLines: 1,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontFamily: 'Pacifico',
+                  fontSize: 60,
+                  height: 1.1,
+                  fontWeight: FontWeight.w400,
+                  letterSpacing: 0.2,
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 22),
@@ -538,6 +547,7 @@ class _DesktopAuthShowcase extends StatelessWidget {
               ),
             ],
           ),
+          const Spacer(),
         ],
       ),
     );
