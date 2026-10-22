@@ -130,16 +130,16 @@ class _DesktopNavigation extends StatelessWidget {
       selectedIndex: selectedIndex,
       onDestinationSelected: onDestinationSelected,
       groupAlignment: -1,
-      backgroundColor: const Color(0xFF102F33),
-      indicatorColor: const Color(0xFFBDEBE6),
-      selectedIconTheme: const IconThemeData(color: Color(0xFF102F33)),
+      backgroundColor: const Color(0xFF174A4F),
+      indicatorColor: const Color(0xFFC9F1ED),
+      selectedIconTheme: const IconThemeData(color: Color(0xFF174A4F)),
       selectedLabelTextStyle: const TextStyle(
         color: Colors.white,
         fontWeight: FontWeight.w800,
       ),
-      unselectedIconTheme: const IconThemeData(color: Color(0xFFB7CBCB)),
+      unselectedIconTheme: const IconThemeData(color: Color(0xFFD0E2E1)),
       unselectedLabelTextStyle: const TextStyle(
-        color: Color(0xFFB7CBCB),
+        color: Color(0xFFD0E2E1),
         fontWeight: FontWeight.w700,
       ),
       leading: const Padding(

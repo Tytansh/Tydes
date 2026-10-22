@@ -4809,6 +4809,7 @@ int _tagCountryRank(String name) {
     'Indonesia',
     'Sri Lanka',
     'Philippines',
+    'Taiwan',
     'Thailand',
     'Vietnam',
     'Malaysia',
