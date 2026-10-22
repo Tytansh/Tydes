@@ -500,7 +500,7 @@ class _DesktopAuthShowcase extends StatelessWidget {
           ),
           const Spacer(),
           const Text(
-            'Where we\nsurfing',
+            'Where We Surfing',
             style: TextStyle(
               color: Colors.white,
               fontSize: 54,
