@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -2518,21 +2519,90 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
   }
 }
 
-class _PostPhoto extends StatelessWidget {
+class _PostPhoto extends StatefulWidget {
   const _PostPhoto({required this.url});
 
   final String url;
 
   @override
+  State<_PostPhoto> createState() => _PostPhotoState();
+}
+
+class _PostPhotoState extends State<_PostPhoto> {
+  Timer? _retryTimer;
+  int _attempt = 0;
+  bool _retryScheduled = false;
+
+  @override
+  void didUpdateWidget(covariant _PostPhoto oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) {
+      _retryTimer?.cancel();
+      _attempt = 0;
+      _retryScheduled = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _retryTimer?.cancel();
+    super.dispose();
+  }
+
+  String get _requestUrl {
+    if (_attempt == 0) return widget.url;
+    final uri = Uri.tryParse(widget.url);
+    if (uri == null) return widget.url;
+    return uri
+        .replace(
+          queryParameters: {...uri.queryParameters, 'tydes_retry': '$_attempt'},
+        )
+        .toString();
+  }
+
+  void _retry({bool automatic = false}) {
+    if (!mounted || _attempt >= 2) return;
+    _retryTimer?.cancel();
+    _retryScheduled = automatic;
+    _retryTimer = Timer(
+      automatic ? const Duration(seconds: 1) : Duration.zero,
+      () {
+        if (!mounted) return;
+        setState(() {
+          _attempt += 1;
+          _retryScheduled = false;
+        });
+      },
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Image.network(
-      url,
+      _requestUrl,
       fit: BoxFit.cover,
-      errorBuilder: (context, error, stackTrace) => Container(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        alignment: Alignment.center,
-        child: const Icon(Icons.image_not_supported_outlined),
-      ),
+      gaplessPlayback: true,
+      webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+      loadingBuilder: (context, child, progress) {
+        if (progress == null) return child;
+        return ColoredBox(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        );
+      },
+      errorBuilder: (context, error, stackTrace) {
+        if (_attempt < 2 && !_retryScheduled) _retry(automatic: true);
+        return ColoredBox(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: Center(
+            child: TextButton.icon(
+              onPressed: _attempt < 2 ? _retry : null,
+              icon: const Icon(Icons.refresh_rounded),
+              label: Text(_attempt < 2 ? 'Reload photo' : 'Photo unavailable'),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -2965,6 +3035,7 @@ class _VideoPosterFrame extends StatelessWidget {
             thumbnailUrl!,
             fit: BoxFit.cover,
             gaplessPlayback: true,
+            webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
             errorBuilder: (context, error, stackTrace) =>
                 const SizedBox.shrink(),
           ),
@@ -3408,6 +3479,8 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
   }
 
   Future<XFile> _videoForUpload(XFile source, int index) async {
+    if (kIsWeb) return source;
+
     final originalSize = await _pickedVideoSize(source);
     if (originalSize != null && originalSize <= _minPostVideoCompressionBytes) {
       return source;
@@ -3457,6 +3530,8 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
   }
 
   Future<XFile?> _createVideoThumbnail(XFile source) async {
+    if (kIsWeb) return null;
+
     try {
       final thumbnailFile = await VideoCompress.getFileThumbnail(
         source.path,
@@ -3520,9 +3595,12 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
 
     final resized = image_tools.copyResize(decoded, width: 700);
     final encoded = image_tools.encodeJpg(resized, quality: 68);
+    final name = 'post_thumb_${DateTime.now().microsecondsSinceEpoch}.jpg';
+    if (kIsWeb) {
+      return XFile.fromData(encoded, name: name, mimeType: 'image/jpeg');
+    }
     final tempDir = await getTemporaryDirectory();
-    final path =
-        '${tempDir.path}/post_thumb_${DateTime.now().microsecondsSinceEpoch}.jpg';
+    final path = '${tempDir.path}/$name';
     final file = await File(path).writeAsBytes(encoded, flush: true);
     return XFile(
       file.path,

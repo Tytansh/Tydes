@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -1334,6 +1335,7 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
   String _skill = 'intermediate';
   String? _handleError;
   XFile? _avatarImage;
+  Uint8List? _avatarBytes;
   bool _saving = false;
 
   @override
@@ -1445,7 +1447,12 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
       requestFullMetadata: false,
     );
     if (picked == null || !mounted) return;
-    setState(() => _avatarImage = picked);
+    final bytes = await picked.readAsBytes();
+    if (!mounted) return;
+    setState(() {
+      _avatarImage = picked;
+      _avatarBytes = bytes;
+    });
   }
 
   Future<XFile> _createProfileThumbnail(XFile source) async {
@@ -1455,9 +1462,12 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
 
     final resized = image_tools.copyResizeCropSquare(decoded, size: 500);
     final encoded = image_tools.encodeJpg(resized, quality: 72);
+    final name = 'profile_thumb_${DateTime.now().microsecondsSinceEpoch}.jpg';
+    if (kIsWeb) {
+      return XFile.fromData(encoded, name: name, mimeType: 'image/jpeg');
+    }
     final tempDir = await getTemporaryDirectory();
-    final path =
-        '${tempDir.path}/profile_thumb_${DateTime.now().microsecondsSinceEpoch}.jpg';
+    final path = '${tempDir.path}/$name';
     final file = await File(path).writeAsBytes(encoded, flush: true);
     return XFile(
       file.path,
@@ -1499,8 +1509,8 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
                     CircleAvatar(
                       radius: 42,
                       backgroundColor: const Color(0xFFE6F3F1),
-                      backgroundImage: _avatarImage != null
-                          ? FileImage(File(_avatarImage!.path))
+                      backgroundImage: _avatarBytes != null
+                          ? MemoryImage(_avatarBytes!)
                           : (widget.profile.avatarUrl != null
                                     ? NetworkImage(widget.profile.avatarUrl!)
                                     : null)

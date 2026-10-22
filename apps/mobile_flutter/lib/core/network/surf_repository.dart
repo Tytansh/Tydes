@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -915,16 +916,13 @@ class SurfRepository {
     final response = await _dio.post<Map<String, dynamic>>(
       '/social/media',
       options: Options(
-        sendTimeout: const Duration(seconds: 45),
-        receiveTimeout: const Duration(seconds: 45),
+        sendTimeout: const Duration(minutes: 2),
+        receiveTimeout: const Duration(minutes: 2),
       ),
       onSendProgress: onSendProgress,
       data: FormData.fromMap({
-        'file': await MultipartFile.fromFile(image.path, filename: image.name),
-        'thumbnail': await MultipartFile.fromFile(
-          thumbnail.path,
-          filename: thumbnail.name,
-        ),
+        'file': await _multipartFile(image),
+        'thumbnail': await _multipartFile(thumbnail),
       }),
     );
     return SocialMediaAttachmentModel.fromJson(response.data!);
@@ -935,14 +933,9 @@ class SurfRepository {
     XFile? thumbnail,
     ProgressCallback? onSendProgress,
   }) async {
-    final formData = <String, dynamic>{
-      'file': await MultipartFile.fromFile(video.path, filename: video.name),
-    };
+    final formData = <String, dynamic>{'file': await _multipartFile(video)};
     if (thumbnail != null) {
-      formData['thumbnail'] = await MultipartFile.fromFile(
-        thumbnail.path,
-        filename: thumbnail.name,
-      );
+      formData['thumbnail'] = await _multipartFile(thumbnail);
     }
     final response = await _dio.post<Map<String, dynamic>>(
       '/social/media',
@@ -954,6 +947,16 @@ class SurfRepository {
       data: FormData.fromMap(formData),
     );
     return SocialMediaAttachmentModel.fromJson(response.data!);
+  }
+
+  Future<MultipartFile> _multipartFile(XFile file) async {
+    if (kIsWeb) {
+      return MultipartFile.fromBytes(
+        await file.readAsBytes(),
+        filename: file.name,
+      );
+    }
+    return MultipartFile.fromFile(file.path, filename: file.name);
   }
 
   Future<List<BillingPlanModel>> fetchPlans() async {
