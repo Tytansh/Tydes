@@ -500,7 +500,7 @@ class _DesktopAuthShowcase extends StatelessWidget {
           ),
           const Spacer(),
           const Text(
-            'Find your next\npaddle out.',
+            'Where we\nsurfing',
             style: TextStyle(
               color: Colors.white,
               fontSize: 54,
@@ -511,8 +511,7 @@ class _DesktopAuthShowcase extends StatelessWidget {
           ),
           const SizedBox(height: 22),
           const Text(
-            'Live surf forecasts, saved spots, alerts, community, and trip '
-            'planning—built for the places surfers actually go.',
+            'Check the forecast, pick a spot, and see who’s heading out.',
             style: TextStyle(
               color: Color(0xEFFFFFFF),
               fontSize: 18,
