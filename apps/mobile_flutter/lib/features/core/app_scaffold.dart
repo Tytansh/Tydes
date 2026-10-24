@@ -142,23 +142,25 @@ class _DesktopNavigation extends StatelessWidget {
         color: Color(0xFFD0E2E1),
         fontWeight: FontWeight.w700,
       ),
-      leading: const Padding(
-        padding: EdgeInsets.fromLTRB(18, 24, 18, 36),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _DesktopBrandMark(),
-            SizedBox(width: 12),
-            Text(
-              'Tydes',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -0.8,
+      leading: const SizedBox(
+        width: 236,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(10, 24, 12, 36),
+          child: Row(
+            children: [
+              _DesktopBrandMark(),
+              SizedBox(width: 12),
+              Text(
+                'Tydes',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.8,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
       destinations: [
@@ -201,8 +203,8 @@ class _DesktopBrandMark extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       child: Image.asset(
         'assets/branding/tydes-wave-blue.png',
-        width: 42,
-        height: 42,
+        width: 48,
+        height: 48,
         fit: BoxFit.cover,
       ),
     );
