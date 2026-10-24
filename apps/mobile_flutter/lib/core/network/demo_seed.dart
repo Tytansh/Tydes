@@ -5758,18 +5758,7 @@ class DemoSeed {
     for (final spot in spots) ..._estimatedForecastsForSpot(spot),
   ];
 
-  static final trips = [
-    TripModel(
-      id: 'trip_1',
-      title: 'Dry Season Surf Sprint',
-      destination: 'Bali',
-      startDate: '2026-05-10',
-      endDate: '2026-05-18',
-      travelers: 2,
-      notes: 'Stay near Uluwatu and rent scooters.',
-      budgetUsd: 1800,
-    ),
-  ];
+  static final trips = <TripModel>[];
 
   static final alerts = [
     AlertModel(
@@ -6041,7 +6030,7 @@ class DemoSeed {
   static final dashboard = DashboardModel(
     featuredSpot: spots.first,
     topForecast: forecasts.first,
-    upcomingTrip: trips.first,
+    upcomingTrip: null,
     alertsEnabled: 1,
   );
 

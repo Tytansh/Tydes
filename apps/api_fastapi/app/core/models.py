@@ -4376,19 +4376,7 @@ def build_seed() -> dict[str, list[BaseModel] | User]:
         for spot in spots
         for forecast in build_estimated_forecasts(spot, today)
     ]
-    trips = [
-        Trip(
-            id="trip_bali_july",
-            user_id=user.id,
-            title="Dry Season Surf Sprint",
-            destination="Bali",
-            start_date=today + timedelta(days=21),
-            end_date=today + timedelta(days=29),
-            travelers=2,
-            notes="Stay near Uluwatu, scooter rental, dawn sessions first.",
-            budget_usd=1800,
-        )
-    ]
+    trips: list[Trip] = []
     alerts = [
         Alert(
             id="alert_uluwatu",

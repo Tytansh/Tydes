@@ -88,6 +88,12 @@ def test_taiwan_spot_coverage_includes_twenty_known_breaks():
     } <= taiwan_spots
 
 
+def test_trips_start_empty_instead_of_showing_a_demo_itinerary():
+    response = client.get("/api/v1/trips")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
 def test_forecasts_fallback_uses_estimated_spot_values(monkeypatch):
     def raise_provider_error(_spot, **_kwargs):
         raise RuntimeError("provider unavailable")

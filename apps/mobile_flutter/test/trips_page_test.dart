@@ -27,14 +27,18 @@ void main() {
     );
   });
 
-  testWidgets('travel opens with useful trip and destination content', (
+  test('offline seed does not invent a trip for the user', () {
+    expect(DemoSeed.trips, isEmpty);
+    expect(DemoSeed.dashboard.upcomingTrip, isNull);
+  });
+
+  testWidgets('travel shows real destinations and honest coming-soon states', (
     tester,
   ) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           travelSpotsProvider.overrideWith((_) async => DemoSeed.spots),
-          tripsProvider.overrideWith((_) async => DemoSeed.trips),
         ],
         child: MaterialApp(theme: AppTheme.light(), home: const TripsPage()),
       ),
@@ -42,7 +46,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Go where the swell is.'), findsOneWidget);
-    expect(find.text('Dry Season Surf Sprint'), findsOneWidget);
+    expect(find.text('Personal trip planning is coming soon'), findsOneWidget);
+    expect(find.text('Dry Season Surf Sprint'), findsNothing);
     expect(find.text('Surf bases worth a look'), findsOneWidget);
     expect(find.text('Uluwatu'), findsWidgets);
   });
