@@ -2441,6 +2441,18 @@ class SocialPostMediaCarousel extends StatefulWidget {
       _SocialPostMediaCarouselState();
 }
 
+@visibleForTesting
+ScrollPhysics socialPostMediaCarouselPhysics({required bool isWeb}) {
+  if (isWeb) return const NeverScrollableScrollPhysics();
+  return const PageScrollPhysics(parent: ClampingScrollPhysics());
+}
+
+@visibleForTesting
+bool socialPostMediaCarouselShowsArrows({
+  required bool isWeb,
+  required int mediaCount,
+}) => isWeb && mediaCount > 1;
+
 class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
   late final PageController _pageController;
   int _pageIndex = 0;
@@ -2472,8 +2484,10 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
     if (media.isEmpty) return const SizedBox.shrink();
     if (_pageIndex >= media.length) _pageIndex = media.length - 1;
     final desktop = MediaQuery.sizeOf(context).width >= 980;
-    final desktopWebCarousel = kIsWeb && desktop;
-    final showWebArrows = kIsWeb && media.length > 1;
+    final showWebArrows = socialPostMediaCarouselShowsArrows(
+      isWeb: kIsWeb,
+      mediaCount: media.length,
+    );
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(widget.borderRadius),
@@ -2483,9 +2497,7 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
           children: [
             PageView.builder(
               controller: _pageController,
-              physics: desktopWebCarousel
-                  ? const NeverScrollableScrollPhysics()
-                  : const PageScrollPhysics(parent: ClampingScrollPhysics()),
+              physics: socialPostMediaCarouselPhysics(isWeb: kIsWeb),
               itemCount: media.length,
               onPageChanged: (index) => setState(() => _pageIndex = index),
               itemBuilder: (context, index) {
