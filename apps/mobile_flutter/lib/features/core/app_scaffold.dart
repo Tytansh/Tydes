@@ -145,7 +145,7 @@ class _DesktopNavigation extends StatelessWidget {
       leading: const SizedBox(
         width: 236,
         child: Padding(
-          padding: EdgeInsets.fromLTRB(10, 24, 12, 36),
+          padding: EdgeInsets.fromLTRB(14, 24, 12, 36),
           child: Row(
             children: [
               _DesktopBrandMark(),
@@ -203,8 +203,8 @@ class _DesktopBrandMark extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       child: Image.asset(
         'assets/branding/tydes-wave-blue.png',
-        width: 48,
-        height: 48,
+        width: 52,
+        height: 52,
         fit: BoxFit.cover,
       ),
     );
