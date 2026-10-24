@@ -203,6 +203,55 @@ def test_free_user_locked_spot_gets_real_forecast_on_five_day_cache(monkeypatch)
     assert captured["max_cache_age"].total_seconds() == 5 * 24 * 60 * 60
 
 
+def test_next_swell_picks_one_best_destination_and_includes_australia(monkeypatch):
+    store._next_swell_cache = None
+    checked_spot_ids = set()
+
+    def fake_live_forecast(spot, **_kwargs):
+        checked_spot_ids.add(spot.id)
+        is_snapper = spot.id == "spot_snapper"
+        return [
+            store.forecasts[0].model_copy(
+                update={
+                    "id": f"next_swell_{spot.id}",
+                    "spot_id": spot.id,
+                    "day": date.today() + timedelta(days=2),
+                    "wave_height_m": 2.4 if is_snapper else 1.0,
+                    "swell_wave_height_m": 2.1 if is_snapper else 0.7,
+                    "period_s": 14 if is_snapper else 8,
+                    "wind_kts": 8.0 if is_snapper else 18.0,
+                    "quality": "epic" if is_snapper else "fair",
+                    "source": "open-meteo",
+                    "confidence": "live",
+                }
+            )
+        ]
+
+    monkeypatch.setattr(
+        store.weather_provider,
+        "fetch_spot_forecast",
+        fake_live_forecast,
+    )
+
+    response = client.get("/api/v1/forecasts/next-swell")
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["available"] is True
+    assert result["spot_id"] == "spot_snapper"
+    assert result["spot_name"] == "Snapper Rocks"
+    assert result["destination"] == "Gold Coast, Australia"
+    assert result["swell_height_m"] == 2.1
+    assert result["source"] == "open-meteo"
+    assert {
+        "spot_snapper",
+        "spot_lennox",
+        "spot_bells",
+        "spot_surfers_point",
+    } <= checked_spot_ids
+    store._next_swell_cache = None
+
+
 def test_premium_user_hides_ads_and_can_use_live_data(monkeypatch):
     store.login("demo+premium@surftravel.app")
 

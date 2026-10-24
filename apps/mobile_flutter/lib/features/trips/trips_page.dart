@@ -8,6 +8,10 @@ final travelSpotsProvider = FutureProvider(
   (ref) => ref.watch(surfRepositoryProvider).fetchSpots(),
 );
 
+final nextSwellProvider = FutureProvider(
+  (ref) => ref.watch(surfRepositoryProvider).fetchNextSwell(),
+);
+
 class TripsPage extends ConsumerStatefulWidget {
   const TripsPage({super.key});
 
@@ -34,6 +38,7 @@ class _TripsPageState extends ConsumerState<TripsPage> {
           .when(
             data: (spots) => _TravelLoadedBody(
               spots: spots,
+              nextSwell: ref.watch(nextSwellProvider),
               selectedCountryId: _selectedCountryId,
               selectedRegionId: _selectedRegionId,
               selectedAreaId: _selectedAreaId,
@@ -61,6 +66,7 @@ class _TripsPageState extends ConsumerState<TripsPage> {
 class _TravelLoadedBody extends StatelessWidget {
   const _TravelLoadedBody({
     required this.spots,
+    required this.nextSwell,
     required this.selectedCountryId,
     required this.selectedRegionId,
     required this.selectedAreaId,
@@ -69,6 +75,7 @@ class _TravelLoadedBody extends StatelessWidget {
   });
 
   final List<SpotModel> spots;
+  final AsyncValue<NextSwellModel> nextSwell;
   final String? selectedCountryId;
   final String? selectedRegionId;
   final String? selectedAreaId;
@@ -133,6 +140,8 @@ class _TravelLoadedBody extends StatelessWidget {
         _TravelHero(countryCount: countries.length, breakCount: totalBreaks),
         const SizedBox(height: 16),
         const _TravelServicesComingSoonCard(),
+        const SizedBox(height: 16),
+        _NextSwellCard(recommendation: nextSwell),
         const SizedBox(height: 22),
         const _SectionHeading(
           title: 'Surf bases worth a look',
@@ -199,13 +208,6 @@ class _TravelLoadedBody extends StatelessWidget {
           country: selectedCountry,
           region: selectedRegion,
           area: selectedArea,
-        ),
-        const SizedBox(height: 22),
-        _TravelComingSoonCard(
-          icon: Icons.radar_outlined,
-          title: 'Swell outlooks and surf events',
-          description:
-              'Coming soon near ${selectedArea.name}: regularly refreshed swell outlooks and confirmed competition dates. Forecasts will show the model source, update time, and confidence—never an AI guess.',
         ),
       ],
     );
@@ -386,64 +388,291 @@ class _SectionHeading extends StatelessWidget {
   }
 }
 
-class _TravelComingSoonCard extends StatelessWidget {
-  const _TravelComingSoonCard({
-    required this.icon,
-    required this.title,
-    required this.description,
-  });
+class _NextSwellCard extends StatelessWidget {
+  const _NextSwellCard({required this.recommendation});
 
-  final IconData icon;
-  final String title;
-  final String description;
+  final AsyncValue<NextSwellModel> recommendation;
 
   @override
   Widget build(BuildContext context) {
+    return recommendation.when(
+      data: (result) => result.available
+          ? _buildRecommendation(context, result)
+          : _buildUnavailable(context, result.summary),
+      loading: () => _buildLoading(context),
+      error: (_, _) => _buildUnavailable(
+        context,
+        'The live swell scan is unavailable right now.',
+      ),
+    );
+  }
+
+  Widget _buildRecommendation(BuildContext context, NextSwellModel result) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFFE9F5F2),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFCCE7E1)),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF073E59), Color(0xFF087E7A), Color(0xFF35B6A5)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x26073E59),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFD7EFEC),
-                  borderRadius: BorderRadius.circular(14),
+              const Icon(Icons.radar_rounded, color: Colors.white, size: 24),
+              const SizedBox(width: 9),
+              const Text(
+                'NEXT SWELL',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  letterSpacing: 1.1,
+                  fontWeight: FontWeight.w900,
                 ),
-                child: Icon(icon, color: const Color(0xFF087E7A)),
               ),
-              const SizedBox(width: 12),
-              Expanded(
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0x2BFFFFFF),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: const Color(0x45FFFFFF)),
+                ),
                 child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  result.quality.toUpperCase(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    letterSpacing: .7,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
               ),
-              const _StatusPill(label: 'Coming soon'),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 18),
           Text(
-            description,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: const Color(0xFF394340),
-              height: 1.4,
+            result.destination ?? 'Destination unavailable',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+              height: 1.05,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            'Best break • ${result.spotName ?? 'Unavailable'}',
+            style: const TextStyle(
+              color: Color(0xE6FFFFFF),
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 15),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _NextSwellMetric(
+                icon: Icons.calendar_today_outlined,
+                label: _formatForecastDay(result.bestDay),
+              ),
+              _NextSwellMetric(
+                icon: Icons.waves_rounded,
+                label: '${_formatMetric(result.swellHeightM)}m swell',
+              ),
+              _NextSwellMetric(
+                icon: Icons.timeline_rounded,
+                label: '${result.periodS ?? '--'}s period',
+              ),
+              _NextSwellMetric(
+                icon: Icons.air_rounded,
+                label: '${_formatMetric(result.windKts)}kt wind',
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            result.summary ?? '',
+            style: const TextStyle(
+              color: Color(0xE6FFFFFF),
+              fontSize: 13,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Container(height: 1, color: const Color(0x35FFFFFF)),
+          const SizedBox(height: 11),
+          Text(
+            '${_sourceLabel(result.source)} • updated ${_formatUpdatedAt(result.updatedAt)}\n${result.note}',
+            style: const TextStyle(
+              color: Color(0xCFFFFFFF),
+              fontSize: 10.5,
+              height: 1.35,
             ),
           ),
         ],
       ),
     );
   }
+
+  Widget _buildLoading(BuildContext context) {
+    return Container(
+      height: 190,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A514F),
+        borderRadius: BorderRadius.circular(26),
+      ),
+      child: const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Colors.white),
+            SizedBox(height: 14),
+            Text(
+              'Scanning the next five days…',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUnavailable(BuildContext context, String? summary) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE9F5F2),
+        borderRadius: BorderRadius.circular(26),
+        border: Border.all(color: const Color(0xFFCCE7E1)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.radar_rounded, color: Color(0xFF087E7A), size: 28),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'No standout trip yet',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  summary ??
+                      'No travel-worthy swell stands out in the next five days.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Watching Taiwan, Indonesia, Siargao, Sri Lanka, and Australia.',
+                  style: TextStyle(
+                    color: Color(0xFF087E7A),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NextSwellMetric extends StatelessWidget {
+  const _NextSwellMetric({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0x26FFFFFF),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0x35FFFFFF)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 15),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _formatMetric(double? value) {
+  if (value == null) return '--';
+  final fixed = value.toStringAsFixed(1);
+  return fixed.endsWith('.0') ? fixed.substring(0, fixed.length - 2) : fixed;
+}
+
+String _formatForecastDay(String? value) {
+  final day = value == null ? null : DateTime.tryParse(value);
+  if (day == null) return 'Date pending';
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  return '${months[day.month - 1]} ${day.day}';
+}
+
+String _formatUpdatedAt(String value) {
+  final parsed = DateTime.tryParse(value)?.toLocal();
+  if (parsed == null) return 'recently';
+  final minute = parsed.minute.toString().padLeft(2, '0');
+  final hour = parsed.hour % 12 == 0 ? 12 : parsed.hour % 12;
+  final suffix = parsed.hour < 12 ? 'AM' : 'PM';
+  return '$hour:$minute $suffix';
+}
+
+String _sourceLabel(String source) {
+  if (source.toLowerCase() == 'open-meteo') return 'Open-Meteo';
+  return source;
 }
 
 class _TravelServicesComingSoonCard extends StatelessWidget {

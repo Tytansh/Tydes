@@ -93,6 +93,29 @@ class SurfWindowForecast(BaseModel):
     note: str | None = None
 
 
+class NextSwellRecommendation(BaseModel):
+    available: bool
+    spot_id: str | None = None
+    spot_name: str | None = None
+    destination: str | None = None
+    country: str | None = None
+    region: str | None = None
+    area: str | None = None
+    best_day: date | None = None
+    wave_height_m: float | None = None
+    swell_height_m: float | None = None
+    period_s: int | None = None
+    wind_kts: float | None = None
+    quality: Literal["poor", "fair", "good", "epic"] = "poor"
+    source: str = "open-meteo"
+    confidence: Literal["live", "estimated"] = "live"
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    summary: str | None = None
+    note: str = (
+        "Forecast-model guidance for trip planning, not a safety or navigation call."
+    )
+
+
 class TideEvent(BaseModel):
     type: Literal["high", "low"]
     time: datetime

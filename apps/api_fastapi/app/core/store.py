@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import hmac
 import json
@@ -19,6 +20,7 @@ from app.core.models import (
     Dashboard,
     ForecastEntry,
     FriendProfile,
+    NextSwellRecommendation,
     Session,
     SocialComment,
     SocialEngagementState,
@@ -51,6 +53,22 @@ logger = logging.getLogger(__name__)
 _PASSWORD_HASH_ALGORITHM = "pbkdf2_sha256"
 _PASSWORD_HASH_ITERATIONS = 260_000
 FREE_LIVE_SPOT_CHANGE_COOLDOWN = timedelta(hours=24)
+NEXT_SWELL_CACHE_MAX_AGE = timedelta(hours=6)
+NEXT_SWELL_RETRY_MAX_AGE = timedelta(minutes=30)
+
+_NEXT_SWELL_SPOT_IDS = (
+    # Southeast Asia and Taiwan.
+    "spot_uluwatu_peak",
+    "spot_desert_point",
+    "spot_siargao",
+    "spot_jinzun_harbor",
+    "spot_main_point",
+    # Australia's strongest, most travel-relevant surf regions.
+    "spot_snapper",
+    "spot_lennox",
+    "spot_bells",
+    "spot_surfers_point",
+)
 
 
 def _friendly_duration(duration: timedelta) -> str:
@@ -61,6 +79,45 @@ def _friendly_duration(duration: timedelta) -> str:
     if minutes <= 0:
         return f"{hours}h"
     return f"{hours}h {minutes}m"
+
+
+def _next_swell_score(
+    spot: Spot,
+    forecast: ForecastEntry,
+    now: datetime,
+) -> float | None:
+    wave_height = forecast.wave_height_m or forecast.swell_wave_height_m or 0.0
+    swell_height = forecast.swell_wave_height_m or wave_height
+    period = forecast.period_s or 0
+    wind = forecast.wind_kts if forecast.wind_kts is not None else 99.0
+
+    if (
+        forecast.confidence != "live"
+        or forecast.quality not in {"good", "epic"}
+        or wave_height < 1.2
+        or swell_height < 0.9
+        or period < 10
+        or wind > 22
+    ):
+        return None
+
+    quality_score = 3.0 if forecast.quality == "epic" else 2.0
+    wave_score = min(wave_height, 3.5) * 0.8
+    swell_score = min(swell_height, 3.0) * 0.7
+    period_score = min(max(period - 8, 0), 10) * 0.28
+    wind_score = max(0.0, 18 - wind) * 0.08
+    season_score = 0.4 if now.strftime("%b") in spot.best_months else 0.0
+    oversized_penalty = max(0.0, wave_height - 4.0) * 0.8
+    return round(
+        quality_score
+        + wave_score
+        + swell_score
+        + period_score
+        + wind_score
+        + season_score
+        - oversized_penalty,
+        3,
+    )
 
 
 class DemoStore:
@@ -87,6 +144,10 @@ class DemoStore:
         self.social_reports: list[SocialReport] = []
         self.weather_provider = OpenMeteoMarineProvider()
         self.tide_provider = TideCheckProvider()
+        self._next_swell_cache: tuple[
+            datetime,
+            NextSwellRecommendation,
+        ] | None = None
         self.waitlist_emails: list[str] = []
         self.verified_emails: set[str] = set()
         self.email_verification_codes: dict[str, str] = {}
@@ -621,7 +682,11 @@ class DemoStore:
                 return forecasts
             return [self._locked_free_forecast_estimate(forecast) for forecast in forecasts]
         except Exception as error:
-            logger.warning("Live forecast unavailable for %s: %s", spot.id, error)
+            logger.warning(
+                "Live forecast unavailable for %s (%s)",
+                spot.id,
+                type(error).__name__,
+            )
             # Fall back to seeded values only if Open-Meteo is unreachable.
             return [item for item in self.forecasts if item.spot_id == spot.id]
 
@@ -715,12 +780,101 @@ class DemoStore:
             )
             return window
         except Exception as error:
-            logger.warning("Best surf window unavailable for %s: %s", spot.id, error)
+            logger.warning(
+                "Best surf window unavailable for %s (%s)",
+                spot.id,
+                type(error).__name__,
+            )
             return SurfWindowForecast(
                 spot_id=spot.id,
                 available=False,
                 note="Best Time Today is unavailable right now.",
             )
+
+    def get_next_swell(self) -> NextSwellRecommendation:
+        now = datetime.now(timezone.utc)
+        if self._next_swell_cache is not None:
+            cached_at, cached = self._next_swell_cache
+            max_age = (
+                NEXT_SWELL_CACHE_MAX_AGE
+                if cached.available
+                else NEXT_SWELL_RETRY_MAX_AGE
+            )
+            if now - cached_at <= max_age:
+                return cached
+
+        candidates = [
+            spot
+            for spot_id in _NEXT_SWELL_SPOT_IDS
+            if (spot := self.get_spot(spot_id)) is not None
+        ]
+        ranked: list[tuple[float, Spot, ForecastEntry]] = []
+
+        def fetch(spot: Spot) -> tuple[Spot, list[ForecastEntry]]:
+            return (
+                spot,
+                self.weather_provider.fetch_spot_forecast(
+                    spot,
+                    max_cache_age=NEXT_SWELL_CACHE_MAX_AGE,
+                ),
+            )
+
+        with ThreadPoolExecutor(max_workers=min(5, len(candidates))) as executor:
+            futures = {executor.submit(fetch, spot): spot for spot in candidates}
+            for future in as_completed(futures):
+                spot = futures[future]
+                try:
+                    _, forecasts = future.result()
+                except Exception as error:
+                    logger.warning(
+                        "Next-swell forecast unavailable for %s (%s)",
+                        spot.id,
+                        type(error).__name__,
+                    )
+                    continue
+                for forecast in forecasts:
+                    score = _next_swell_score(spot, forecast, now)
+                    if score is not None:
+                        ranked.append((score, spot, forecast))
+
+        if not ranked:
+            recommendation = NextSwellRecommendation(
+                available=False,
+                updated_at=now,
+                summary="No travel-worthy swell stands out in the next five days.",
+            )
+            self._next_swell_cache = (now, recommendation)
+            return recommendation
+
+        _, spot, forecast = max(ranked, key=lambda item: item[0])
+        wave_height = forecast.wave_height_m or forecast.swell_wave_height_m or 0.0
+        swell_height = forecast.swell_wave_height_m or wave_height
+        period = forecast.period_s or 0
+        wind = forecast.wind_kts or 0.0
+        recommendation = NextSwellRecommendation(
+            available=True,
+            spot_id=spot.id,
+            spot_name=spot.name,
+            destination=f"{spot.area}, {spot.country}",
+            country=spot.country,
+            region=spot.region,
+            area=spot.area,
+            best_day=forecast.day,
+            wave_height_m=round(wave_height, 1),
+            swell_height_m=round(swell_height, 1),
+            period_s=period,
+            wind_kts=round(wind, 1),
+            quality=forecast.quality,
+            source=forecast.source,
+            confidence=forecast.confidence,
+            updated_at=now,
+            summary=(
+                f"{spot.name} has the strongest travel signal in the next five days: "
+                f"{swell_height:.1f}m swell at {period}s with {wind:.1f}kt wind."
+            ),
+        )
+        self._next_swell_cache = (now, recommendation)
+        return recommendation
 
     def list_trips(self) -> Iterable[Trip]:
         return self.trips

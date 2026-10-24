@@ -412,6 +412,19 @@ class SurfRepository {
     }
   }
 
+  Future<NextSwellModel> fetchNextSwell() async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/forecasts/next-swell',
+      );
+      return NextSwellModel.fromJson(response.data!);
+    } catch (_) {
+      return NextSwellModel.unavailable(
+        summary: 'The next-swell scan is unavailable right now.',
+      );
+    }
+  }
+
   Future<TideForecastModel> fetchTides(String spotId) async {
     try {
       final response = await _dio.get<Map<String, dynamic>>(

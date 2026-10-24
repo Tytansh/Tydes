@@ -18,3 +18,8 @@ def get_tides(spot_id: str):
 @router.get("/surf-window")
 def get_surf_window(spot_id: str):
     return store.get_surf_window(spot_id)
+
+
+@router.get("/next-swell")
+def get_next_swell():
+    return store.get_next_swell()

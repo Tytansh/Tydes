@@ -299,6 +299,95 @@ class ForecastModel {
   );
 }
 
+class NextSwellModel {
+  NextSwellModel({
+    required this.available,
+    required this.spotId,
+    required this.spotName,
+    required this.destination,
+    required this.country,
+    required this.region,
+    required this.area,
+    required this.bestDay,
+    required this.waveHeightM,
+    required this.swellHeightM,
+    required this.periodS,
+    required this.windKts,
+    required this.quality,
+    required this.source,
+    required this.confidence,
+    required this.updatedAt,
+    required this.summary,
+    required this.note,
+  });
+
+  final bool available;
+  final String? spotId;
+  final String? spotName;
+  final String? destination;
+  final String? country;
+  final String? region;
+  final String? area;
+  final String? bestDay;
+  final double? waveHeightM;
+  final double? swellHeightM;
+  final int? periodS;
+  final double? windKts;
+  final String quality;
+  final String source;
+  final String confidence;
+  final String updatedAt;
+  final String? summary;
+  final String note;
+
+  factory NextSwellModel.unavailable({String? summary}) => NextSwellModel(
+    available: false,
+    spotId: null,
+    spotName: null,
+    destination: null,
+    country: null,
+    region: null,
+    area: null,
+    bestDay: null,
+    waveHeightM: null,
+    swellHeightM: null,
+    periodS: null,
+    windKts: null,
+    quality: 'poor',
+    source: 'open-meteo',
+    confidence: 'estimated',
+    updatedAt: DateTime.now().toUtc().toIso8601String(),
+    summary:
+        summary ?? 'No travel-worthy swell stands out in the next five days.',
+    note: 'Forecast-model guidance for trip planning, not a safety call.',
+  );
+
+  factory NextSwellModel.fromJson(Map<String, dynamic> json) => NextSwellModel(
+    available: json['available'] as bool? ?? false,
+    spotId: json['spot_id'] as String?,
+    spotName: json['spot_name'] as String?,
+    destination: json['destination'] as String?,
+    country: json['country'] as String?,
+    region: json['region'] as String?,
+    area: json['area'] as String?,
+    bestDay: json['best_day'] as String?,
+    waveHeightM: (json['wave_height_m'] as num?)?.toDouble(),
+    swellHeightM: (json['swell_height_m'] as num?)?.toDouble(),
+    periodS: json['period_s'] as int?,
+    windKts: (json['wind_kts'] as num?)?.toDouble(),
+    quality: json['quality'] as String? ?? 'poor',
+    source: json['source'] as String? ?? 'open-meteo',
+    confidence: json['confidence'] as String? ?? 'estimated',
+    updatedAt:
+        json['updated_at'] as String? ??
+        DateTime.now().toUtc().toIso8601String(),
+    summary: json['summary'] as String?,
+    note:
+        json['note'] as String? ??
+        'Forecast-model guidance for trip planning, not a safety call.',
+  );
+}
+
 String _compassDirection(int degrees) {
   const labels = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
   final normalized = degrees % 360;
