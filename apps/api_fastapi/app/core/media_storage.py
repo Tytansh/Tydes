@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from threading import Lock
 
 from fastapi import HTTPException, UploadFile
 
@@ -14,6 +15,12 @@ from app.core.runtime import media_dir_path
 class StoredMedia:
     name: str
     url: str
+
+
+@dataclass(frozen=True)
+class StoredObjectMetadata:
+    size: int
+    content_type: str
 
 
 class MediaStorage:
@@ -95,6 +102,132 @@ class R2MediaStorage(MediaStorage):
             temp_path.unlink(missing_ok=True)
         return StoredMedia(name=object_name, url=f"{self.public_url}/{key}")
 
+    def public_object_url(self, object_name: str) -> str:
+        return f"{self.public_url}/{self._key(object_name)}"
+
+    def create_direct_upload_url(
+        self,
+        object_name: str,
+        *,
+        content_type: str,
+        content_length: int,
+        expires_seconds: int,
+    ) -> str:
+        self.ensure_direct_upload_cors()
+        return self.client.generate_presigned_url(
+            "put_object",
+            Params={
+                "Bucket": self.bucket,
+                "Key": self._key(object_name),
+                "ContentType": content_type,
+                "ContentLength": content_length,
+            },
+            ExpiresIn=expires_seconds,
+            HttpMethod="PUT",
+        )
+
+    def object_metadata(self, object_name: str) -> StoredObjectMetadata:
+        response = self.client.head_object(
+            Bucket=self.bucket,
+            Key=self._key(object_name),
+        )
+        return StoredObjectMetadata(
+            size=int(response.get("ContentLength", 0)),
+            content_type=str(response.get("ContentType") or "application/octet-stream"),
+        )
+
+    def read_object_range(self, object_name: str, start: int, end: int) -> bytes:
+        response = self.client.get_object(
+            Bucket=self.bucket,
+            Key=self._key(object_name),
+            Range=f"bytes={start}-{end}",
+        )
+        return bytes(response["Body"].read())
+
+    def promote_object(
+        self,
+        pending_name: str,
+        final_name: str,
+        *,
+        content_type: str,
+    ) -> None:
+        self.client.copy_object(
+            Bucket=self.bucket,
+            Key=self._key(final_name),
+            CopySource={"Bucket": self.bucket, "Key": self._key(pending_name)},
+            ContentType=content_type,
+            CacheControl="public, max-age=31536000, immutable",
+            MetadataDirective="REPLACE",
+        )
+        self.delete_object(pending_name)
+
+    def delete_object(self, object_name: str | None) -> None:
+        if object_name is None:
+            return
+        self.client.delete_object(Bucket=self.bucket, Key=self._key(object_name))
+
+    def ensure_direct_upload_cors(self) -> None:
+        cache_key = (self.bucket, _r2_endpoint_url())
+        with _R2_CORS_LOCK:
+            if cache_key in _R2_CORS_CONFIGURED:
+                return
+            origins = [
+                item.strip().rstrip("/")
+                for item in os.getenv("ALLOWED_ORIGINS", "").split(",")
+                if item.strip() and item.strip() != "*"
+            ]
+            if not origins:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Direct uploads need explicit allowed web origins.",
+                )
+            try:
+                current = self.client.get_bucket_cors(Bucket=self.bucket)
+                rules = list(current.get("CORSRules") or [])
+            except Exception as error:
+                error_code = str(
+                    getattr(error, "response", {})
+                    .get("Error", {})
+                    .get("Code", "")
+                )
+                if error_code not in {
+                    "NoSuchCORSConfiguration",
+                    "NoSuchCORS",
+                    "404",
+                }:
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Could not verify secure browser upload settings.",
+                    ) from error
+                rules = []
+            rules = [
+                rule for rule in rules if rule.get("ID") != "tydes-direct-uploads"
+            ]
+            rules.append(
+                {
+                    "ID": "tydes-direct-uploads",
+                    "AllowedHeaders": ["content-type"],
+                    "AllowedMethods": ["PUT"],
+                    "AllowedOrigins": sorted(set(origins)),
+                    "ExposeHeaders": ["etag"],
+                    "MaxAgeSeconds": 3600,
+                }
+            )
+            try:
+                self.client.put_bucket_cors(
+                    Bucket=self.bucket,
+                    CORSConfiguration={"CORSRules": rules},
+                )
+            except Exception as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Could not configure secure browser uploads.",
+                ) from error
+            _R2_CORS_CONFIGURED.add(cache_key)
+
+    def _key(self, object_name: str) -> str:
+        return f"{self.prefix}/{object_name}" if self.prefix else object_name
+
 
 def configured_media_storage() -> MediaStorage:
     backend = os.getenv("MEDIA_STORAGE_BACKEND", "local").strip().lower()
@@ -163,3 +296,7 @@ def _r2_endpoint_url() -> str:
         return configured
     account_id = _required_env("CLOUDFLARE_R2_ACCOUNT_ID")
     return f"https://{account_id}.r2.cloudflarestorage.com"
+
+
+_R2_CORS_CONFIGURED: set[tuple[str, str]] = set()
+_R2_CORS_LOCK = Lock()

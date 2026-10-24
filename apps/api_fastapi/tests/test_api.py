@@ -1190,3 +1190,114 @@ def test_r2_posts_hide_legacy_backend_media(monkeypatch):
         for post in posts
         for media in post.media
     )
+
+
+def test_direct_r2_video_upload_is_verified_before_posting(monkeypatch):
+    import app.modules.social.router as social_router_module
+    from app.core.media_storage import R2MediaStorage, StoredObjectMetadata
+
+    class FakeR2Storage(R2MediaStorage):
+        def __init__(self):
+            self.objects: dict[str, tuple[bytes, str]] = {}
+
+        def public_object_url(self, object_name: str) -> str:
+            return f"https://media.example/{object_name}"
+
+        def create_direct_upload_url(
+            self,
+            object_name: str,
+            *,
+            content_type: str,
+            content_length: int,
+            expires_seconds: int,
+        ) -> str:
+            del content_type, content_length, expires_seconds
+            return f"https://upload.example/{object_name}"
+
+        def object_metadata(self, object_name: str) -> StoredObjectMetadata:
+            data, content_type = self.objects[object_name]
+            return StoredObjectMetadata(size=len(data), content_type=content_type)
+
+        def read_object_range(self, object_name: str, start: int, end: int) -> bytes:
+            return self.objects[object_name][0][start : end + 1]
+
+        def promote_object(
+            self,
+            pending_name: str,
+            final_name: str,
+            *,
+            content_type: str,
+        ) -> None:
+            data, _ = self.objects.pop(pending_name)
+            self.objects[final_name] = (data, content_type)
+
+        def delete_object(self, object_name: str | None) -> None:
+            if object_name is not None:
+                self.objects.pop(object_name, None)
+
+    email = "protected-upload@example.com"
+    access_token = _signup_access_token(monkeypatch, email)
+    store.user.email_verified = True
+    store._set_verified_email(email)
+    store._save_current_account_user()
+    storage = FakeR2Storage()
+    monkeypatch.setattr(social_router_module, "configured_media_storage", lambda: storage)
+
+    mvhd = b"".join(
+        [
+            (28).to_bytes(4, "big"),
+            b"mvhd",
+            b"\x00\x00\x00\x00",
+            (0).to_bytes(4, "big"),
+            (0).to_bytes(4, "big"),
+            (1_000).to_bytes(4, "big"),
+            (30_000).to_bytes(4, "big"),
+        ]
+    )
+    video = (len(mvhd) + 8).to_bytes(4, "big") + b"moov" + mvhd
+    thumbnail = b"thumbnail"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    reservation_response = client.post(
+        "/api/v1/social/media/uploads",
+        headers=headers,
+        json={
+            "media_type": "video",
+            "content_type": "video/mp4",
+            "size_bytes": len(video),
+            "thumbnail_content_type": "image/jpeg",
+            "thumbnail_size_bytes": len(thumbnail),
+        },
+    )
+    assert reservation_response.status_code == 200
+    reservation_id = reservation_response.json()["id"]
+    reservation = social_router_module.upload_ledger.get(
+        reservation_id,
+        store.user.id,
+    )
+    assert reservation is not None
+    storage.objects[reservation.pending_name] = (video, "video/mp4")
+    assert reservation.pending_thumbnail_name is not None
+    storage.objects[reservation.pending_thumbnail_name] = (
+        thumbnail,
+        "image/jpeg",
+    )
+
+    completed_response = client.post(
+        f"/api/v1/social/media/uploads/{reservation_id}/complete",
+        headers=headers,
+    )
+    assert completed_response.status_code == 200
+    attachment = completed_response.json()
+
+    post_response = client.post(
+        "/api/v1/social/posts",
+        headers=headers,
+        json={
+            "body": "Protected upload",
+            "post_type": "general",
+            "visibility": "public",
+            "media": [attachment],
+        },
+    )
+    assert post_response.status_code == 200
+    assert post_response.json()["media"][0]["id"] == reservation_id

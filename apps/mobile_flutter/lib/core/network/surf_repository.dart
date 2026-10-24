@@ -79,6 +79,13 @@ class SurfRepository {
 
   final Dio _dio;
   final DemoPersistence _demoPersistence;
+  final Dio _directUploadDio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 20),
+      sendTimeout: const Duration(minutes: 5),
+      receiveTimeout: const Duration(minutes: 2),
+    ),
+  );
 
   Future<UserProfile> login(
     String email,
@@ -926,6 +933,28 @@ class SurfRepository {
     required XFile thumbnail,
     ProgressCallback? onSendProgress,
   }) async {
+    try {
+      return await _uploadPostMediaDirect(
+        mediaType: 'photo',
+        file: image,
+        thumbnail: thumbnail,
+        onSendProgress: onSendProgress,
+      );
+    } on DioException catch (error) {
+      if (!_directUploadUnavailable(error)) rethrow;
+    }
+    return _uploadPostPhotoRelay(
+      image: image,
+      thumbnail: thumbnail,
+      onSendProgress: onSendProgress,
+    );
+  }
+
+  Future<SocialMediaAttachmentModel> _uploadPostPhotoRelay({
+    required XFile image,
+    required XFile thumbnail,
+    ProgressCallback? onSendProgress,
+  }) async {
     final response = await _dio.post<Map<String, dynamic>>(
       '/social/media',
       options: Options(
@@ -946,6 +975,28 @@ class SurfRepository {
     XFile? thumbnail,
     ProgressCallback? onSendProgress,
   }) async {
+    try {
+      return await _uploadPostMediaDirect(
+        mediaType: 'video',
+        file: video,
+        thumbnail: thumbnail,
+        onSendProgress: onSendProgress,
+      );
+    } on DioException catch (error) {
+      if (!_directUploadUnavailable(error)) rethrow;
+    }
+    return _uploadPostVideoRelay(
+      video: video,
+      thumbnail: thumbnail,
+      onSendProgress: onSendProgress,
+    );
+  }
+
+  Future<SocialMediaAttachmentModel> _uploadPostVideoRelay({
+    required XFile video,
+    XFile? thumbnail,
+    ProgressCallback? onSendProgress,
+  }) async {
     final formData = <String, dynamic>{'file': await _multipartFile(video)};
     if (thumbnail != null) {
       formData['thumbnail'] = await _multipartFile(thumbnail);
@@ -960,6 +1011,109 @@ class SurfRepository {
       data: FormData.fromMap(formData),
     );
     return SocialMediaAttachmentModel.fromJson(response.data!);
+  }
+
+  Future<SocialMediaAttachmentModel> _uploadPostMediaDirect({
+    required String mediaType,
+    required XFile file,
+    XFile? thumbnail,
+    ProgressCallback? onSendProgress,
+  }) async {
+    final fileBytes = await file.length();
+    final thumbnailBytes = thumbnail == null ? 0 : await thumbnail.length();
+    final contentType = _mediaContentType(file, mediaType: mediaType);
+    final thumbnailContentType = thumbnail == null
+        ? null
+        : _mediaContentType(thumbnail, mediaType: 'photo');
+    String? reservationId;
+    try {
+      final reservationResponse = await _dio.post<Map<String, dynamic>>(
+        '/social/media/uploads',
+        data: {
+          'media_type': mediaType,
+          'content_type': contentType,
+          'size_bytes': fileBytes,
+          'thumbnail_content_type': thumbnailContentType,
+          'thumbnail_size_bytes': thumbnailBytes,
+        },
+      );
+      final reservation = reservationResponse.data!;
+      reservationId = reservation['id'] as String;
+      final upload = reservation['upload'] as Map<String, dynamic>;
+      await _putDirectUpload(
+        file,
+        upload,
+        contentLength: fileBytes,
+        onSendProgress: onSendProgress,
+      );
+      final thumbnailUpload = reservation['thumbnail_upload'];
+      if (thumbnail != null && thumbnailUpload is Map<String, dynamic>) {
+        await _putDirectUpload(
+          thumbnail,
+          thumbnailUpload,
+          contentLength: thumbnailBytes,
+        );
+      }
+      final completed = await _dio.post<Map<String, dynamic>>(
+        '/social/media/uploads/$reservationId/complete',
+      );
+      return SocialMediaAttachmentModel.fromJson(completed.data!);
+    } catch (_) {
+      if (reservationId != null) {
+        try {
+          await _dio.delete<void>('/social/media/uploads/$reservationId');
+        } catch (_) {
+          // The short-lived reservation expires and is cleaned up server-side.
+        }
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _putDirectUpload(
+    XFile file,
+    Map<String, dynamic> target, {
+    required int contentLength,
+    ProgressCallback? onSendProgress,
+  }) async {
+    final rawHeaders = target['headers'] as Map<String, dynamic>? ?? const {};
+    final headers = <String, dynamic>{
+      for (final entry in rawHeaders.entries) entry.key: entry.value,
+    };
+    if (!kIsWeb) {
+      headers[Headers.contentLengthHeader] = contentLength;
+    }
+    final data = kIsWeb ? await file.readAsBytes() : file.openRead();
+    await _directUploadDio.put<void>(
+      target['url'] as String,
+      data: data,
+      options: Options(
+        headers: headers,
+        followRedirects: false,
+        validateStatus: (status) =>
+            status != null && status >= 200 && status < 300,
+      ),
+      onSendProgress: onSendProgress,
+    );
+  }
+
+  bool _directUploadUnavailable(DioException error) {
+    final status = error.response?.statusCode;
+    return status == 404 || status == 409;
+  }
+
+  String _mediaContentType(XFile file, {required String mediaType}) {
+    final provided = file.mimeType?.trim().toLowerCase();
+    if (provided != null && provided.isNotEmpty) return provided;
+    final name = file.name.toLowerCase();
+    if (mediaType == 'video') {
+      if (name.endsWith('.mov')) return 'video/quicktime';
+      if (name.endsWith('.m4v')) return 'video/x-m4v';
+      return 'video/mp4';
+    }
+    if (name.endsWith('.png')) return 'image/png';
+    if (name.endsWith('.webp')) return 'image/webp';
+    return 'image/jpeg';
   }
 
   Future<MultipartFile> _multipartFile(XFile file) async {

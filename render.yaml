@@ -41,6 +41,22 @@ services:
         sync: false
       - key: CLOUDFLARE_R2_PUBLIC_URL
         sync: false
+      - key: MEDIA_UPLOAD_URL_TTL_SECONDS
+        value: '300'
+      - key: MEDIA_UPLOADS_PER_MINUTE
+        value: '4'
+      - key: MEDIA_VIDEOS_PER_USER_DAY
+        value: '10'
+      - key: MEDIA_UPLOADS_PER_USER_DAY
+        value: '40'
+      - key: MEDIA_USER_BYTES_PER_DAY
+        value: '734003200'
+      - key: MEDIA_GLOBAL_BYTES_PER_DAY
+        value: '2147483648'
+      - key: MEDIA_GLOBAL_UPLOADS_PER_DAY
+        value: '2000'
+      - key: MEDIA_GLOBAL_RETAINED_BYTES
+        value: '53687091200'
       - key: RESEND_API_KEY
         sync: false
       - key: TIDECHECK_API_KEY

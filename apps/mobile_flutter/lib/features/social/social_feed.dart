@@ -3542,10 +3542,25 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
 
     for (final item in selected) {
       if (_looksLikeVideo(item)) {
+        final durationMilliseconds = await _pickedVideoDurationMilliseconds(
+          item,
+        );
+        if (!mounted) return;
+        if (durationMilliseconds != null &&
+            durationMilliseconds > _maxPostVideoDurationMilliseconds) {
+          warnings.add('Videos can be up to 30 seconds long.');
+          continue;
+        }
         final videoSize = await _pickedVideoSize(item);
         if (!mounted) return;
         if (videoSize != null && videoSize > _maxPostVideoBytes) {
-          warnings.add('Video added. It may need trimming before posting.');
+          if (kIsWeb) {
+            warnings.add(
+              'Web videos need to be under ${_formatFileSize(_maxPostVideoBytes)}.',
+            );
+            continue;
+          }
+          warnings.add('Video added. Tydes will optimize it before posting.');
         }
         drafts.add(_PostMediaDraft.video(item));
         continue;
@@ -3580,6 +3595,16 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
     }
   }
 
+  Future<double?> _pickedVideoDurationMilliseconds(XFile picked) async {
+    if (kIsWeb) return null;
+    try {
+      final info = await VideoCompress.getMediaInfo(picked.path);
+      return info.duration;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<XFile> _videoForUpload(XFile source, int index) async {
     if (kIsWeb) return source;
 
@@ -3595,10 +3620,10 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
     try {
       final compressedInfo = await VideoCompress.compressVideo(
         source.path,
-        quality: VideoQuality.Res640x480Quality,
+        quality: VideoQuality.Res1920x1080Quality,
         deleteOrigin: false,
         includeAudio: true,
-        frameRate: 24,
+        frameRate: 30,
       );
       final compressedPath = compressedInfo?.path;
       if (compressedPath == null || compressedPath.isEmpty) return source;
@@ -5359,7 +5384,8 @@ class _ComposerPostDraft {
 const _maxPostMediaItems = 3;
 const _maxComposerDrafts = 8;
 const _maxPostPhotoBytes = 15 * 1024 * 1024;
-const _maxPostVideoBytes = 500 * 1024 * 1024;
+const _maxPostVideoBytes = 60 * 1024 * 1024;
+const _maxPostVideoDurationMilliseconds = 30500.0;
 const _minPostVideoCompressionBytes = 3 * 1024 * 1024;
 const _videoPlayVisibilityThreshold = 0.6;
 const _postBodyPreviewMaxLines = 6;
