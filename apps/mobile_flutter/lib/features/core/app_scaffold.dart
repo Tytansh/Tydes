@@ -153,10 +153,11 @@ class _DesktopNavigation extends StatelessWidget {
               Text(
                 'Tydes',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: Color(0xFFF4FAF9),
+                  fontFamily: 'Sora',
                   fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.8,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.65,
                 ),
               ),
             ],
