@@ -132,12 +132,7 @@ class _TravelLoadedBody extends StatelessWidget {
       children: [
         _TravelHero(countryCount: countries.length, breakCount: totalBreaks),
         const SizedBox(height: 16),
-        const _TravelComingSoonCard(
-          icon: Icons.route_outlined,
-          title: 'Personal trip planning is coming soon',
-          description:
-              'We removed the demo itinerary. When trip creation launches, this section will only show plans you actually make.',
-        ),
+        const _TravelServicesComingSoonCard(),
         const SizedBox(height: 22),
         const _SectionHeading(
           title: 'Surf bases worth a look',
@@ -207,10 +202,10 @@ class _TravelLoadedBody extends StatelessWidget {
         ),
         const SizedBox(height: 22),
         _TravelComingSoonCard(
-          icon: Icons.bed_outlined,
-          title: 'Verified stays near ${selectedArea.name}',
+          icon: Icons.radar_outlined,
+          title: 'Swell outlooks and surf events',
           description:
-              'Coming soon. We will only show places once booking partners and live availability are connected—no filler listings.',
+              'Coming soon near ${selectedArea.name}: regularly refreshed swell outlooks and confirmed competition dates. Forecasts will show the model source, update time, and confidence—never an AI guess.',
         ),
       ],
     );
@@ -299,7 +294,7 @@ class _TravelHero extends StatelessWidget {
                 const SizedBox(
                   width: 300,
                   child: Text(
-                    'Explore mapped surf regions now. Personal trip plans and verified stays are coming soon.',
+                    'Explore mapped surf regions now. Accommodations, rentals, local shops, and smarter trip tools are on the way.',
                     style: TextStyle(
                       color: Color(0xE6FFFFFF),
                       fontSize: 14,
@@ -443,6 +438,115 @@ class _TravelComingSoonCard extends StatelessWidget {
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: const Color(0xFF394340),
               height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TravelServicesComingSoonCard extends StatelessWidget {
+  const _TravelServicesComingSoonCard();
+
+  static const _services = [
+    (icon: Icons.bed_outlined, label: 'Hostels & stays'),
+    (icon: Icons.two_wheeler_outlined, label: 'Scooter rentals'),
+    (icon: Icons.surfing_outlined, label: 'Board shops'),
+    (icon: Icons.route_outlined, label: 'Trip planner'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE9F5F2),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFCCE7E1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD7EFEC),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.travel_explore_outlined,
+                  color: Color(0xFF087E7A),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Everything you need around the break',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const _StatusPill(label: 'Coming soon'),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Verified hostels and accommodations, scooter rentals, board shops, and personal trip planning are coming soon.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: const Color(0xFF394340),
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _services
+                .map(
+                  (service) => _TravelServicePill(
+                    icon: service.icon,
+                    label: service.label,
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TravelServicePill extends StatelessWidget {
+  const _TravelServicePill({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFBEDFD9)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 17, color: const Color(0xFF087E7A)),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF164B49),
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ],

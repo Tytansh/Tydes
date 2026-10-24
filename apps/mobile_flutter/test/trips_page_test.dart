@@ -46,9 +46,24 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Go where the swell is.'), findsOneWidget);
-    expect(find.text('Personal trip planning is coming soon'), findsOneWidget);
-    expect(find.text('Dry Season Surf Sprint'), findsNothing);
+    expect(find.text('Everything you need around the break'), findsOneWidget);
+    expect(find.text('Hostels & stays'), findsOneWidget);
+    expect(find.text('Scooter rentals'), findsOneWidget);
+    expect(find.text('Board shops'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Surf bases worth a look'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Surf bases worth a look'), findsOneWidget);
     expect(find.text('Uluwatu'), findsWidgets);
+    await tester.scrollUntilVisible(
+      find.text('Swell outlooks and surf events'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Swell outlooks and surf events'), findsOneWidget);
+    expect(find.textContaining('We removed the demo itinerary'), findsNothing);
+    expect(find.text('Dry Season Surf Sprint'), findsNothing);
   });
 }
