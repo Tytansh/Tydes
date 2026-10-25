@@ -4,7 +4,6 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from threading import Lock
 
 from fastapi import HTTPException, UploadFile
 
@@ -113,7 +112,6 @@ class R2MediaStorage(MediaStorage):
         content_length: int,
         expires_seconds: int,
     ) -> str:
-        self.ensure_direct_upload_cors()
         return self.client.generate_presigned_url(
             "put_object",
             Params={
@@ -166,65 +164,6 @@ class R2MediaStorage(MediaStorage):
         if object_name is None:
             return
         self.client.delete_object(Bucket=self.bucket, Key=self._key(object_name))
-
-    def ensure_direct_upload_cors(self) -> None:
-        cache_key = (self.bucket, _r2_endpoint_url())
-        with _R2_CORS_LOCK:
-            if cache_key in _R2_CORS_CONFIGURED:
-                return
-            origins = [
-                item.strip().rstrip("/")
-                for item in os.getenv("ALLOWED_ORIGINS", "").split(",")
-                if item.strip() and item.strip() != "*"
-            ]
-            if not origins:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Direct uploads need explicit allowed web origins.",
-                )
-            try:
-                current = self.client.get_bucket_cors(Bucket=self.bucket)
-                rules = list(current.get("CORSRules") or [])
-            except Exception as error:
-                error_code = str(
-                    getattr(error, "response", {})
-                    .get("Error", {})
-                    .get("Code", "")
-                )
-                if error_code not in {
-                    "NoSuchCORSConfiguration",
-                    "NoSuchCORS",
-                    "404",
-                }:
-                    raise HTTPException(
-                        status_code=503,
-                        detail="Could not verify secure browser upload settings.",
-                    ) from error
-                rules = []
-            rules = [
-                rule for rule in rules if rule.get("ID") != "tydes-direct-uploads"
-            ]
-            rules.append(
-                {
-                    "ID": "tydes-direct-uploads",
-                    "AllowedHeaders": ["content-type", "if-none-match"],
-                    "AllowedMethods": ["PUT"],
-                    "AllowedOrigins": sorted(set(origins)),
-                    "ExposeHeaders": ["etag"],
-                    "MaxAgeSeconds": 3600,
-                }
-            )
-            try:
-                self.client.put_bucket_cors(
-                    Bucket=self.bucket,
-                    CORSConfiguration={"CORSRules": rules},
-                )
-            except Exception as error:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Could not configure secure browser uploads.",
-                ) from error
-            _R2_CORS_CONFIGURED.add(cache_key)
 
     def _key(self, object_name: str) -> str:
         return f"{self.prefix}/{object_name}" if self.prefix else object_name
@@ -297,7 +236,3 @@ def _r2_endpoint_url() -> str:
         return configured
     account_id = _required_env("CLOUDFLARE_R2_ACCOUNT_ID")
     return f"https://{account_id}.r2.cloudflarestorage.com"
-
-
-_R2_CORS_CONFIGURED: set[tuple[str, str]] = set()
-_R2_CORS_LOCK = Lock()

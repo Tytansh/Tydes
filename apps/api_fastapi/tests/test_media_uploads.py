@@ -76,7 +76,7 @@ def test_mp4_duration_parser_reads_version_zero_movie_header():
     assert mp4_duration_from_bytes(moov) == 30.0
 
 
-def test_direct_upload_signature_binds_exact_content_length(monkeypatch):
+def test_direct_upload_signature_binds_exact_content_length():
     captured: dict[str, object] = {}
 
     class FakeClient:
@@ -90,7 +90,6 @@ def test_direct_upload_signature_binds_exact_content_length(monkeypatch):
     storage.public_url = "https://media.example"
     storage.prefix = "uploads"
     storage._client = FakeClient()
-    monkeypatch.setattr(storage, "ensure_direct_upload_cors", lambda: None)
 
     url = storage.create_direct_upload_url(
         "pending/video.mp4",
