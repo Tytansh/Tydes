@@ -102,4 +102,5 @@ def test_direct_upload_signature_binds_exact_content_length(monkeypatch):
     assert url == "https://upload.example/signed"
     assert captured["operation"] == "put_object"
     assert captured["Params"]["ContentLength"] == 12_345
+    assert captured["Params"]["IfNoneMatch"] == "*"
     assert captured["ExpiresIn"] == 300

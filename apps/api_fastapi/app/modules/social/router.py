@@ -392,7 +392,10 @@ def create_direct_media_upload(
             )
             thumbnail_upload = DirectUploadTarget(
                 url=thumbnail_url,
-                headers={"Content-Type": thumbnail_content_type},
+                headers={
+                    "Content-Type": thumbnail_content_type,
+                    "If-None-Match": "*",
+                },
             )
     except Exception:
         upload_ledger.set_status(media_id, user.id, "failed")
@@ -403,7 +406,10 @@ def create_direct_media_upload(
         media_type=payload.media_type,
         upload=DirectUploadTarget(
             url=upload_url,
-            headers={"Content-Type": content_type},
+            headers={
+                "Content-Type": content_type,
+                "If-None-Match": "*",
+            },
         ),
         thumbnail_upload=thumbnail_upload,
         expires_at=expires_at,

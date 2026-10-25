@@ -121,6 +121,7 @@ class R2MediaStorage(MediaStorage):
                 "Key": self._key(object_name),
                 "ContentType": content_type,
                 "ContentLength": content_length,
+                "IfNoneMatch": "*",
             },
             ExpiresIn=expires_seconds,
             HttpMethod="PUT",
@@ -206,7 +207,7 @@ class R2MediaStorage(MediaStorage):
             rules.append(
                 {
                     "ID": "tydes-direct-uploads",
-                    "AllowedHeaders": ["content-type"],
+                    "AllowedHeaders": ["content-type", "if-none-match"],
                     "AllowedMethods": ["PUT"],
                     "AllowedOrigins": sorted(set(origins)),
                     "ExposeHeaders": ["etag"],
