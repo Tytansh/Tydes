@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.core.auth import require_authenticated_user
 from app.core.store import store
 from app.integrations.revenuecat import (
     RevenueCatNotConfigured,
@@ -17,9 +18,9 @@ def list_plans():
 
 
 @router.post("/sync-revenuecat")
-async def sync_revenuecat_entitlement():
+async def sync_revenuecat_entitlement(user=Depends(require_authenticated_user)):
     try:
-        premium_active = await fetch_revenuecat_entitlement_active(store.user.id)
+        premium_active = await fetch_revenuecat_entitlement_active(user.id)
     except RevenueCatNotConfigured as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
     except RevenueCatVerificationError as error:

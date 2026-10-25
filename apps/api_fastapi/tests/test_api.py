@@ -1,9 +1,11 @@
-from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 import json
 import os
+from pathlib import Path
 import sys
 import tempfile
+from threading import Barrier
 from types import SimpleNamespace
 
 import pytest
@@ -88,10 +90,126 @@ def test_taiwan_spot_coverage_includes_twenty_known_breaks():
     } <= taiwan_spots
 
 
-def test_trips_start_empty_instead_of_showing_a_demo_itinerary():
-    response = client.get("/api/v1/trips")
+def test_trips_start_empty_instead_of_showing_a_demo_itinerary(monkeypatch):
+    access_token = _signup_access_token(monkeypatch, "empty-trips@example.com")
+    response = client.get(
+        "/api/v1/trips",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
     assert response.status_code == 200
     assert response.json() == []
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("get", "/api/v1/trips"),
+        ("get", "/api/v1/alerts"),
+        ("get", "/api/v1/users/dashboard"),
+        ("get", "/api/v1/users/favorites"),
+        ("post", "/api/v1/billing/sync-revenuecat"),
+    ],
+)
+def test_private_account_endpoints_require_authentication(method, path):
+    response = getattr(client, method)(path)
+    assert response.status_code == 401
+
+
+def test_alert_changes_are_limited_to_the_owning_account(monkeypatch):
+    owner_token = _signup_access_token(monkeypatch, "alert-owner@example.com")
+    other_token = _signup_access_token(monkeypatch, "alert-other@example.com")
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    other_headers = {"Authorization": f"Bearer {other_token}"}
+
+    created = client.post(
+        "/api/v1/alerts",
+        headers=owner_headers,
+        json={"spot_id": "spot_balangan", "enabled": True},
+    )
+    assert created.status_code == 200
+    alert_id = created.json()["id"]
+
+    assert client.get("/api/v1/alerts", headers=other_headers).json() == []
+    assert client.patch(
+        f"/api/v1/alerts/{alert_id}",
+        headers=other_headers,
+        json={"enabled": False},
+    ).status_code == 404
+    assert client.delete(
+        f"/api/v1/alerts/{alert_id}",
+        headers=other_headers,
+    ).status_code == 404
+
+    owner_alerts = client.get("/api/v1/alerts", headers=owner_headers)
+    assert owner_alerts.status_code == 200
+    assert [item["id"] for item in owner_alerts.json()] == [alert_id]
+
+
+def test_trips_are_limited_to_the_owning_account(monkeypatch):
+    owner_token = _signup_access_token(monkeypatch, "trip-owner@example.com")
+    other_token = _signup_access_token(monkeypatch, "trip-other@example.com")
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    other_headers = {"Authorization": f"Bearer {other_token}"}
+
+    created = client.post(
+        "/api/v1/trips",
+        headers=owner_headers,
+        json={
+            "title": "Siargao run",
+            "destination": "General Luna",
+            "start_date": "2026-11-01",
+            "end_date": "2026-11-08",
+            "travelers": 1,
+        },
+    )
+    assert created.status_code == 200
+
+    assert client.get("/api/v1/trips", headers=other_headers).json() == []
+    owner_trips = client.get("/api/v1/trips", headers=owner_headers)
+    assert owner_trips.status_code == 200
+    assert [item["title"] for item in owner_trips.json()] == ["Siargao run"]
+
+
+def test_concurrent_requests_keep_account_context_isolated(monkeypatch):
+    first_token = _signup_access_token(monkeypatch, "context-first@example.com")
+    second_token = _signup_access_token(monkeypatch, "context-second@example.com")
+    first_headers = {"Authorization": f"Bearer {first_token}"}
+    second_headers = {"Authorization": f"Bearer {second_token}"}
+
+    assert client.post(
+        "/api/v1/users/favorites",
+        headers=first_headers,
+        json={"spot_id": "spot_balangan"},
+    ).status_code == 200
+    assert client.post(
+        "/api/v1/users/favorites",
+        headers=second_headers,
+        json={"spot_id": "spot_bondi"},
+    ).status_code == 200
+
+    barrier = Barrier(2)
+    original_list_favorites = store.list_favorite_spots
+
+    def synchronized_list_favorites():
+        barrier.wait(timeout=5)
+        return original_list_favorites()
+
+    monkeypatch.setattr(store, "list_favorite_spots", synchronized_list_favorites)
+
+    def favorite_ids(token: str) -> set[str]:
+        with TestClient(app) as concurrent_client:
+            response = concurrent_client.get(
+                "/api/v1/users/favorites",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 200
+        return {item["id"] for item in response.json()}
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first_future = executor.submit(favorite_ids, first_token)
+        second_future = executor.submit(favorite_ids, second_token)
+        assert first_future.result() == {"spot_balangan"}
+        assert second_future.result() == {"spot_bondi"}
 
 
 def test_forecasts_fallback_uses_estimated_spot_values(monkeypatch):
@@ -495,22 +613,26 @@ def test_premium_surf_window_available_for_any_spot(monkeypatch):
     assert payload["confidence"] == "live"
 
 
-def test_can_add_and_remove_favorite_spot():
-    store.login("demo@surftravel.app")
-    store.user.favorite_spot_ids = []
+def test_can_add_and_remove_favorite_spot(monkeypatch):
+    access_token = _signup_access_token(monkeypatch, "favorites@example.com")
+    auth_headers = {"Authorization": f"Bearer {access_token}"}
 
     add_response = client.post(
         "/api/v1/users/favorites",
         json={"spot_id": "spot_balangan"},
+        headers=auth_headers,
     )
     assert add_response.status_code == 200
     assert add_response.json()["favorite_spot_ids"] == ["spot_balangan"]
 
-    list_response = client.get("/api/v1/users/favorites")
+    list_response = client.get("/api/v1/users/favorites", headers=auth_headers)
     assert list_response.status_code == 200
     assert list_response.json()[0]["id"] == "spot_balangan"
 
-    remove_response = client.delete("/api/v1/users/favorites/spot_balangan")
+    remove_response = client.delete(
+        "/api/v1/users/favorites/spot_balangan",
+        headers=auth_headers,
+    )
     assert remove_response.status_code == 200
     assert remove_response.json()["favorite_spot_ids"] == []
 
@@ -545,7 +667,9 @@ def test_free_live_spot_can_change_after_cooldown(monkeypatch):
         store.user = original_user
 
 
-def test_can_toggle_and_delete_alert():
+def test_can_toggle_and_delete_alert(monkeypatch):
+    access_token = _signup_access_token(monkeypatch, "alerts@example.com")
+    auth_headers = {"Authorization": f"Bearer {access_token}"}
     create_response = client.post(
         "/api/v1/alerts",
         json={
@@ -554,6 +678,7 @@ def test_can_toggle_and_delete_alert():
             "max_wind_kts": 16,
             "enabled": True,
         },
+        headers=auth_headers,
     )
     assert create_response.status_code == 200
     alert_id = create_response.json()["id"]
@@ -561,11 +686,15 @@ def test_can_toggle_and_delete_alert():
     update_response = client.patch(
         f"/api/v1/alerts/{alert_id}",
         json={"enabled": False},
+        headers=auth_headers,
     )
     assert update_response.status_code == 200
     assert update_response.json()["enabled"] is False
 
-    delete_response = client.delete(f"/api/v1/alerts/{alert_id}")
+    delete_response = client.delete(
+        f"/api/v1/alerts/{alert_id}",
+        headers=auth_headers,
+    )
     assert delete_response.status_code == 200
     assert delete_response.json()["deleted"] is True
 
@@ -1237,8 +1366,10 @@ def test_direct_r2_video_upload_is_verified_before_posting(monkeypatch):
 
     email = "premium@protected-upload.example.com"
     access_token = _signup_access_token(monkeypatch, email)
-    assert store.user.premium is True
-    assert store.user.email_verified is False
+    signed_in_user = store.resolve_session_user(access_token)
+    assert signed_in_user is not None
+    assert signed_in_user.premium is True
+    assert signed_in_user.email_verified is False
     storage = FakeR2Storage()
     monkeypatch.setattr(social_router_module, "configured_media_storage", lambda: storage)
 
@@ -1271,7 +1402,7 @@ def test_direct_r2_video_upload_is_verified_before_posting(monkeypatch):
     reservation_id = reservation_response.json()["id"]
     reservation = social_router_module.upload_ledger.get(
         reservation_id,
-        store.user.id,
+        signed_in_user.id,
     )
     assert reservation is not None
     storage.objects[reservation.pending_name] = (video, "video/mp4")

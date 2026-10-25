@@ -8,6 +8,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.auth import optional_authenticated_user, require_authenticated_user
 from app.core.media_storage import R2MediaStorage, configured_media_storage
 from app.core.media_uploads import (
     UploadLimits,
@@ -95,12 +96,6 @@ class DirectMediaUploadReservationResponse(BaseModel):
     expires_at: datetime
 
 
-def require_authenticated_user(request: Request):
-    if not getattr(request.state, "authenticated_user", False):
-        raise HTTPException(status_code=401, detail="Sign in required")
-    return store.user
-
-
 @router.get("/friends")
 def list_friends():
     return list(store.list_friends())
@@ -108,11 +103,8 @@ def list_friends():
 
 @router.get("/posts")
 def list_posts(request: Request):
-    current_user_id = (
-        store.user.id
-        if getattr(request.state, "authenticated_user", False)
-        else None
-    )
+    current_user = optional_authenticated_user(request)
+    current_user_id = current_user.id if current_user is not None else None
     return list(store.list_posts(current_user_id=current_user_id))
 
 
@@ -128,11 +120,8 @@ def get_relationships(_user=Depends(require_authenticated_user)):
 
 @router.get("/profiles")
 def get_profiles(request: Request):
-    current_user_id = (
-        store.user.id
-        if getattr(request.state, "authenticated_user", False)
-        else None
-    )
+    current_user = optional_authenticated_user(request)
+    current_user_id = current_user.id if current_user is not None else None
     return list(store.list_social_profiles(current_user_id=current_user_id))
 
 

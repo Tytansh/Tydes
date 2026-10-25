@@ -38,12 +38,15 @@ app.add_middleware(
 
 @app.middleware("http")
 async def bind_authenticated_user(request, call_next):
-    request.state.authenticated_user = False
+    authenticated_user = None
     auth_header = request.headers.get("authorization", "")
     scheme, _, token = auth_header.partition(" ")
     if scheme.lower() == "bearer" and token.strip():
-        request.state.authenticated_user = store.use_session_token(token.strip())
-    return await call_next(request)
+        authenticated_user = store.resolve_session_user(token.strip())
+    request.state.user = authenticated_user
+    request.state.authenticated_user = authenticated_user is not None
+    with store.request_user_context(authenticated_user):
+        return await call_next(request)
 
 
 @app.get("/health")

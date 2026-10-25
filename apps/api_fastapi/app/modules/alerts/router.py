@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.core.auth import require_authenticated_user
 from app.core.models import Alert
 from app.core.store import store
 
@@ -35,15 +36,18 @@ class AlertUpdateRequest(BaseModel):
 
 
 @router.get("")
-def list_alerts():
-    return list(store.list_alerts())
+def list_alerts(user=Depends(require_authenticated_user)):
+    return list(store.list_alerts(user.id))
 
 
 @router.post("")
-def create_alert(payload: AlertCreateRequest):
+def create_alert(
+    payload: AlertCreateRequest,
+    user=Depends(require_authenticated_user),
+):
     alert = Alert(
         id=f"alert_{uuid4().hex[:8]}",
-        user_id=store.user.id,
+        user_id=user.id,
         spot_id=payload.spot_id,
         wave_enabled=payload.wave_enabled,
         min_wave_height_m=payload.min_wave_height_m,
@@ -59,16 +63,24 @@ def create_alert(payload: AlertCreateRequest):
 
 
 @router.patch("/{alert_id}")
-def update_alert(alert_id: str, payload: AlertUpdateRequest):
-    alert = store.update_alert(alert_id, payload.model_dump(exclude_unset=True))
+def update_alert(
+    alert_id: str,
+    payload: AlertUpdateRequest,
+    user=Depends(require_authenticated_user),
+):
+    alert = store.update_alert(
+        alert_id,
+        payload.model_dump(exclude_unset=True),
+        user_id=user.id,
+    )
     if alert is None:
         raise HTTPException(status_code=404, detail="Alert not found")
     return alert
 
 
 @router.delete("/{alert_id}")
-def delete_alert(alert_id: str):
-    deleted = store.delete_alert(alert_id)
+def delete_alert(alert_id: str, user=Depends(require_authenticated_user)):
+    deleted = store.delete_alert(alert_id, user_id=user.id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Alert not found")
     return {"deleted": True}

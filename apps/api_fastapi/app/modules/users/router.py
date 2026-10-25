@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 import re
 
+from app.core.auth import require_authenticated_user
 from app.core.moderation import ensure_allowed_content
 from app.core.store import store
 
@@ -23,12 +24,6 @@ class UpdateProfileRequest(BaseModel):
     surf_skill: str
     home_region: str
     avatar_url: str | None = None
-
-
-def require_authenticated_user(request: Request):
-    if not getattr(request.state, "authenticated_user", False):
-        raise HTTPException(status_code=401, detail="Sign in required")
-    return store.user
 
 
 @router.get("/me")
@@ -82,31 +77,37 @@ def update_me(payload: UpdateProfileRequest, _user=Depends(require_authenticated
 
 
 @router.get("/dashboard")
-def dashboard():
+def dashboard(_user=Depends(require_authenticated_user)):
     return store.get_dashboard()
 
 
 @router.get("/favorites")
-def favorites():
+def favorites(_user=Depends(require_authenticated_user)):
     return list(store.list_favorite_spots())
 
 
 @router.post("/favorites")
-def add_favorite(payload: FavoriteSpotRequest):
+def add_favorite(
+    payload: FavoriteSpotRequest,
+    _user=Depends(require_authenticated_user),
+):
     if store.get_spot(payload.spot_id) is None:
         raise HTTPException(status_code=404, detail="Spot not found")
-    store.add_favorite_spot(payload.spot_id)
-    return {"favorite_spot_ids": store.user.favorite_spot_ids}
+    favorite_spot_ids = store.add_favorite_spot(payload.spot_id)
+    return {"favorite_spot_ids": favorite_spot_ids}
 
 
 @router.delete("/favorites/{spot_id}")
-def remove_favorite(spot_id: str):
-    store.remove_favorite_spot(spot_id)
-    return {"favorite_spot_ids": store.user.favorite_spot_ids}
+def remove_favorite(spot_id: str, _user=Depends(require_authenticated_user)):
+    favorite_spot_ids = store.remove_favorite_spot(spot_id)
+    return {"favorite_spot_ids": favorite_spot_ids}
 
 
 @router.post("/free-live-spot")
-def set_free_live_spot(payload: FreeLiveSpotRequest):
+def set_free_live_spot(
+    payload: FreeLiveSpotRequest,
+    _user=Depends(require_authenticated_user),
+):
     if store.get_spot(payload.spot_id) is None:
         raise HTTPException(status_code=404, detail="Spot not found")
     try:

@@ -1,9 +1,10 @@
 from datetime import date
 from uuid import uuid4
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from app.core.auth import require_authenticated_user
 from app.core.models import Trip
 from app.core.store import store
 
@@ -21,15 +22,18 @@ class TripCreateRequest(BaseModel):
 
 
 @router.get("")
-def list_trips():
-    return list(store.list_trips())
+def list_trips(user=Depends(require_authenticated_user)):
+    return list(store.list_trips(user.id))
 
 
 @router.post("")
-def create_trip(payload: TripCreateRequest):
+def create_trip(
+    payload: TripCreateRequest,
+    user=Depends(require_authenticated_user),
+):
     trip = Trip(
         id=f"trip_{uuid4().hex[:8]}",
-        user_id=store.user.id,
+        user_id=user.id,
         title=payload.title,
         destination=payload.destination,
         start_date=payload.start_date,

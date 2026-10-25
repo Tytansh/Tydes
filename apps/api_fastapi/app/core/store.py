@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
+from contextvars import ContextVar
 import hashlib
 import hmac
 import json
 import logging
 import os
 import secrets
+from threading import RLock
 
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal
@@ -121,9 +124,39 @@ def _next_swell_score(
 
 
 class DemoStore:
+    @property
+    def user(self) -> User:
+        request_user = self._request_user.get()
+        return request_user if request_user is not None else self._default_user
+
+    @user.setter
+    def user(self, value: User) -> None:
+        if hasattr(self, "_request_user") and self._request_user.get() is not None:
+            self._request_user.set(value)
+            return
+        self._default_user = value
+
+    @contextmanager
+    def request_user_context(self, user: User | None) -> Iterator[User]:
+        bound_user = (
+            user
+            if user is not None
+            else self._default_user.model_copy(deep=True)
+        )
+        token = self._request_user.set(bound_user)
+        try:
+            yield bound_user
+        finally:
+            self._request_user.reset(token)
+
     def __init__(self) -> None:
         seed = build_seed()
-        self.user: User = seed["user"]  # type: ignore[assignment]
+        self._request_user: ContextVar[User | None] = ContextVar(
+            f"tydes_request_user_{id(self)}",
+            default=None,
+        )
+        self._default_user: User = seed["user"]  # type: ignore[assignment]
+        self._state_lock = RLock()
         self.spots: list[Spot] = list(seed["spots"])  # type: ignore[arg-type]
         self.forecasts: list[ForecastEntry] = list(seed["forecasts"])  # type: ignore[arg-type]
         self.trips: list[Trip] = list(seed["trips"])  # type: ignore[arg-type]
@@ -474,7 +507,7 @@ class DemoStore:
             self.postgres_auth.create_session_hash(token_hash, normalized_email)
         return token
 
-    def use_session_token(self, token: str) -> bool:
+    def resolve_session_user(self, token: str) -> User | None:
         token_hash = _hash_token(token)
         email = (
             self.postgres_auth.get_session_email(token_hash)
@@ -482,21 +515,28 @@ class DemoStore:
             else self.session_tokens.get(token_hash)
         )
         if email is None:
-            return False
+            return None
         account = self._get_auth_account(email)
         if account is None:
-            return False
+            return None
         user_payload = account.get("user")
         if not isinstance(user_payload, dict):
+            return None
+        resolved_user = User.model_validate(user_payload)
+        with self.request_user_context(resolved_user):
+            access_changed = self._apply_email_access_overrides(email)
+            if access_changed:
+                if self.postgres_social is not None:
+                    self.postgres_social.update_author_snapshots(self.user)
+                    self._sync_social_from_postgres()
+                self._save_state()
+            return self.user.model_copy(deep=True)
+
+    def use_session_token(self, token: str) -> bool:
+        resolved_user = self.resolve_session_user(token)
+        if resolved_user is None:
             return False
-        self.user = User.model_validate(user_payload)
-        access_changed = self._apply_email_access_overrides(email)
-        if access_changed:
-            self._save_current_account_user()
-            if self.postgres_social is not None:
-                self.postgres_social.update_author_snapshots(self.user)
-                self._sync_social_from_postgres()
-            self._save_state()
+        self.user = resolved_user
         return True
 
     def _save_current_account_user(self) -> None:
@@ -621,8 +661,15 @@ class DemoStore:
     def get_dashboard(self) -> Dashboard:
         featured = self._featured_spot()
         forecast = list(self.list_forecasts(featured.id))[0]
-        trip = self.trips[0] if self.trips else None
-        alerts_enabled = sum(1 for item in self.alerts if item.enabled)
+        trip = next(
+            (item for item in self.trips if item.user_id == self.user.id),
+            None,
+        )
+        alerts_enabled = sum(
+            1
+            for item in self.alerts
+            if item.user_id == self.user.id and item.enabled
+        )
         return Dashboard(
             featured_spot=featured,
             top_forecast=forecast,
@@ -876,17 +923,22 @@ class DemoStore:
         self._next_swell_cache = (now, recommendation)
         return recommendation
 
-    def list_trips(self) -> Iterable[Trip]:
-        return self.trips
+    def list_trips(self, user_id: str | None = None) -> Iterable[Trip]:
+        owner_id = user_id or self.user.id
+        return [trip for trip in self.trips if trip.user_id == owner_id]
 
     def add_trip(self, trip: Trip) -> Trip:
         self.trips.append(trip)
         self._save_state()
         return trip
 
-    def list_alerts(self) -> Iterable[Alert]:
-        self.evaluate_alerts()
-        return self.alerts
+    def list_alerts(self, user_id: str | None = None) -> Iterable[Alert]:
+        owner_id = user_id or self.user.id
+        alerts = [alert for alert in self.alerts if alert.user_id == owner_id]
+        for alert in alerts:
+            self._evaluate_alert(alert)
+        self._save_state()
+        return alerts
 
     def add_alert(self, alert: Alert) -> Alert:
         self._evaluate_alert(alert)
@@ -894,11 +946,30 @@ class DemoStore:
         self._save_state()
         return alert
 
-    def update_alert_enabled(self, alert_id: str, enabled: bool) -> Alert | None:
-        return self.update_alert(alert_id, {"enabled": enabled})
+    def update_alert_enabled(
+        self,
+        alert_id: str,
+        enabled: bool,
+        user_id: str | None = None,
+    ) -> Alert | None:
+        return self.update_alert(alert_id, {"enabled": enabled}, user_id=user_id)
 
-    def update_alert(self, alert_id: str, values: dict[str, object]) -> Alert | None:
-        alert = next((item for item in self.alerts if item.id == alert_id), None)
+    def update_alert(
+        self,
+        alert_id: str,
+        values: dict[str, object],
+        *,
+        user_id: str | None = None,
+    ) -> Alert | None:
+        owner_id = user_id or self.user.id
+        alert = next(
+            (
+                item
+                for item in self.alerts
+                if item.id == alert_id and item.user_id == owner_id
+            ),
+            None,
+        )
         if alert is None:
             return None
         for key, value in values.items():
@@ -908,15 +979,14 @@ class DemoStore:
         self._save_state()
         return alert
 
-    def evaluate_alerts(self) -> list[Alert]:
-        for alert in self.alerts:
-            self._evaluate_alert(alert)
-        self._save_state()
-        return self.alerts
-
-    def delete_alert(self, alert_id: str) -> bool:
+    def delete_alert(self, alert_id: str, *, user_id: str | None = None) -> bool:
+        owner_id = user_id or self.user.id
         before = len(self.alerts)
-        self.alerts = [item for item in self.alerts if item.id != alert_id]
+        self.alerts = [
+            item
+            for item in self.alerts
+            if item.id != alert_id or item.user_id != owner_id
+        ]
         if len(self.alerts) != before:
             self._save_state()
         return len(self.alerts) != before
@@ -1656,6 +1726,10 @@ class DemoStore:
                 comment.author_premium = self.user.premium
 
     def _save_state(self) -> None:
+        with self._state_lock:
+            self._write_state()
+
+    def _write_state(self) -> None:
         self._repair_demo_user_profile()
         self._sync_demo_user_post_snapshots()
         self._save_current_account_user()

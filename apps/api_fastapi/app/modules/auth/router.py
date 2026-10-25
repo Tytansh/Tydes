@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.core.auth import require_authenticated_user
 from app.core.store import store
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -35,12 +36,6 @@ class PasswordResetConfirmRequest(BaseModel):
 
 class WaitlistRequest(BaseModel):
     email: EmailStr
-
-
-def require_authenticated_user(request: Request):
-    if not getattr(request.state, "authenticated_user", False):
-        raise HTTPException(status_code=401, detail="Sign in required")
-    return store.user
 
 
 @router.post("/login")
