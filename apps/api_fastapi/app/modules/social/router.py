@@ -17,6 +17,7 @@ from app.core.media_uploads import (
     upload_ledger,
 )
 from app.core.moderation import ensure_allowed_content
+from app.core.rate_limit import RateLimitRule, api_rate_limiter
 from app.core.runtime import DEFAULT_PUBLIC_BACKEND_URL, public_backend_url
 from app.core.models import SocialMediaAttachment, SocialPost
 from app.core.store import store
@@ -607,6 +608,15 @@ def _direct_upload_ttl_seconds() -> int:
     return min(max(value, 60), 600)
 
 
+def _daily_post_limit() -> int:
+    raw = os.getenv("SOCIAL_DAILY_POST_LIMIT", "20").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 20
+    return min(max(value, 1), 100)
+
+
 def _client_ip_hash(request: Request) -> str:
     client_ip = request.client.host if request.client is not None else "unknown"
     return hashlib.sha256(client_ip.encode("utf-8")).hexdigest()
@@ -663,7 +673,31 @@ def _request_public_base_url(request: Request) -> str:
 
 
 @router.post("/posts")
-def create_post(payload: SocialPostCreateRequest, user=Depends(require_authenticated_user)):
+def create_post(
+    payload: SocialPostCreateRequest,
+    user=Depends(require_authenticated_user),
+):
+    daily_post_limit = _daily_post_limit()
+    now = datetime.now(timezone.utc)
+    if (
+        store.count_user_posts_since(user.id, now - timedelta(days=1))
+        >= daily_post_limit
+    ):
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"You can create up to {daily_post_limit} posts or events per day."
+            ),
+            headers={"Retry-After": str(60 * 60)},
+        )
+    api_rate_limiter.enforce(
+        RateLimitRule(
+            scope="social:create-post:user",
+            key=user.id,
+            limit=daily_post_limit * 2,
+            window_seconds=24 * 60 * 60,
+        )
+    )
     try:
         ensure_allowed_content(payload.body)
     except ValueError as error:

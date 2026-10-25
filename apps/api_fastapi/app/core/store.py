@@ -1285,6 +1285,15 @@ class DemoStore:
             for post in posts
         ]
 
+    def count_user_posts_since(self, user_id: str, since: datetime) -> int:
+        if self.postgres_social is not None:
+            self._sync_social_from_postgres()
+        return sum(
+            1
+            for post in self.posts
+            if post.user_id == user_id and post.created_at >= since
+        )
+
     def add_post(self, post: SocialPost) -> SocialPost:
         if self.postgres_social is not None:
             self.postgres_social.save_post(post)

@@ -19,10 +19,18 @@ os.environ.setdefault(
 
 from app.main import app
 from app.core.models import SurfWindowForecast, SurfWindowHour, TideForecast
+from app.core.rate_limit import api_rate_limiter
 from app.core.store import store
 from app.integrations.weather_providers.open_meteo import OpenMeteoMarineProvider
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def reset_api_rate_limits():
+    api_rate_limiter.clear()
+    yield
+    api_rate_limiter.clear()
 
 
 def _stub_email_senders(monkeypatch):
@@ -113,6 +121,61 @@ def test_trips_start_empty_instead_of_showing_a_demo_itinerary(monkeypatch):
 def test_private_account_endpoints_require_authentication(method, path):
     response = getattr(client, method)(path)
     assert response.status_code == 401
+
+
+def test_password_reset_email_requests_are_rate_limited(monkeypatch):
+    email = "reset-limit@example.com"
+    _signup_access_token(monkeypatch, email)
+    sent_codes: list[str] = []
+    monkeypatch.setattr(
+        "app.core.store.send_password_reset_email",
+        lambda _email, code: (
+            sent_codes.append(code)
+            or SimpleNamespace(configured=False, sent=False, error=None)
+        ),
+    )
+
+    for _ in range(3):
+        response = client.post(
+            "/api/v1/auth/password-reset/request",
+            json={"email": email},
+        )
+        assert response.status_code == 200
+
+    blocked = client.post(
+        "/api/v1/auth/password-reset/request",
+        json={"email": email},
+    )
+    assert blocked.status_code == 429
+    assert int(blocked.headers["retry-after"]) > 0
+    assert len(sent_codes) == 3
+
+
+def test_daily_post_limit_covers_posts_and_events(monkeypatch):
+    access_token = _signup_access_token(monkeypatch, "post-limit@example.com")
+    headers = {"Authorization": f"Bearer {access_token}"}
+    monkeypatch.setenv("SOCIAL_DAILY_POST_LIMIT", "2")
+
+    first = client.post(
+        "/api/v1/social/posts",
+        headers=headers,
+        json={"body": "First post", "post_type": "general"},
+    )
+    second = client.post(
+        "/api/v1/social/posts",
+        headers=headers,
+        json={"body": "Surf meetup", "post_type": "surf_plan"},
+    )
+    blocked = client.post(
+        "/api/v1/social/posts",
+        headers=headers,
+        json={"body": "One too many", "post_type": "general"},
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert blocked.status_code == 429
+    assert "2 posts or events per day" in blocked.json()["detail"]
 
 
 def test_alert_changes_are_limited_to_the_owning_account(monkeypatch):
