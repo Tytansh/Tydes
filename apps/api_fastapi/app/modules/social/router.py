@@ -294,7 +294,7 @@ def create_direct_media_upload(
             status_code=409,
             detail="Direct uploads are unavailable in this environment.",
         )
-    if not user.email_verified:
+    if not user.email_verified and not user.premium:
         raise HTTPException(
             status_code=403,
             detail="Verify your email before uploading media.",

@@ -1235,11 +1235,10 @@ def test_direct_r2_video_upload_is_verified_before_posting(monkeypatch):
             if object_name is not None:
                 self.objects.pop(object_name, None)
 
-    email = "protected-upload@example.com"
+    email = "premium@protected-upload.example.com"
     access_token = _signup_access_token(monkeypatch, email)
-    store.user.email_verified = True
-    store._set_verified_email(email)
-    store._save_current_account_user()
+    assert store.user.premium is True
+    assert store.user.email_verified is False
     storage = FakeR2Storage()
     monkeypatch.setattr(social_router_module, "configured_media_storage", lambda: storage)
 
