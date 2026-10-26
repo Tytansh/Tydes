@@ -2,6 +2,7 @@ from pydantic import BaseModel, EmailStr, Field
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.core.auth import require_authenticated_user
+from app.core.media_cleanup import queue_account_media_deletion, run_media_cleanup
 from app.core.rate_limit import (
     RateLimitRule,
     api_rate_limiter,
@@ -133,8 +134,11 @@ def logout(_user=Depends(require_authenticated_user)):
 
 
 @router.delete("/account")
-def delete_account(_user=Depends(require_authenticated_user)):
-    return store.delete_current_account()
+def delete_account(user=Depends(require_authenticated_user)):
+    queue_account_media_deletion(user.id)
+    deleted_user = store.delete_current_account()
+    run_media_cleanup()
+    return deleted_user
 
 
 @router.post("/waitlist")

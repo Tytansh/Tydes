@@ -464,6 +464,8 @@ class _FeedPostItem {
 
 enum _PostSafetyAction { report, block }
 
+enum _OwnPostAction { delete }
+
 class _RepostHeader extends StatelessWidget {
   const _RepostHeader({required this.label});
 
@@ -639,9 +641,11 @@ class _PostCard extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  if (isOwnPost)
-                    _SharePostButton(post: post, spot: spot)
-                  else ...[
+                  if (isOwnPost) ...[
+                    _SharePostButton(post: post, spot: spot),
+                    const SizedBox(width: 4),
+                    _OwnPostMenu(post: post),
+                  ] else ...[
                     FollowButton(userId: post.userId, compact: true),
                     const SizedBox(width: 4),
                     _PostSafetyMenu(post: post),
@@ -710,6 +714,78 @@ class _PostSafetyMenu extends ConsumerWidget {
             unawaited(_confirmAndBlockPostAuthor(context, ref, post));
         }
       },
+    );
+  }
+}
+
+class _OwnPostMenu extends ConsumerWidget {
+  const _OwnPostMenu({required this.post});
+
+  final SocialPostModel post;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return PopupMenuButton<_OwnPostAction>(
+      tooltip: 'Post options',
+      icon: const Icon(Icons.more_horiz_rounded),
+      itemBuilder: (context) => const [
+        PopupMenuItem(
+          value: _OwnPostAction.delete,
+          child: Row(
+            children: [
+              Icon(Icons.delete_outline_rounded),
+              SizedBox(width: 10),
+              Text('Delete post'),
+            ],
+          ),
+        ),
+      ],
+      onSelected: (action) {
+        if (action == _OwnPostAction.delete) {
+          unawaited(_confirmAndDeletePost(context, ref, post));
+        }
+      },
+    );
+  }
+}
+
+Future<void> _confirmAndDeletePost(
+  BuildContext context,
+  WidgetRef ref,
+  SocialPostModel post,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Delete this post?'),
+      content: const Text(
+        'The post and its uploaded photos or videos will be permanently deleted.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  try {
+    await ref.read(surfRepositoryProvider).deleteSocialPost(post.id);
+    ref.read(socialRefreshKeyProvider.notifier).state++;
+    ref.invalidate(travelFeedPostsProvider);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Post deleted.')));
+  } catch (_) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Could not delete this post right now.')),
     );
   }
 }

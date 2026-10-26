@@ -1,3 +1,8 @@
+import asyncio
+from contextlib import asynccontextmanager, suppress
+import logging
+import os
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -9,6 +14,7 @@ from app.core.runtime import (
     sync_seed_media_files,
     uses_local_media_storage,
 )
+from app.core.media_cleanup import run_media_cleanup
 from app.core.store import store
 from app.modules.ads.router import router as ads_router
 from app.modules.admin.router import router as admin_router
@@ -21,7 +27,41 @@ from app.modules.spots.router import router as spots_router
 from app.modules.trips.router import router as trips_router
 from app.modules.users.router import router as users_router
 
-app = FastAPI(title="Tydes API", version="0.1.0")
+logger = logging.getLogger(__name__)
+
+
+async def _media_cleanup_loop() -> None:
+    while True:
+        try:
+            await asyncio.to_thread(run_media_cleanup)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Scheduled media cleanup failed")
+        await asyncio.sleep(_media_cleanup_interval_seconds())
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    cleanup_task = asyncio.create_task(_media_cleanup_loop())
+    try:
+        yield
+    finally:
+        cleanup_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await cleanup_task
+
+
+def _media_cleanup_interval_seconds() -> int:
+    raw = os.getenv("MEDIA_CLEANUP_INTERVAL_SECONDS", "3600").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 3_600
+    return min(max(value, 300), 24 * 60 * 60)
+
+
+app = FastAPI(title="Tydes API", version="0.1.0", lifespan=lifespan)
 MEDIA_DIR = media_dir_path()
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 sync_seed_media_files()

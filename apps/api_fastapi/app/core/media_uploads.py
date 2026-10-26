@@ -16,6 +16,7 @@ class UploadLimits:
     videos_per_user_day: int
     media_per_user_day: int
     user_bytes_per_day: int
+    user_retained_bytes: int
     global_bytes_per_day: int
     global_uploads_per_day: int
     global_retained_bytes: int
@@ -28,6 +29,9 @@ class UploadLimits:
             media_per_user_day=_positive_env("MEDIA_UPLOADS_PER_USER_DAY", 40),
             user_bytes_per_day=_positive_env(
                 "MEDIA_USER_BYTES_PER_DAY", 700 * 1024 * 1024
+            ),
+            user_retained_bytes=_positive_env(
+                "MEDIA_USER_RETAINED_BYTES", 2 * 1024 * 1024 * 1024
             ),
             global_bytes_per_day=_positive_env(
                 "MEDIA_GLOBAL_BYTES_PER_DAY", 2 * 1024 * 1024 * 1024
@@ -150,35 +154,142 @@ class MediaUploadLedger:
         for media_id in media_ids:
             self.set_status(media_id, user_id, "used")
 
+    def queue_media_deletion(
+        self,
+        user_id: str,
+        media_ids: list[str],
+    ) -> list[UploadReservation]:
+        normalized_ids = sorted({media_id for media_id in media_ids if media_id})
+        if not normalized_ids:
+            return []
+        if self.database_url is not None:
+            with self._connect() as connection:
+                rows = connection.execute(
+                    """
+                    UPDATE media_upload_reservations
+                    SET status = 'deletion_pending', updated_at = NOW()
+                    WHERE user_id = %s
+                        AND id = ANY(%s)
+                        AND status NOT IN ('deleted', 'expired', 'abandoned')
+                    RETURNING *
+                    """,
+                    (user_id, normalized_ids),
+                ).fetchall()
+            return [_reservation_from_row(row) for row in rows]
+        queued: list[UploadReservation] = []
+        with self._lock:
+            for media_id in normalized_ids:
+                reservation = self._memory.get(media_id)
+                if (
+                    reservation is None
+                    or reservation.user_id != user_id
+                    or reservation.status in {"deleted", "expired", "abandoned"}
+                ):
+                    continue
+                updated = replace(reservation, status="deletion_pending")
+                self._memory[media_id] = updated
+                queued.append(updated)
+        return queued
+
+    def queue_user_media_deletion(self, user_id: str) -> list[UploadReservation]:
+        if self.database_url is not None:
+            with self._connect() as connection:
+                rows = connection.execute(
+                    """
+                    UPDATE media_upload_reservations
+                    SET status = 'deletion_pending', updated_at = NOW()
+                    WHERE user_id = %s
+                        AND status NOT IN ('deleted', 'expired', 'abandoned')
+                    RETURNING *
+                    """,
+                    (user_id,),
+                ).fetchall()
+            return [_reservation_from_row(row) for row in rows]
+        queued: list[UploadReservation] = []
+        with self._lock:
+            for reservation_id, reservation in list(self._memory.items()):
+                if (
+                    reservation.user_id != user_id
+                    or reservation.status in {"deleted", "expired", "abandoned"}
+                ):
+                    continue
+                updated = replace(reservation, status="deletion_pending")
+                self._memory[reservation_id] = updated
+                queued.append(updated)
+        return queued
+
+    def deletion_pending(self, limit: int = 100) -> list[UploadReservation]:
+        return self._reservations_with_status("deletion_pending", limit)
+
+    def abandoned_completed(
+        self,
+        older_than: datetime,
+        limit: int = 100,
+    ) -> list[UploadReservation]:
+        if self.database_url is not None:
+            with self._connect() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM media_upload_reservations
+                    WHERE status = 'complete' AND updated_at < %s
+                    ORDER BY updated_at ASC
+                    LIMIT %s
+                    """,
+                    (older_than, limit),
+                ).fetchall()
+            return [_reservation_from_row(row) for row in rows]
+        with self._lock:
+            return [
+                reservation
+                for reservation in self._memory.values()
+                if reservation.status == "complete"
+                and reservation.created_at < older_than
+            ][:limit]
+
     def expired_pending(self, limit: int = 20) -> list[UploadReservation]:
         now = datetime.now(timezone.utc)
         if self.database_url is not None:
             with self._connect() as connection:
                 rows = connection.execute(
                     """
-                    UPDATE media_upload_reservations
-                    SET status = 'expired', updated_at = NOW()
-                    WHERE id IN (
-                        SELECT id FROM media_upload_reservations
-                        WHERE status = 'pending' AND expires_at < %s
-                        ORDER BY expires_at ASC
-                        LIMIT %s
-                    )
-                    RETURNING *
+                    SELECT * FROM media_upload_reservations
+                    WHERE status = 'pending' AND expires_at < %s
+                    ORDER BY expires_at ASC
+                    LIMIT %s
                     """,
                     (now, limit),
                 ).fetchall()
             return [_reservation_from_row(row) for row in rows]
-        expired: list[UploadReservation] = []
         with self._lock:
-            for reservation_id, reservation in list(self._memory.items()):
-                if len(expired) >= limit:
-                    break
-                if reservation.status == "pending" and reservation.expires_at < now:
-                    updated = replace(reservation, status="expired")
-                    self._memory[reservation_id] = updated
-                    expired.append(updated)
-        return expired
+            return [
+                reservation
+                for reservation in self._memory.values()
+                if reservation.status == "pending" and reservation.expires_at < now
+            ][:limit]
+
+    def _reservations_with_status(
+        self,
+        status: str,
+        limit: int,
+    ) -> list[UploadReservation]:
+        if self.database_url is not None:
+            with self._connect() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM media_upload_reservations
+                    WHERE status = %s
+                    ORDER BY updated_at ASC
+                    LIMIT %s
+                    """,
+                    (status, limit),
+                ).fetchall()
+            return [_reservation_from_row(row) for row in rows]
+        with self._lock:
+            return [
+                reservation
+                for reservation in self._memory.values()
+                if reservation.status == status
+            ][:limit]
 
     def _reserve_memory(
         self,
@@ -228,7 +339,13 @@ class MediaUploadLedger:
                 retained_bytes=sum(
                     row.total_bytes
                     for row in rows
-                    if row.status in {"complete", "used"}
+                    if row.status in {"complete", "used", "deletion_pending"}
+                ),
+                user_retained_bytes=sum(
+                    row.total_bytes
+                    for row in rows
+                    if row.user_id == reservation.user_id
+                    and row.status in {"complete", "used", "deletion_pending"}
                 ),
             )
             self._memory[reservation.id] = reservation
@@ -276,13 +393,19 @@ class MediaUploadLedger:
                         day_start,
                     ),
                 ).fetchone()
-                retained_bytes = connection.execute(
+                retained_row = connection.execute(
                     """
-                    SELECT COALESCE(SUM(total_bytes), 0) AS bytes
+                    SELECT
+                        COALESCE(SUM(total_bytes), 0) AS global_bytes,
+                        COALESCE(
+                            SUM(total_bytes) FILTER (WHERE user_id = %s),
+                            0
+                        ) AS user_bytes
                     FROM media_upload_reservations
-                    WHERE status IN ('complete', 'used')
-                    """
-                ).fetchone()["bytes"]
+                    WHERE status IN ('complete', 'used', 'deletion_pending')
+                    """,
+                    (reservation.user_id,),
+                ).fetchone()
                 _enforce_limits(
                     reservation,
                     limits,
@@ -292,7 +415,8 @@ class MediaUploadLedger:
                     user_day_bytes=int(day_row["user_bytes"]),
                     global_day_count=int(day_row["global_count"]),
                     global_day_bytes=int(day_row["global_bytes"]),
-                    retained_bytes=int(retained_bytes),
+                    retained_bytes=int(retained_row["global_bytes"]),
+                    user_retained_bytes=int(retained_row["user_bytes"]),
                 )
                 connection.execute(
                     """
@@ -399,6 +523,7 @@ def _enforce_limits(
     global_day_count: int,
     global_day_bytes: int,
     retained_bytes: int,
+    user_retained_bytes: int,
 ) -> None:
     if minute_count >= limits.uploads_per_minute:
         raise UploadQuotaExceeded("Too many uploads. Wait a minute and try again.")
@@ -415,6 +540,10 @@ def _enforce_limits(
         raise UploadQuotaExceeded("Uploads are paused for today. Try again tomorrow.")
     if global_day_bytes + reservation.total_bytes > limits.global_bytes_per_day:
         raise UploadQuotaExceeded("Uploads are paused for today. Try again tomorrow.")
+    if user_retained_bytes + reservation.total_bytes > limits.user_retained_bytes:
+        raise UploadQuotaExceeded(
+            "Your media storage is full. Delete older posts before uploading more."
+        )
     if retained_bytes + reservation.total_bytes > limits.global_retained_bytes:
         raise UploadQuotaExceeded("Uploads are temporarily paused while storage is reviewed.")
 

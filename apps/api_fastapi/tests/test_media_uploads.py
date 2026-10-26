@@ -12,6 +12,7 @@ from app.core.media_uploads import (
     UploadQuotaExceeded,
     UploadReservation,
 )
+from app.core import media_cleanup
 from app.core.media_storage import R2MediaStorage
 from app.core.video_metadata import mp4_duration_from_bytes
 
@@ -46,6 +47,7 @@ def test_upload_ledger_enforces_video_daily_limit():
         videos_per_user_day=1,
         media_per_user_day=10,
         user_bytes_per_day=1_000,
+        user_retained_bytes=10_000,
         global_bytes_per_day=10_000,
         global_uploads_per_day=100,
         global_retained_bytes=10_000,
@@ -55,6 +57,69 @@ def test_upload_ledger_enforces_video_daily_limit():
 
     with pytest.raises(UploadQuotaExceeded, match="video upload limit"):
         ledger.reserve(_reservation(2), limits)
+
+
+def test_upload_ledger_enforces_per_user_retained_storage_limit():
+    ledger = MediaUploadLedger()
+    limits = UploadLimits(
+        uploads_per_minute=10,
+        videos_per_user_day=10,
+        media_per_user_day=10,
+        user_bytes_per_day=1_000,
+        user_retained_bytes=15,
+        global_bytes_per_day=10_000,
+        global_uploads_per_day=100,
+        global_retained_bytes=10_000,
+    )
+
+    first = _reservation(1)
+    ledger.reserve(first, limits)
+    ledger.set_status(first.id, first.user_id, "used")
+
+    with pytest.raises(UploadQuotaExceeded, match="media storage is full"):
+        ledger.reserve(_reservation(2), limits)
+
+
+def test_cleanup_deletes_abandoned_completed_uploads(monkeypatch):
+    ledger = MediaUploadLedger()
+    limits = UploadLimits(
+        uploads_per_minute=10,
+        videos_per_user_day=10,
+        media_per_user_day=10,
+        user_bytes_per_day=1_000,
+        user_retained_bytes=10_000,
+        global_bytes_per_day=10_000,
+        global_uploads_per_day=100,
+        global_retained_bytes=10_000,
+    )
+    reservation = _reservation(3)
+    reservation = UploadReservation(
+        **{
+            **reservation.__dict__,
+            "status": "complete",
+            "created_at": datetime.now(timezone.utc) - timedelta(hours=2),
+        }
+    )
+    ledger.reserve(reservation, limits)
+
+    class FakeR2Storage(R2MediaStorage):
+        def __init__(self):
+            self.deleted: list[str] = []
+
+        def delete_object(self, object_name):
+            if object_name is not None:
+                self.deleted.append(object_name)
+
+    storage = FakeR2Storage()
+    monkeypatch.setattr(media_cleanup, "upload_ledger", ledger)
+    monkeypatch.setattr(media_cleanup, "configured_media_storage", lambda: storage)
+    monkeypatch.setenv("MEDIA_ABANDONED_UPLOAD_GRACE_SECONDS", "3600")
+
+    result = media_cleanup.run_media_cleanup()
+
+    assert result.abandoned == 1
+    assert reservation.final_name in storage.deleted
+    assert ledger.get(reservation.id, reservation.user_id).status == "abandoned"
 
 
 def test_mp4_duration_parser_reads_version_zero_movie_header():

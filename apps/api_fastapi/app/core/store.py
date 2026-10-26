@@ -1304,6 +1304,29 @@ class DemoStore:
         self._save_state()
         return post
 
+    def delete_post(self, post_id: str, user_id: str) -> SocialPost | None:
+        post = self.get_post(post_id)
+        if post is None or post.user_id != user_id:
+            return None
+        if self.postgres_social is not None:
+            self.postgres_social.delete_post(post_id)
+            self._sync_social_from_postgres()
+            self._save_state()
+            return post
+        self.posts = [item for item in self.posts if item.id != post_id]
+        removed_comment_ids = {
+            comment.id for comment in self.comments if comment.post_id == post_id
+        }
+        self.comments = [
+            comment for comment in self.comments if comment.post_id != post_id
+        ]
+        self.liked_post_ids.discard(post_id)
+        self.reposts = [item for item in self.reposts if item.post_id != post_id]
+        self.rsvp_post_ids.discard(post_id)
+        self.liked_comment_ids.difference_update(removed_comment_ids)
+        self._save_state()
+        return post
+
     def social_engagement_state(self) -> SocialEngagementState:
         if self.postgres_social is not None:
             return self.postgres_social.engagement_state(self.user.id)

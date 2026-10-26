@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.auth import optional_authenticated_user, require_authenticated_user
+from app.core.media_cleanup import queue_post_media_deletion, run_media_cleanup
 from app.core.media_storage import R2MediaStorage, configured_media_storage
 from app.core.media_uploads import (
     UploadLimits,
@@ -185,6 +186,19 @@ def like_post(post_id: str, _user=Depends(require_authenticated_user)):
     if state is None:
         raise HTTPException(status_code=404, detail="Post not found.")
     return state
+
+
+@router.delete("/posts/{post_id}")
+def delete_post(post_id: str, user=Depends(require_authenticated_user)):
+    post = store.get_post(post_id)
+    if post is None or post.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Post not found.")
+    queue_post_media_deletion(user.id, [item.id for item in post.media])
+    deleted = store.delete_post(post_id, user.id)
+    if deleted is None:
+        raise HTTPException(status_code=404, detail="Post not found.")
+    run_media_cleanup()
+    return {"deleted": True}
 
 
 @router.delete("/posts/{post_id}/likes")
@@ -365,7 +379,6 @@ def create_direct_media_upload(
         raise HTTPException(status_code=429, detail=str(error)) from error
 
     try:
-        _cleanup_expired_uploads(storage)
         upload_url = storage.create_direct_upload_url(
             pending_name,
             content_type=content_type,
@@ -658,11 +671,6 @@ def _discard_pending_upload(
             storage.delete_object(object_name)
         except Exception:
             pass
-
-
-def _cleanup_expired_uploads(storage: R2MediaStorage) -> None:
-    for reservation in upload_ledger.expired_pending(limit=20):
-        _discard_pending_upload(storage, reservation)
 
 
 def _request_public_base_url(request: Request) -> str:

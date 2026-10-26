@@ -759,6 +759,19 @@ class SurfRepository {
     }
   }
 
+  Future<void> deleteSocialPost(String postId) async {
+    try {
+      await _dio.delete<Map<String, dynamic>>('/social/posts/$postId');
+      DemoSeed.posts.removeWhere((post) => post.id == postId);
+    } on DioException catch (error) {
+      final detail = error.response?.data;
+      if (detail is Map<String, dynamic> && detail['detail'] is String) {
+        throw StateError(detail['detail'] as String);
+      }
+      throw StateError('Could not delete this post right now.');
+    }
+  }
+
   Future<SocialEngagementModel> fetchSocialEngagement() async {
     try {
       final response = await _dio.get<Map<String, dynamic>>(

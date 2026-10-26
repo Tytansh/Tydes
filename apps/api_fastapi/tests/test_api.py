@@ -178,6 +178,35 @@ def test_daily_post_limit_covers_posts_and_events(monkeypatch):
     assert "2 posts or events per day" in blocked.json()["detail"]
 
 
+def test_post_owner_can_delete_post_but_other_accounts_cannot(monkeypatch):
+    owner_token = _signup_access_token(monkeypatch, "post-delete-owner@example.com")
+    other_token = _signup_access_token(monkeypatch, "post-delete-other@example.com")
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    other_headers = {"Authorization": f"Bearer {other_token}"}
+
+    created = client.post(
+        "/api/v1/social/posts",
+        headers=owner_headers,
+        json={"body": "Temporary post", "post_type": "general"},
+    )
+    assert created.status_code == 200
+    post_id = created.json()["id"]
+
+    denied = client.delete(
+        f"/api/v1/social/posts/{post_id}",
+        headers=other_headers,
+    )
+    assert denied.status_code == 404
+
+    deleted = client.delete(
+        f"/api/v1/social/posts/{post_id}",
+        headers=owner_headers,
+    )
+    assert deleted.status_code == 200
+    assert deleted.json() == {"deleted": True}
+    assert store.get_post(post_id) is None
+
+
 def test_alert_changes_are_limited_to_the_owning_account(monkeypatch):
     owner_token = _signup_access_token(monkeypatch, "alert-owner@example.com")
     other_token = _signup_access_token(monkeypatch, "alert-other@example.com")
