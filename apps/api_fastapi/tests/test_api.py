@@ -18,7 +18,7 @@ os.environ.setdefault(
 )
 
 from app.main import app
-from app.core.models import SurfWindowForecast, SurfWindowHour, TideForecast
+from app.core.models import Alert, SurfWindowForecast, SurfWindowHour, TideForecast, Trip
 from app.core.persistent_cache import CachedJson
 from app.core.rate_limit import api_rate_limiter
 from app.core.store import store
@@ -262,6 +262,71 @@ def test_trips_are_limited_to_the_owning_account(monkeypatch):
     owner_trips = client.get("/api/v1/trips", headers=owner_headers)
     assert owner_trips.status_code == 200
     assert [item["title"] for item in owner_trips.json()] == ["Siargao run"]
+
+
+def test_planning_uses_persistent_repository_when_configured(monkeypatch):
+    class FakePlanningRepository:
+        def __init__(self):
+            self.trips = {}
+            self.alerts = {}
+
+        def list_trips(self, user_id):
+            return [item for item in self.trips.values() if item.user_id == user_id]
+
+        def save_trip(self, trip):
+            self.trips[trip.id] = trip.model_copy(deep=True)
+
+        def list_alerts(self, user_id):
+            return [item for item in self.alerts.values() if item.user_id == user_id]
+
+        def get_alert(self, alert_id, user_id):
+            alert = self.alerts.get(alert_id)
+            if alert is None or alert.user_id != user_id:
+                return None
+            return alert.model_copy(deep=True)
+
+        def save_alert(self, alert):
+            self.alerts[alert.id] = alert.model_copy(deep=True)
+
+        def delete_alert(self, alert_id, user_id):
+            alert = self.alerts.get(alert_id)
+            if alert is None or alert.user_id != user_id:
+                return False
+            del self.alerts[alert_id]
+            return True
+
+    repository = FakePlanningRepository()
+    monkeypatch.setattr(store, "postgres_planning", repository)
+    monkeypatch.setattr(store, "_evaluate_alert", lambda _alert: None)
+    user_id = "usr_persistent_planning"
+    trip = Trip(
+        id="trip_persistent",
+        user_id=user_id,
+        title="Taiwan run",
+        destination="Taitung",
+        start_date=date(2026, 11, 1),
+        end_date=date(2026, 11, 8),
+    )
+    alert = Alert(
+        id="alert_persistent",
+        user_id=user_id,
+        spot_id="spot_jinzun_harbor",
+        next_check_at=datetime.now(timezone.utc),
+    )
+
+    store.add_trip(trip)
+    store.add_alert(alert)
+    updated = store.update_alert(
+        alert.id,
+        {"enabled": False},
+        user_id=user_id,
+    )
+
+    assert list(store.list_trips(user_id)) == [trip]
+    assert updated is not None and updated.enabled is False
+    assert list(store.list_alerts(user_id))[0].enabled is False
+    assert store.delete_alert(alert.id, user_id=user_id) is True
+    assert list(store.list_alerts(user_id)) == []
 
 
 def test_concurrent_requests_keep_account_context_isolated(monkeypatch):

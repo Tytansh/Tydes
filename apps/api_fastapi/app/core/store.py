@@ -39,6 +39,7 @@ from app.core.models import (
     build_seed,
 )
 from app.core.postgres_auth import PostgresAuthRepository
+from app.core.postgres_planning import PostgresPlanningRepository
 from app.core.postgres_social import PostgresSocialRepository
 from app.core.runtime import (
     is_legacy_backend_media_url,
@@ -189,6 +190,7 @@ class DemoStore:
         self.session_tokens: dict[str, str] = {}
         self.state_file = state_file_path()
         self.postgres_auth: PostgresAuthRepository | None = None
+        self.postgres_planning: PostgresPlanningRepository | None = None
         self.postgres_social: PostgresSocialRepository | None = None
         self._load_state()
         self.postgres_auth = PostgresAuthRepository.from_env()
@@ -201,6 +203,12 @@ class DemoStore:
                 password_reset_codes=self.password_reset_codes,
             )
             self._sync_auth_from_postgres()
+        self.postgres_planning = PostgresPlanningRepository.from_env()
+        if self.postgres_planning is not None:
+            self.postgres_planning.bootstrap_from_state(
+                trips=self.trips,
+                alerts=self.alerts,
+            )
         self.postgres_social = PostgresSocialRepository.from_env()
         if self.postgres_social is not None:
             self.postgres_social.bootstrap_from_state(
@@ -348,6 +356,8 @@ class DemoStore:
         user_id = self.user.id
         if self.postgres_social is not None:
             self.postgres_social.delete_user_social(user_id)
+        if self.postgres_planning is not None:
+            self.postgres_planning.delete_user_data(user_id)
         self._delete_auth_account(normalized_email)
         self._delete_verified_email(normalized_email)
         self._delete_email_verification_code(normalized_email)
@@ -661,14 +671,9 @@ class DemoStore:
     def get_dashboard(self) -> Dashboard:
         featured = self._featured_spot()
         forecast = list(self.list_forecasts(featured.id))[0]
-        trip = next(
-            (item for item in self.trips if item.user_id == self.user.id),
-            None,
-        )
+        trip = next(iter(self.list_trips(self.user.id)), None)
         alerts_enabled = sum(
-            1
-            for item in self.alerts
-            if item.user_id == self.user.id and item.enabled
+            1 for item in self.list_alerts(self.user.id) if item.enabled
         )
         return Dashboard(
             featured_spot=featured,
@@ -925,23 +930,38 @@ class DemoStore:
 
     def list_trips(self, user_id: str | None = None) -> Iterable[Trip]:
         owner_id = user_id or self.user.id
+        if self.postgres_planning is not None:
+            return self.postgres_planning.list_trips(owner_id)
         return [trip for trip in self.trips if trip.user_id == owner_id]
 
     def add_trip(self, trip: Trip) -> Trip:
+        if self.postgres_planning is not None:
+            self.postgres_planning.save_trip(trip)
+            return trip
         self.trips.append(trip)
         self._save_state()
         return trip
 
     def list_alerts(self, user_id: str | None = None) -> Iterable[Alert]:
         owner_id = user_id or self.user.id
-        alerts = [alert for alert in self.alerts if alert.user_id == owner_id]
+        alerts = (
+            self.postgres_planning.list_alerts(owner_id)
+            if self.postgres_planning is not None
+            else [alert for alert in self.alerts if alert.user_id == owner_id]
+        )
         for alert in alerts:
             self._evaluate_alert(alert)
-        self._save_state()
+            if self.postgres_planning is not None:
+                self.postgres_planning.save_alert(alert)
+        if self.postgres_planning is None:
+            self._save_state()
         return alerts
 
     def add_alert(self, alert: Alert) -> Alert:
         self._evaluate_alert(alert)
+        if self.postgres_planning is not None:
+            self.postgres_planning.save_alert(alert)
+            return alert
         self.alerts.append(alert)
         self._save_state()
         return alert
@@ -962,13 +982,17 @@ class DemoStore:
         user_id: str | None = None,
     ) -> Alert | None:
         owner_id = user_id or self.user.id
-        alert = next(
-            (
-                item
-                for item in self.alerts
-                if item.id == alert_id and item.user_id == owner_id
-            ),
-            None,
+        alert = (
+            self.postgres_planning.get_alert(alert_id, owner_id)
+            if self.postgres_planning is not None
+            else next(
+                (
+                    item
+                    for item in self.alerts
+                    if item.id == alert_id and item.user_id == owner_id
+                ),
+                None,
+            )
         )
         if alert is None:
             return None
@@ -976,11 +1000,16 @@ class DemoStore:
             if hasattr(alert, key):
                 setattr(alert, key, value)
         self._evaluate_alert(alert)
-        self._save_state()
+        if self.postgres_planning is not None:
+            self.postgres_planning.save_alert(alert)
+        else:
+            self._save_state()
         return alert
 
     def delete_alert(self, alert_id: str, *, user_id: str | None = None) -> bool:
         owner_id = user_id or self.user.id
+        if self.postgres_planning is not None:
+            return self.postgres_planning.delete_alert(alert_id, owner_id)
         before = len(self.alerts)
         self.alerts = [
             item
