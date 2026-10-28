@@ -65,15 +65,29 @@ class PostgresSocialRepository:
             row = connection.execute("SELECT COUNT(*) AS count FROM social_posts").fetchone()
         return int(row["count"])
 
-    def list_posts(self) -> list[SocialPost]:
+    def list_posts(self, limit: int | None = None) -> list[SocialPost]:
+        query = "SELECT payload FROM social_posts ORDER BY created_at DESC"
+        parameters: tuple[int, ...] = ()
+        if limit is not None:
+            query += " LIMIT %s"
+            parameters = (max(1, limit),)
         with self._connect() as connection:
-            rows = connection.execute(
-                "SELECT payload FROM social_posts ORDER BY created_at DESC"
-            ).fetchall()
+            rows = connection.execute(query, parameters).fetchall()
         return [
             SocialPost.model_validate(_payload_dict(row["payload"]))
             for row in rows
         ]
+
+    def count_user_posts_since(self, user_id: str, since: datetime) -> int:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*) AS count FROM social_posts
+                WHERE user_id = %s AND created_at >= %s
+                """,
+                (user_id, since),
+            ).fetchone()
+        return int(row["count"])
 
     def get_post(self, post_id: str) -> SocialPost | None:
         with self._connect() as connection:
@@ -106,11 +120,14 @@ class PostgresSocialRepository:
                 ),
             )
 
-    def list_comments(self) -> list[SocialComment]:
+    def list_comments(self, limit: int | None = 500) -> list[SocialComment]:
+        query = "SELECT payload FROM social_comments ORDER BY created_at DESC"
+        parameters: tuple[int, ...] = ()
+        if limit is not None:
+            query += " LIMIT %s"
+            parameters = (max(1, limit),)
         with self._connect() as connection:
-            rows = connection.execute(
-                "SELECT payload FROM social_comments ORDER BY created_at DESC"
-            ).fetchall()
+            rows = connection.execute(query, parameters).fetchall()
         return [
             SocialComment.model_validate(_payload_dict(row["payload"]))
             for row in rows

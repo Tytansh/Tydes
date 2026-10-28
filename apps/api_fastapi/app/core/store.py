@@ -1290,11 +1290,21 @@ class DemoStore:
         self._save_state()
         return self.social_relationship_state()
 
-    def list_posts(self, current_user_id: str | None = None) -> Iterable[SocialPost]:
+    def list_posts(
+        self,
+        current_user_id: str | None = None,
+        *,
+        limit: int = 50,
+    ) -> Iterable[SocialPost]:
         if self.postgres_social is not None:
-            self._sync_social_from_postgres()
+            posts = self.postgres_social.list_posts(limit=limit)
+        else:
+            posts = sorted(
+                self.posts,
+                key=lambda post: post.created_at,
+                reverse=True,
+            )[:limit]
         blocked_user_ids = self._blocked_user_ids_for(current_user_id)
-        posts = sorted(self.posts, key=lambda post: post.created_at, reverse=True)
         if blocked_user_ids:
             posts = [
                 post for post in posts if post.user_id not in blocked_user_ids
@@ -1316,7 +1326,7 @@ class DemoStore:
 
     def count_user_posts_since(self, user_id: str, since: datetime) -> int:
         if self.postgres_social is not None:
-            self._sync_social_from_postgres()
+            return self.postgres_social.count_user_posts_since(user_id, since)
         return sum(
             1
             for post in self.posts
@@ -1326,8 +1336,6 @@ class DemoStore:
     def add_post(self, post: SocialPost) -> SocialPost:
         if self.postgres_social is not None:
             self.postgres_social.save_post(post)
-            self._sync_social_from_postgres()
-            self._save_state()
             return post
         self.posts.append(post)
         self._save_state()
@@ -1339,8 +1347,6 @@ class DemoStore:
             return None
         if self.postgres_social is not None:
             self.postgres_social.delete_post(post_id)
-            self._sync_social_from_postgres()
-            self._save_state()
             return post
         self.posts = [item for item in self.posts if item.id != post_id]
         removed_comment_ids = {
@@ -1454,7 +1460,6 @@ class DemoStore:
         )
         if self.postgres_social is not None:
             self.postgres_social.save_comment(comment)
-            self._sync_social_from_postgres()
             return self.social_engagement_state()
         self.comments.append(comment)
         self._save_state()
@@ -1470,7 +1475,6 @@ class DemoStore:
                 return None
         if self.postgres_social is not None:
             self.postgres_social.delete_comment_tree(comment_id)
-            self._sync_social_from_postgres()
             return self.social_engagement_state()
         self.comments = [
             item
@@ -1611,8 +1615,8 @@ class DemoStore:
     def _sync_social_from_postgres(self) -> None:
         if self.postgres_social is None:
             return
-        self.posts = self.postgres_social.list_posts()
-        self.comments = self.postgres_social.list_comments()
+        self.posts = self.postgres_social.list_posts(limit=500)
+        self.comments = self.postgres_social.list_comments(limit=500)
 
     def _blocked_user_ids_for(self, user_id: str | None) -> set[str]:
         if user_id is None:

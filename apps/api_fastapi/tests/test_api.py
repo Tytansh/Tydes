@@ -127,6 +127,16 @@ def test_spots_list():
     assert len(response.json()) >= 1
 
 
+def test_social_feed_response_is_bounded():
+    response = client.get("/api/v1/social/posts", params={"limit": 1})
+
+    assert response.status_code == 200
+    assert len(response.json()) <= 1
+
+    oversized_page = client.get("/api/v1/social/posts", params={"limit": 101})
+    assert oversized_page.status_code == 422
+
+
 def test_taiwan_spot_coverage_includes_twenty_known_breaks():
     response = client.get("/api/v1/spots")
     assert response.status_code == 200

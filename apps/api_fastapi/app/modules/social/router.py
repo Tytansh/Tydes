@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.auth import optional_authenticated_user, require_authenticated_user
@@ -18,7 +18,11 @@ from app.core.media_uploads import (
     upload_ledger,
 )
 from app.core.moderation import ensure_allowed_content
-from app.core.rate_limit import RateLimitRule, api_rate_limiter
+from app.core.rate_limit import (
+    RateLimitRule,
+    account_or_client_rate_limit_key,
+    api_rate_limiter,
+)
 from app.core.runtime import DEFAULT_PUBLIC_BACKEND_URL, public_backend_url
 from app.core.models import SocialMediaAttachment, SocialPost
 from app.core.store import store
@@ -104,10 +108,14 @@ def list_friends():
 
 
 @router.get("/posts")
-def list_posts(request: Request):
+def list_posts(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=100),
+):
+    _limit_public_read(request, "posts", limit=240)
     current_user = optional_authenticated_user(request)
     current_user_id = current_user.id if current_user is not None else None
-    return list(store.list_posts(current_user_id=current_user_id))
+    return list(store.list_posts(current_user_id=current_user_id, limit=limit))
 
 
 @router.get("/engagement")
@@ -122,6 +130,7 @@ def get_relationships(_user=Depends(require_authenticated_user)):
 
 @router.get("/profiles")
 def get_profiles(request: Request):
+    _limit_public_read(request, "profiles", limit=120)
     current_user = optional_authenticated_user(request)
     current_user_id = current_user.id if current_user is not None else None
     return list(store.list_social_profiles(current_user_id=current_user_id))
@@ -667,6 +676,17 @@ def _limit_user_action(
             key=user_id,
             limit=limit,
             window_seconds=window_seconds,
+        )
+    )
+
+
+def _limit_public_read(request: Request, scope: str, *, limit: int) -> None:
+    api_rate_limiter.enforce(
+        RateLimitRule(
+            scope=f"social:read:{scope}",
+            key=account_or_client_rate_limit_key(request),
+            limit=limit,
+            window_seconds=5 * 60,
         )
     )
 
