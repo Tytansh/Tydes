@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from app.core.models import Spot, TideEvent, TideForecast
+from app.core.persistent_cache import PostgresJsonCache
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class _CacheItem:
     expires_at: datetime
-    data: TideForecast
+    data: Any
 
 
 class TideCheckProvider:
@@ -29,20 +30,30 @@ class TideCheckProvider:
         self._client = httpx.Client(base_url="https://tidecheck.com", timeout=8.0)
         self._station_cache: dict[str, _CacheItem] = {}
         self._tide_cache: dict[str, _CacheItem] = {}
+        self._persistent_cache = PostgresJsonCache.from_env()
 
     def fetch_spot_tides(self, spot: Spot, start_day: date, days: int = 3) -> TideForecast:
+        now = datetime.now(UTC)
+        cache_key = f"{spot.id}:{start_day.isoformat()}:{days}"
+        cached = self._tide_cache.get(cache_key)
+        if cached and cached.expires_at > now:
+            return cached.data
+
+        persistent = self._read_persistent_tides(cache_key)
+        if persistent is not None:
+            forecast, updated_at = persistent
+            self._tide_cache[cache_key] = _CacheItem(
+                expires_at=updated_at + timedelta(hours=12),
+                data=forecast,
+            )
+            return forecast
+
         if not self._api_key:
             return TideForecast(
                 spot_id=spot.id,
                 available=False,
                 note="Tide provider is not configured yet.",
             )
-
-        now = datetime.now(UTC)
-        cache_key = f"{spot.id}:{start_day.isoformat()}:{days}"
-        cached = self._tide_cache.get(cache_key)
-        if cached and cached.expires_at > now:
-            return cached.data
 
         try:
             station = self._nearest_station(spot)
@@ -95,13 +106,26 @@ class TideCheckProvider:
                 expires_at=now + timedelta(hours=12),
                 data=forecast,
             )
+            self._write_persistent(
+                f"tidecheck:tides:{cache_key}",
+                forecast.model_dump(mode="json"),
+            )
         return forecast
 
     def _nearest_station(self, spot: Spot) -> dict[str, Any]:
         now = datetime.now(UTC)
         cached = self._station_cache.get(spot.id)
         if cached and cached.expires_at > now:
-            return cached.data  # type: ignore[return-value]
+            return cached.data
+
+        persistent = self._read_persistent_station(spot.id)
+        if persistent is not None:
+            station, updated_at = persistent
+            self._station_cache[spot.id] = _CacheItem(
+                expires_at=updated_at + timedelta(days=30),
+                data=station,
+            )
+            return station
 
         response = self._client.get(
             "/api/stations/nearest",
@@ -116,9 +140,60 @@ class TideCheckProvider:
         station = stations[0]
         self._station_cache[spot.id] = _CacheItem(
             expires_at=now + timedelta(days=30),
-            data=station,  # type: ignore[arg-type]
+            data=station,
         )
+        self._write_persistent(f"tidecheck:station:{spot.id}", station)
         return station
+
+    def _read_persistent_tides(
+        self,
+        cache_key: str,
+    ) -> tuple[TideForecast, datetime] | None:
+        cached = self._read_persistent(
+            f"tidecheck:tides:{cache_key}",
+            timedelta(hours=12),
+        )
+        if cached is None:
+            return None
+        payload, updated_at = cached
+        return TideForecast.model_validate(payload), updated_at
+
+    def _read_persistent_station(
+        self,
+        spot_id: str,
+    ) -> tuple[dict[str, Any], datetime] | None:
+        return self._read_persistent(
+            f"tidecheck:station:{spot_id}",
+            timedelta(days=30),
+        )
+
+    def _read_persistent(
+        self,
+        cache_key: str,
+        max_age: timedelta,
+    ) -> tuple[dict[str, Any], datetime] | None:
+        if self._persistent_cache is None:
+            return None
+        try:
+            cached = self._persistent_cache.get(cache_key, max_age)
+            if cached is None:
+                return None
+            return cached.payload, cached.updated_at
+        except Exception:
+            logger.exception("Could not read persistent TideCheck cache %s", cache_key)
+            return None
+
+    def _write_persistent(
+        self,
+        cache_key: str,
+        payload: dict[str, Any],
+    ) -> None:
+        if self._persistent_cache is None:
+            return
+        try:
+            self._persistent_cache.set(cache_key, payload)
+        except Exception:
+            logger.exception("Could not persist TideCheck cache %s", cache_key)
 
     def _to_tide_forecast(
         self,

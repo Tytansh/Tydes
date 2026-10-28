@@ -19,8 +19,10 @@ os.environ.setdefault(
 
 from app.main import app
 from app.core.models import SurfWindowForecast, SurfWindowHour, TideForecast
+from app.core.persistent_cache import CachedJson
 from app.core.rate_limit import api_rate_limiter
 from app.core.store import store
+from app.integrations.tide_providers.tidecheck import TideCheckProvider
 from app.integrations.weather_providers.open_meteo import OpenMeteoMarineProvider
 
 client = TestClient(app)
@@ -372,6 +374,78 @@ def test_open_meteo_uses_customer_api_key(monkeypatch):
         "latitude": 1.0,
         "apikey": "om_test_key",
     }
+
+
+def test_open_meteo_uses_restart_safe_cached_forecast():
+    provider = OpenMeteoMarineProvider()
+    spot = store.spots[0]
+    cached_forecast = store.forecasts[0].model_copy(
+        update={
+            "id": f"cached_{spot.id}",
+            "spot_id": spot.id,
+            "source": "open-meteo",
+            "confidence": "live",
+        }
+    )
+    requested = {}
+
+    def cached_get(cache_key, max_age):
+        requested["cache_key"] = cache_key
+        requested["max_age"] = max_age
+        return CachedJson(
+            payload={
+                "forecasts": [cached_forecast.model_dump(mode="json")],
+                "hourly_rows": [],
+            },
+            updated_at=datetime.now(timezone.utc),
+        )
+
+    provider._persistent_cache = SimpleNamespace(get=cached_get)
+    provider._marine_client = SimpleNamespace(
+        get=lambda *_args, **_kwargs: pytest.fail("Marine API should not be called")
+    )
+    provider._forecast_client = SimpleNamespace(
+        get=lambda *_args, **_kwargs: pytest.fail("Weather API should not be called")
+    )
+
+    forecasts = provider.fetch_spot_forecast(spot)
+
+    assert forecasts == [cached_forecast]
+    assert requested == {
+        "cache_key": f"open-meteo:{spot.id}",
+        "max_age": timedelta(hours=3),
+    }
+
+
+def test_tidecheck_uses_restart_safe_cached_tides(monkeypatch):
+    monkeypatch.delenv("TIDECHECK_API_KEY", raising=False)
+    provider = TideCheckProvider()
+    spot = store.spots[0]
+    start_day = date(2026, 10, 28)
+    cached_forecast = TideForecast(
+        spot_id=spot.id,
+        available=True,
+        station_name="Cached station",
+        source="tidecheck",
+    )
+
+    provider._api_key = ""
+    provider._persistent_cache = SimpleNamespace(
+        get=lambda cache_key, max_age: CachedJson(
+            payload=cached_forecast.model_dump(mode="json"),
+            updated_at=datetime.now(timezone.utc),
+        )
+        if cache_key == f"tidecheck:tides:{spot.id}:{start_day.isoformat()}:3"
+        and max_age == timedelta(hours=12)
+        else None
+    )
+    provider._client = SimpleNamespace(
+        get=lambda *_args, **_kwargs: pytest.fail("TideCheck should not be called")
+    )
+
+    forecast = provider.fetch_spot_tides(spot, start_day)
+
+    assert forecast == cached_forecast
 
 
 def test_free_user_locked_spot_gets_real_forecast_on_five_day_cache(monkeypatch):

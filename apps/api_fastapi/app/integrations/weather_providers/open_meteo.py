@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+import logging
 import math
 import os
 from typing import Any
@@ -9,6 +10,10 @@ from typing import Any
 import httpx
 
 from app.core.models import ForecastEntry, Spot, SurfWindowForecast, SurfWindowHour
+from app.core.persistent_cache import PostgresJsonCache
+
+
+logger = logging.getLogger(__name__)
 
 FRESH_FORECAST_MAX_AGE = timedelta(hours=3)
 PREVIEW_FORECAST_MAX_AGE = timedelta(hours=24)
@@ -27,7 +32,7 @@ class _CacheItem:
 
 
 class OpenMeteoMarineProvider:
-    """Fetch marine forecasts from Open-Meteo with a short in-memory cache."""
+    """Fetch marine forecasts with memory and restart-safe database caches."""
 
     def __init__(self) -> None:
         self._api_key = os.getenv("OPEN_METEO_API_KEY", "").strip()
@@ -48,6 +53,7 @@ class OpenMeteoMarineProvider:
             timeout=8.0,
         )
         self._cache: dict[str, _CacheItem] = {}
+        self._persistent_cache = PostgresJsonCache.from_env()
 
     def fetch_spot_forecast(
         self,
@@ -59,6 +65,11 @@ class OpenMeteoMarineProvider:
         cached = self._cache.get(spot.id)
         if cached and now - cached.fetched_at <= max_cache_age:
             return cached.data
+
+        persistent = self._read_persistent_cache(spot.id, max_cache_age)
+        if persistent is not None:
+            self._cache[spot.id] = persistent
+            return persistent.data
 
         marine_response = self._marine_client.get(
             "/marine",
@@ -101,19 +112,23 @@ class OpenMeteoMarineProvider:
         )
         weather_response.raise_for_status()
 
+        marine_payload = marine_response.json()
+        weather_payload = weather_response.json()
         entries = self._to_daily_forecasts(
             spot,
-            marine_response.json(),
-            weather_response.json(),
+            marine_payload,
+            weather_payload,
         )
-        self._cache[spot.id] = _CacheItem(
+        cache_item = _CacheItem(
             fetched_at=now,
             data=entries,
             hourly_rows=self._to_hourly_rows(
-                marine_response.json(),
-                weather_response.json(),
+                marine_payload,
+                weather_payload,
             ),
         )
+        self._cache[spot.id] = cache_item
+        self._write_persistent_cache(spot.id, cache_item)
         return entries
 
     def fetch_spot_surf_window(
@@ -136,6 +151,58 @@ class OpenMeteoMarineProvider:
         if not self._api_key:
             return params
         return {**params, "apikey": self._api_key}
+
+    def _read_persistent_cache(
+        self,
+        spot_id: str,
+        max_cache_age: timedelta,
+    ) -> _CacheItem | None:
+        if self._persistent_cache is None:
+            return None
+        try:
+            cached = self._persistent_cache.get(
+                f"open-meteo:{spot_id}",
+                max_cache_age,
+            )
+            if cached is None:
+                return None
+            forecasts = [
+                ForecastEntry.model_validate(item)
+                for item in cached.payload.get("forecasts", [])
+            ]
+            hourly_rows = [
+                dict(item) for item in cached.payload.get("hourly_rows", [])
+            ]
+            if not forecasts:
+                return None
+            return _CacheItem(
+                fetched_at=cached.updated_at,
+                data=forecasts,
+                hourly_rows=hourly_rows,
+            )
+        except Exception:
+            logger.exception("Could not read cached Open-Meteo forecast for %s", spot_id)
+            return None
+
+    def _write_persistent_cache(
+        self,
+        spot_id: str,
+        cache_item: _CacheItem,
+    ) -> None:
+        if self._persistent_cache is None:
+            return
+        try:
+            self._persistent_cache.set(
+                f"open-meteo:{spot_id}",
+                {
+                    "forecasts": [
+                        item.model_dump(mode="json") for item in cache_item.data
+                    ],
+                    "hourly_rows": cache_item.hourly_rows,
+                },
+            )
+        except Exception:
+            logger.exception("Could not persist Open-Meteo forecast for %s", spot_id)
 
     def _to_daily_forecasts(
         self,
