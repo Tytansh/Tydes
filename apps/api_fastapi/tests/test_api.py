@@ -75,6 +75,19 @@ def test_health():
     assert response.json()["status"] == "ok"
 
 
+def test_oversized_api_request_is_rejected_before_parsing(monkeypatch):
+    monkeypatch.setenv("MAX_API_REQUEST_BYTES", "1024")
+
+    response = client.post(
+        "/api/v1/auth/login",
+        content=b"x" * 1025,
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["detail"] == "Request body is too large."
+
+
 def test_email_delivery_hard_cap_stops_before_resend(monkeypatch):
     monkeypatch.setenv("RESEND_API_KEY", "re_test")
     monkeypatch.setenv("AUTH_EMAIL_FROM", "Tydes <verify@send.tydes.io>")

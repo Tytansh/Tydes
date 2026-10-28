@@ -57,6 +57,22 @@ services:
         value: '2000'
       - key: MEDIA_GLOBAL_RETAINED_BYTES
         value: '53687091200'
+      - key: SOCIAL_COMMENTS_PER_USER_DAY
+        value: '100'
+      - key: SOCIAL_REPORTS_PER_USER_DAY
+        value: '10'
+      - key: TRIPS_MAX_PER_USER
+        value: '25'
+      - key: TRIPS_CREATED_PER_USER_DAY
+        value: '10'
+      - key: ALERTS_MAX_PER_USER
+        value: '25'
+      - key: ALERTS_CREATED_PER_USER_DAY
+        value: '10'
+      - key: REVENUECAT_SYNCS_PER_USER_HOUR
+        value: '30'
+      - key: MAX_API_REQUEST_BYTES
+        value: '2097152'
       - key: RESEND_API_KEY
         sync: false
       - key: AUTH_EMAILS_PER_DAY

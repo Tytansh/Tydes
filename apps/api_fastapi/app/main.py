@@ -5,7 +5,7 @@ import os
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.runtime import (
@@ -77,6 +77,25 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def reject_oversized_api_requests(request, call_next):
+    raw_content_length = request.headers.get("content-length")
+    if raw_content_length:
+        try:
+            content_length = int(raw_content_length)
+        except ValueError:
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "Invalid Content-Length header."},
+            )
+        if content_length > _max_api_request_bytes():
+            return JSONResponse(
+                status_code=413,
+                content={"detail": "Request body is too large."},
+            )
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def bind_authenticated_user(request, call_next):
     authenticated_user = None
     auth_header = request.headers.get("authorization", "")
@@ -87,6 +106,15 @@ async def bind_authenticated_user(request, call_next):
     request.state.authenticated_user = authenticated_user is not None
     with store.request_user_context(authenticated_user):
         return await call_next(request)
+
+
+def _max_api_request_bytes() -> int:
+    raw = os.getenv("MAX_API_REQUEST_BYTES", str(100 * 1024 * 1024)).strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 100 * 1024 * 1024
+    return min(max(value, 1024), 100 * 1024 * 1024)
 
 
 @app.get("/health")

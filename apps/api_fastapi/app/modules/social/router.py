@@ -165,8 +165,13 @@ def unblock_user(user_id: str, _user=Depends(require_authenticated_user)):
 @router.post("/reports")
 def report_social_content(
     payload: SocialReportCreateRequest,
-    _user=Depends(require_authenticated_user),
+    user=Depends(require_authenticated_user),
 ):
+    _limit_user_action(
+        user.id,
+        "create-report",
+        _positive_env("SOCIAL_REPORTS_PER_USER_DAY", 10),
+    )
     try:
         ensure_allowed_content(payload.reason)
     except ValueError as error:
@@ -242,7 +247,15 @@ def leave_event(post_id: str, _user=Depends(require_authenticated_user)):
 
 
 @router.post("/comments")
-def create_comment(payload: SocialCommentCreateRequest, _user=Depends(require_authenticated_user)):
+def create_comment(
+    payload: SocialCommentCreateRequest,
+    user=Depends(require_authenticated_user),
+):
+    _limit_user_action(
+        user.id,
+        "create-comment",
+        _positive_env("SOCIAL_COMMENTS_PER_USER_DAY", 100),
+    )
     try:
         ensure_allowed_content(payload.text)
     except ValueError as error:
@@ -628,6 +641,34 @@ def _daily_post_limit() -> int:
     except ValueError:
         value = 20
     return min(max(value, 1), 100)
+
+
+def _positive_env(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def _limit_user_action(
+    user_id: str,
+    scope: str,
+    limit: int,
+    *,
+    window_seconds: int = 24 * 60 * 60,
+) -> None:
+    api_rate_limiter.enforce(
+        RateLimitRule(
+            scope=f"social:{scope}:user",
+            key=user_id,
+            limit=limit,
+            window_seconds=window_seconds,
+        )
+    )
 
 
 def _client_ip_hash(request: Request) -> str:
