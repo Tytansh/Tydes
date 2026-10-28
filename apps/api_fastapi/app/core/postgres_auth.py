@@ -114,6 +114,12 @@ class PostgresAuthRepository:
             row = connection.execute("SELECT COUNT(*) AS count FROM auth_accounts").fetchone()
         return int(row["count"])
 
+    def ping(self) -> bool:
+        """Return whether the configured database can answer a minimal query."""
+        with self._connect() as connection:
+            row = connection.execute("SELECT 1 AS healthy").fetchone()
+        return bool(row and row["healthy"] == 1)
+
     def get_account(self, email: str) -> dict[str, object] | None:
         normalized_email = _normalize_email(email)
         with self._connect() as connection:

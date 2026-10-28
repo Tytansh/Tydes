@@ -75,6 +75,41 @@ def test_health():
     assert response.json()["status"] == "ok"
 
 
+def test_api_responses_include_security_headers():
+    response = client.get(
+        "/health",
+        headers={"X-Forwarded-Proto": "https"},
+    )
+
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert response.headers["permissions-policy"] == (
+        "camera=(), microphone=(), geolocation=(), payment=()"
+    )
+    assert response.headers["strict-transport-security"] == (
+        "max-age=31536000; includeSubDomains"
+    )
+
+
+def test_readiness_succeeds_without_postgres():
+    response = client.get("/health/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready"}
+
+
+def test_readiness_reports_database_failure(monkeypatch):
+    repository = SimpleNamespace(ping=lambda: False)
+    monkeypatch.setattr(store, "postgres_auth", repository)
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    assert response.json() == {"status": "unavailable"}
+    assert response.headers["cache-control"] == "no-store"
+
+
 def test_oversized_api_request_is_rejected_before_parsing(monkeypatch):
     monkeypatch.setenv("MAX_API_REQUEST_BYTES", "1024")
 

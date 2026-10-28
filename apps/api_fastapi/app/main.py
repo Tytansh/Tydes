@@ -162,7 +162,26 @@ async def bind_authenticated_user(request, call_next):
     request.state.user = authenticated_user
     request.state.authenticated_user = authenticated_user is not None
     with store.request_user_context(authenticated_user):
-        return await call_next(request)
+        response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = (
+        "camera=(), microphone=(), geolocation=(), payment=()"
+    )
+    if _request_is_https(request):
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+    return response
+
+
+def _request_is_https(request) -> bool:
+    forwarded_proto = request.headers.get("x-forwarded-proto", "")
+    return (
+        request.url.scheme.lower() == "https"
+        or forwarded_proto.split(",", maxsplit=1)[0].strip().lower() == "https"
+    )
 
 
 def _max_api_request_bytes() -> int:
@@ -178,6 +197,28 @@ def _max_api_request_bytes() -> int:
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/health/ready")
+async def readiness():
+    repository = store.postgres_auth
+    if repository is None:
+        return {"status": "ready"}
+    try:
+        database_ready = await asyncio.to_thread(repository.ping)
+    except Exception:
+        logger.exception("Database readiness check failed")
+        database_ready = False
+    if not database_ready:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unavailable"},
+            headers={"Cache-Control": "no-store"},
+        )
+    return JSONResponse(
+        content={"status": "ready"},
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/")
