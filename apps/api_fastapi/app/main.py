@@ -30,6 +30,81 @@ from app.modules.users.router import router as users_router
 logger = logging.getLogger(__name__)
 
 
+class RequestBodyLimitMiddleware:
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        max_bytes = _max_api_request_bytes()
+        headers = {
+            key.lower(): value
+            for key, value in scope.get("headers", [])
+        }
+        raw_content_length = headers.get(b"content-length")
+        if raw_content_length is not None:
+            try:
+                content_length = int(raw_content_length)
+            except ValueError:
+                await _body_limit_response(400, "Invalid Content-Length header.")(
+                    scope,
+                    receive,
+                    send,
+                )
+                return
+            if content_length > max_bytes:
+                await _body_limit_response(413, "Request body is too large.")(
+                    scope,
+                    receive,
+                    send,
+                )
+                return
+
+            await self.app(scope, receive, send)
+            return
+
+        if scope.get("method", "GET").upper() not in {"POST", "PUT", "PATCH"}:
+            await self.app(scope, receive, send)
+            return
+
+        buffered_messages = []
+        received_bytes = 0
+        while True:
+            message = await receive()
+            buffered_messages.append(message)
+            if message.get("type") != "http.request":
+                break
+            received_bytes += len(message.get("body", b""))
+            if received_bytes > max_bytes:
+                await _body_limit_response(413, "Request body is too large.")(
+                    scope,
+                    receive,
+                    send,
+                )
+                return
+            if not message.get("more_body", False):
+                break
+
+        message_index = 0
+
+        async def replay_receive():
+            nonlocal message_index
+            if message_index < len(buffered_messages):
+                message = buffered_messages[message_index]
+                message_index += 1
+                return message
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        await self.app(scope, replay_receive, send)
+
+
+def _body_limit_response(status_code: int, detail: str) -> JSONResponse:
+    return JSONResponse(status_code=status_code, content={"detail": detail})
+
+
 async def _media_cleanup_loop() -> None:
     while True:
         try:
@@ -74,25 +149,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.middleware("http")
-async def reject_oversized_api_requests(request, call_next):
-    raw_content_length = request.headers.get("content-length")
-    if raw_content_length:
-        try:
-            content_length = int(raw_content_length)
-        except ValueError:
-            return JSONResponse(
-                status_code=400,
-                content={"detail": "Invalid Content-Length header."},
-            )
-        if content_length > _max_api_request_bytes():
-            return JSONResponse(
-                status_code=413,
-                content={"detail": "Request body is too large."},
-            )
-    return await call_next(request)
+app.add_middleware(RequestBodyLimitMiddleware)
 
 
 @app.middleware("http")

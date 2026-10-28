@@ -84,7 +84,20 @@ def test_oversized_api_request_is_rejected_before_parsing(monkeypatch):
         headers={"Content-Type": "application/json"},
     )
 
-    assert response.status_code == 413
+    assert response.status_code == 413, response.text
+    assert response.json()["detail"] == "Request body is too large."
+
+
+def test_chunked_oversized_api_request_is_rejected(monkeypatch):
+    monkeypatch.setenv("MAX_API_REQUEST_BYTES", "1024")
+
+    response = client.post(
+        "/api/v1/auth/login",
+        content=iter([b"x" * 600, b"y" * 600]),
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 413, response.text
     assert response.json()["detail"] == "Request body is too large."
 
 
