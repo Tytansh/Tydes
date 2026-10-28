@@ -109,11 +109,12 @@ async def bind_authenticated_user(request, call_next):
 
 
 def _max_api_request_bytes() -> int:
-    raw = os.getenv("MAX_API_REQUEST_BYTES", str(100 * 1024 * 1024)).strip()
+    default = 100 * 1024 * 1024 if uses_local_media_storage() else 2 * 1024 * 1024
+    raw = os.getenv("MAX_API_REQUEST_BYTES", str(default)).strip()
     try:
         value = int(raw)
     except ValueError:
-        value = 100 * 1024 * 1024
+        value = default
     return min(max(value, 1024), 100 * 1024 * 1024)
 
 

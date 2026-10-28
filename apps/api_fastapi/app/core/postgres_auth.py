@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 import os
 from typing import Any
 
@@ -15,6 +16,10 @@ class AuthSnapshot:
 
 
 class PostgresAuthRepository:
+    _SESSION_MAX_AGE = timedelta(days=180)
+    _EMAIL_VERIFICATION_MAX_AGE = timedelta(hours=24)
+    _PASSWORD_RESET_MAX_AGE = timedelta(minutes=30)
+
     def __init__(self, database_url: str) -> None:
         self.database_url = database_url
         self._ensure_schema()
@@ -194,6 +199,7 @@ class PostgresAuthRepository:
 
     def create_session_hash(self, token_hash: str, email: str) -> None:
         normalized_email = _normalize_email(email)
+        cutoff = datetime.now(timezone.utc) - self._SESSION_MAX_AGE
         with self._connect() as connection:
             connection.execute(
                 """
@@ -204,13 +210,38 @@ class PostgresAuthRepository:
                 """,
                 (token_hash, normalized_email),
             )
+            connection.execute(
+                "DELETE FROM auth_session_tokens WHERE created_at < %s",
+                (cutoff,),
+            )
+            connection.execute(
+                """
+                DELETE FROM auth_session_tokens
+                WHERE token_hash IN (
+                    SELECT token_hash FROM auth_session_tokens
+                    WHERE email = %s
+                    ORDER BY created_at DESC
+                    OFFSET 10
+                )
+                """,
+                (normalized_email,),
+            )
 
     def get_session_email(self, token_hash: str) -> str | None:
+        cutoff = datetime.now(timezone.utc) - self._SESSION_MAX_AGE
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT email FROM auth_session_tokens WHERE token_hash = %s",
-                (token_hash,),
+                """
+                SELECT email FROM auth_session_tokens
+                WHERE token_hash = %s AND created_at >= %s
+                """,
+                (token_hash, cutoff),
             ).fetchone()
+            if row is None:
+                connection.execute(
+                    "DELETE FROM auth_session_tokens WHERE token_hash = %s",
+                    (token_hash,),
+                )
         if row is None:
             return None
         return str(row["email"])
@@ -260,7 +291,11 @@ class PostgresAuthRepository:
         self._upsert_code("auth_email_verification_codes", email, code)
 
     def get_email_verification_code(self, email: str) -> str | None:
-        return self._get_code("auth_email_verification_codes", email)
+        return self._get_code(
+            "auth_email_verification_codes",
+            email,
+            self._EMAIL_VERIFICATION_MAX_AGE,
+        )
 
     def delete_email_verification_code(self, email: str) -> None:
         self._delete_code("auth_email_verification_codes", email)
@@ -269,7 +304,11 @@ class PostgresAuthRepository:
         self._upsert_code("auth_password_reset_codes", email, code)
 
     def get_password_reset_code(self, email: str) -> str | None:
-        return self._get_code("auth_password_reset_codes", email)
+        return self._get_code(
+            "auth_password_reset_codes",
+            email,
+            self._PASSWORD_RESET_MAX_AGE,
+        )
 
     def delete_password_reset_code(self, email: str) -> None:
         self._delete_code("auth_password_reset_codes", email)
@@ -287,13 +326,24 @@ class PostgresAuthRepository:
                 (normalized_email, code),
             )
 
-    def _get_code(self, table: str, email: str) -> str | None:
+    def _get_code(
+        self,
+        table: str,
+        email: str,
+        max_age: timedelta,
+    ) -> str | None:
         normalized_email = _normalize_email(email)
+        cutoff = datetime.now(timezone.utc) - max_age
         with self._connect() as connection:
             row = connection.execute(
-                f"SELECT code FROM {table} WHERE email = %s",
-                (normalized_email,),
+                f"SELECT code FROM {table} WHERE email = %s AND created_at >= %s",
+                (normalized_email, cutoff),
             ).fetchone()
+            if row is None:
+                connection.execute(
+                    f"DELETE FROM {table} WHERE email = %s AND created_at < %s",
+                    (normalized_email, cutoff),
+                )
         if row is None:
             return None
         return str(row["code"])
@@ -348,6 +398,12 @@ class PostgresAuthRepository:
                     email TEXT NOT NULL REFERENCES auth_accounts(email) ON DELETE CASCADE,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS auth_session_tokens_created_idx
+                ON auth_session_tokens (created_at)
                 """
             )
             connection.execute(

@@ -15,14 +15,14 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str | None = None
-    locale: str = "en"
+    password: str | None = Field(default=None, max_length=128)
+    locale: str = Field(default="en", max_length=10)
 
 
 class SignupRequest(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8)
-    locale: str = "en"
+    password: str = Field(min_length=8, max_length=128)
+    locale: str = Field(default="en", max_length=10)
 
 
 class VerifyEmailRequest(BaseModel):
@@ -37,7 +37,7 @@ class PasswordResetRequest(BaseModel):
 class PasswordResetConfirmRequest(BaseModel):
     email: EmailStr
     code: str = Field(min_length=4, max_length=12)
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=8, max_length=128)
 
 
 class WaitlistRequest(BaseModel):

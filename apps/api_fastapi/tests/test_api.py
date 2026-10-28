@@ -88,6 +88,19 @@ def test_oversized_api_request_is_rejected_before_parsing(monkeypatch):
     assert response.json()["detail"] == "Request body is too large."
 
 
+def test_auth_rejects_excessively_long_passwords():
+    response = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "email": "long-password@example.com",
+            "password": "x" * 129,
+            "locale": "en",
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_email_delivery_hard_cap_stops_before_resend(monkeypatch):
     monkeypatch.setenv("RESEND_API_KEY", "re_test")
     monkeypatch.setenv("AUTH_EMAIL_FROM", "Tydes <verify@send.tydes.io>")
