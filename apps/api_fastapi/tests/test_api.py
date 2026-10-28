@@ -125,6 +125,7 @@ def test_spots_list():
     response = client.get("/api/v1/spots")
     assert response.status_code == 200
     assert len(response.json()) >= 1
+    assert "max-age=3600" in response.headers["cache-control"]
 
 
 def test_social_feed_response_is_bounded():
@@ -135,6 +136,12 @@ def test_social_feed_response_is_bounded():
 
     oversized_page = client.get("/api/v1/social/posts", params={"limit": 101})
     assert oversized_page.status_code == 422
+
+    oversized_profiles = client.get(
+        "/api/v1/social/profiles",
+        params={"limit": 101},
+    )
+    assert oversized_profiles.status_code == 422
 
 
 def test_taiwan_spot_coverage_includes_twenty_known_breaks():

@@ -1127,19 +1127,28 @@ class DemoStore:
             )
         return users
 
-    def list_social_profiles(self, current_user_id: str | None = None) -> list[dict[str, object]]:
-        if self.postgres_auth is not None:
-            self._sync_auth_from_postgres()
+    def list_social_profiles(
+        self,
+        current_user_id: str | None = None,
+        *,
+        limit: int = 50,
+    ) -> list[dict[str, object]]:
         blocked_user_ids = self._blocked_user_ids_for(current_user_id)
         profiles: list[dict[str, object]] = []
-        for email, account in sorted(self.auth_accounts.items()):
-            user_payload = account.get("user")
-            if not isinstance(user_payload, dict):
-                continue
-            try:
-                user = User.model_validate(user_payload)
-            except ValueError:
-                continue
+        if self.postgres_auth is not None:
+            account_users = self.postgres_auth.list_account_users(limit=limit * 2)
+        else:
+            account_users = []
+            for email, account in sorted(self.auth_accounts.items()):
+                user_payload = account.get("user")
+                if not isinstance(user_payload, dict):
+                    continue
+                try:
+                    account_users.append((email, User.model_validate(user_payload)))
+                except ValueError:
+                    continue
+
+        for email, user in account_users:
             handle = user.handle.strip().lower().lstrip("@")
             display_name = user.display_name.strip()
             if (
@@ -1163,6 +1172,8 @@ class DemoStore:
                     "surf_skill": user.surf_skill or None,
                 }
             )
+            if len(profiles) >= limit:
+                break
         return profiles
 
     def list_blocked_social_profiles(self) -> list[dict[str, object]]:

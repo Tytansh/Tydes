@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 import os
 from typing import Any
 
+from app.core.models import User
+
 
 @dataclass(frozen=True)
 class AuthSnapshot:
@@ -196,6 +198,25 @@ class PostgresAuthRepository:
                 (normalized_handle, current_user_id),
             ).fetchone()
         return bool(row["exists"])
+
+    def list_account_users(self, limit: int = 100) -> list[tuple[str, User]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT email, user_payload FROM auth_accounts
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (max(1, min(limit, 200)),),
+            ).fetchall()
+        users: list[tuple[str, User]] = []
+        for row in rows:
+            try:
+                user = User.model_validate(dict(row["user_payload"]))
+            except ValueError:
+                continue
+            users.append((str(row["email"]), user))
+        return users
 
     def create_session_hash(self, token_hash: str, email: str) -> None:
         normalized_email = _normalize_email(email)

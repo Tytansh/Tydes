@@ -129,11 +129,19 @@ def get_relationships(_user=Depends(require_authenticated_user)):
 
 
 @router.get("/profiles")
-def get_profiles(request: Request):
+def get_profiles(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=100),
+):
     _limit_public_read(request, "profiles", limit=120)
     current_user = optional_authenticated_user(request)
     current_user_id = current_user.id if current_user is not None else None
-    return list(store.list_social_profiles(current_user_id=current_user_id))
+    return list(
+        store.list_social_profiles(
+            current_user_id=current_user_id,
+            limit=limit,
+        )
+    )
 
 
 @router.get("/blocked-profiles")
