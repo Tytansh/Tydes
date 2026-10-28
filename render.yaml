@@ -59,6 +59,12 @@ services:
         value: '53687091200'
       - key: RESEND_API_KEY
         sync: false
+      - key: AUTH_EMAILS_PER_DAY
+        value: '80'
+      - key: AUTH_EMAILS_PER_MONTH
+        value: '2500'
+      - key: AUTH_EMAILS_PER_RECIPIENT_DAY
+        value: '5'
       - key: TIDECHECK_API_KEY
         sync: false
       - key: OPEN_METEO_API_KEY

@@ -6,6 +6,9 @@ import os
 from pathlib import Path
 
 import httpx
+from fastapi import HTTPException
+
+from app.core.rate_limit import RateLimitRule, api_rate_limiter
 
 
 @dataclass(frozen=True)
@@ -56,6 +59,34 @@ def _send_code_email(
     from_email = _read_env("AUTH_EMAIL_FROM")
     if not api_key or not from_email:
         return EmailSendResult(configured=False, sent=False)
+
+    try:
+        api_rate_limiter.enforce(
+            RateLimitRule(
+                scope="email:global:daily",
+                key="all-email-delivery",
+                limit=_positive_env("AUTH_EMAILS_PER_DAY", 80),
+                window_seconds=24 * 60 * 60,
+            ),
+            RateLimitRule(
+                scope="email:global:monthly",
+                key="all-email-delivery",
+                limit=_positive_env("AUTH_EMAILS_PER_MONTH", 2_500),
+                window_seconds=30 * 24 * 60 * 60,
+            ),
+            RateLimitRule(
+                scope="email:recipient:daily",
+                key=email.strip().lower(),
+                limit=_positive_env("AUTH_EMAILS_PER_RECIPIENT_DAY", 5),
+                window_seconds=24 * 60 * 60,
+            ),
+        )
+    except HTTPException:
+        return EmailSendResult(
+            configured=True,
+            sent=False,
+            error="Email delivery safety limit reached.",
+        )
 
     app_name = _read_env("APP_NAME") or "Tydes"
     payload = {
@@ -129,3 +160,14 @@ def _read_env_file_value(path: Path, name: str) -> str:
             continue
         return stripped.removeprefix(prefix).strip().strip('"').strip("'")
     return ""
+
+
+def _positive_env(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default

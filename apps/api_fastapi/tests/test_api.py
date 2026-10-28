@@ -18,6 +18,7 @@ os.environ.setdefault(
 )
 
 from app.main import app
+from app.core import email_sender
 from app.core.models import Alert, SurfWindowForecast, SurfWindowHour, TideForecast, Trip
 from app.core.persistent_cache import CachedJson
 from app.core.rate_limit import api_rate_limiter
@@ -72,6 +73,26 @@ def test_health():
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+def test_email_delivery_hard_cap_stops_before_resend(monkeypatch):
+    monkeypatch.setenv("RESEND_API_KEY", "re_test")
+    monkeypatch.setenv("AUTH_EMAIL_FROM", "Tydes <verify@send.tydes.io>")
+    def reject_email(*_rules):
+        raise email_sender.HTTPException(status_code=429, detail="Too many requests")
+
+    monkeypatch.setattr(email_sender.api_rate_limiter, "enforce", reject_email)
+    monkeypatch.setattr(
+        email_sender.httpx,
+        "post",
+        lambda *_args, **_kwargs: pytest.fail("Resend should not be called"),
+    )
+
+    result = email_sender.send_verification_email("surfer@example.com", "123456")
+
+    assert result.configured is True
+    assert result.sent is False
+    assert result.error == "Email delivery safety limit reached."
 
 
 def test_spots_list():
