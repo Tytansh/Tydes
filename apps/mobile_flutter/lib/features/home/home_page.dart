@@ -17,10 +17,6 @@ final meProvider = FutureProvider(
 final homeAdsProvider = FutureProvider(
   (ref) => ref.watch(surfRepositoryProvider).fetchAds(),
 );
-final feedFriendsProvider = FutureProvider((ref) {
-  ref.watch(socialRefreshKeyProvider);
-  return ref.watch(surfRepositoryProvider).fetchFriends();
-});
 final socialProfilesProvider = FutureProvider((ref) {
   ref.watch(socialRefreshKeyProvider);
   return ref.watch(surfRepositoryProvider).fetchSocialProfiles();
@@ -262,14 +258,12 @@ class _PeopleSearchPageState extends ConsumerState<PeopleSearchPage> {
   @override
   Widget build(BuildContext context) {
     final me = ref.watch(meProvider);
-    final friends = ref.watch(feedFriendsProvider);
     final socialProfiles = ref.watch(socialProfilesProvider);
     final posts = ref.watch(travelFeedPostsProvider);
     ref.watch(socialRelationshipHydrationProvider);
     final blockedUserIds = ref.watch(blockedUserIdsProvider);
     final profiles = _searchProfiles(
       me: me.valueOrNull,
-      friends: friends.valueOrNull ?? const [],
       socialProfiles: socialProfiles.valueOrNull ?? const [],
       posts: posts.valueOrNull ?? const [],
     );
@@ -317,10 +311,7 @@ class _PeopleSearchPageState extends ConsumerState<PeopleSearchPage> {
             ],
           ),
           const SizedBox(height: 8),
-          if (friends.isLoading ||
-              socialProfiles.isLoading ||
-              posts.isLoading ||
-              me.isLoading)
+          if (socialProfiles.isLoading || posts.isLoading || me.isLoading)
             const Padding(
               padding: EdgeInsets.only(top: 24),
               child: Center(child: CircularProgressIndicator()),
@@ -461,7 +452,6 @@ class _NoSearchResultsCard extends StatelessWidget {
 
 List<PublicProfilePreview> _searchProfiles({
   required UserProfile? me,
-  required List<FriendProfileModel> friends,
   required List<SocialProfileModel> socialProfiles,
   required List<SocialPostModel> posts,
 }) {
@@ -478,7 +468,6 @@ List<PublicProfilePreview> _searchProfiles({
       .map((profile) => profile.userId)
       .where((id) => id.isNotEmpty)
       .toSet();
-  final hasRealProfiles = realProfileUserIds.isNotEmpty;
 
   void addProfile(PublicProfilePreview profile, int priority) {
     final handleKey = _profileHandleKey(profile);
@@ -510,28 +499,8 @@ List<PublicProfilePreview> _searchProfiles({
     );
   }
 
-  if (!hasRealProfiles) {
-    for (final friend in friends) {
-      addProfile(
-        PublicProfilePreview(
-          userId: friend.id,
-          displayName: friend.displayName,
-          handle: _handleFromName(friend.displayName),
-          subtitle: friend.vibe,
-          location: friend.homeRegion,
-          surfSkill: 'beginner',
-        ),
-        10,
-      );
-    }
-
-    for (final profile in _extraSearchProfiles) {
-      addProfile(profile, 5);
-    }
-  }
-
   for (final post in posts) {
-    if (hasRealProfiles && !realProfileUserIds.contains(post.userId)) {
+    if (!realProfileUserIds.contains(post.userId)) {
       continue;
     }
     addProfile(
@@ -648,27 +617,3 @@ String _initialFor(String name) {
   if (trimmed.isEmpty) return '?';
   return trimmed.characters.first.toUpperCase();
 }
-
-const _extraSearchProfiles = [
-  PublicProfilePreview(
-    userId: 'suggested_tara_sets',
-    displayName: 'Tara Sets',
-    handle: 'tarasets',
-    subtitle: 'Followed by Ari Dawn and Lina Reef',
-    location: 'Canggu',
-  ),
-  PublicProfilePreview(
-    userId: 'suggested_reef_milo',
-    displayName: 'Reef Milo',
-    handle: 'reefmilo',
-    subtitle: 'Followed by Jo Tide',
-    location: 'Siargao',
-  ),
-  PublicProfilePreview(
-    userId: 'suggested_ella_tide',
-    displayName: 'Ella Tide',
-    handle: 'ellatide',
-    subtitle: 'Followed by Maya Surfer',
-    location: 'Uluwatu',
-  ),
-];

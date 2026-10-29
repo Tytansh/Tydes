@@ -37,6 +37,7 @@ from app.core.models import (
     Trip,
     User,
     build_seed,
+    is_demo_social_user_id,
 )
 from app.core.postgres_auth import PostgresAuthRepository
 from app.core.postgres_planning import PostgresPlanningRepository
@@ -217,6 +218,7 @@ class DemoStore:
                 engagement_state=self._local_social_engagement_state(),
                 user_id=self.user.id,
             )
+            self.postgres_social.delete_demo_social_content()
             self._sync_social_from_postgres()
 
     def login(
@@ -1665,7 +1667,11 @@ class DemoStore:
         posts_data = data.get("posts")
         if isinstance(posts_data, list):
             seed_posts = {post.id: post for post in self.posts}
-            stored_posts = [SocialPost.model_validate(item) for item in posts_data]
+            stored_posts = [
+                SocialPost.model_validate(item)
+                for item in posts_data
+                if not is_demo_social_user_id(str(item.get("user_id", "")))
+            ]
             merged_posts = {post.id: post for post in stored_posts}
             merged_posts.update(seed_posts)
             self.posts = list(merged_posts.values())
@@ -1675,7 +1681,9 @@ class DemoStore:
         if isinstance(comments_data, list):
             seed_comments = {comment.id: comment for comment in self.comments}
             stored_comments = [
-                SocialComment.model_validate(item) for item in comments_data
+                SocialComment.model_validate(item)
+                for item in comments_data
+                if not is_demo_social_user_id(str(item.get("user_id", "")))
             ]
             merged_comments = {comment.id: comment for comment in stored_comments}
             merged_comments.update(seed_comments)
@@ -1686,6 +1694,9 @@ class DemoStore:
             self.social_notifications = [
                 SocialNotification.model_validate(item)
                 for item in notifications_data
+                if not is_demo_social_user_id(
+                    str(item.get("actor_user_id", ""))
+                )
             ]
 
         reports_data = data.get("social_reports")
@@ -1698,9 +1709,17 @@ class DemoStore:
         engagement_data = data.get("social_engagement")
         if isinstance(engagement_data, dict):
             state = SocialEngagementState.model_validate(engagement_data)
-            self.liked_post_ids = set(state.liked_post_ids)
+            self.liked_post_ids = {
+                post_id
+                for post_id in state.liked_post_ids
+                if self.get_post(post_id) is not None
+            }
             if state.reposts:
-                self.reposts = list(state.reposts)
+                self.reposts = [
+                    repost
+                    for repost in state.reposts
+                    if self.get_post(repost.post_id) is not None
+                ]
             else:
                 self.reposts = [
                     SocialRepost(
@@ -1710,8 +1729,17 @@ class DemoStore:
                     for post_id in dict.fromkeys(state.reposted_post_ids)
                     if self.get_post(post_id) is not None and self.posts
                 ]
-            self.liked_comment_ids = set(state.liked_comment_ids)
-            self.rsvp_post_ids = set(state.rsvp_post_ids)
+            comment_ids = {comment.id for comment in self.comments}
+            self.liked_comment_ids = {
+                comment_id
+                for comment_id in state.liked_comment_ids
+                if comment_id in comment_ids
+            }
+            self.rsvp_post_ids = {
+                post_id
+                for post_id in state.rsvp_post_ids
+                if self.get_post(post_id) is not None
+            }
 
         relationship_data = data.get("social_relationships")
         if isinstance(relationship_data, dict):
@@ -1721,6 +1749,7 @@ class DemoStore:
                     str(user_id).strip()
                     for user_id in followed_user_ids
                     if str(user_id).strip()
+                    and not is_demo_social_user_id(str(user_id).strip())
                 }
             follower_user_ids = relationship_data.get("follower_user_ids")
             if isinstance(follower_user_ids, list):
@@ -1728,6 +1757,7 @@ class DemoStore:
                     str(user_id).strip()
                     for user_id in follower_user_ids
                     if str(user_id).strip()
+                    and not is_demo_social_user_id(str(user_id).strip())
                 }
             blocked_user_ids = relationship_data.get("blocked_user_ids")
             if isinstance(blocked_user_ids, list):
@@ -1735,6 +1765,7 @@ class DemoStore:
                     str(user_id).strip()
                     for user_id in blocked_user_ids
                     if str(user_id).strip()
+                    and not is_demo_social_user_id(str(user_id).strip())
                 }
 
         emails = data.get("waitlist_emails")

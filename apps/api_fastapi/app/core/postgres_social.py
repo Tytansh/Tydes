@@ -5,6 +5,7 @@ import os
 from typing import Any
 
 from app.core.models import (
+    DEMO_SOCIAL_USER_IDS,
     SocialComment,
     SocialEngagementState,
     SocialNotification,
@@ -561,6 +562,11 @@ class PostgresSocialRepository:
                 "DELETE FROM social_reports WHERE reporter_user_id = %s",
                 (user_id,),
             )
+
+    def delete_demo_social_content(self) -> None:
+        """Remove the old launch-demo community without touching real accounts."""
+        for user_id in DEMO_SOCIAL_USER_IDS:
+            self.delete_user_social(user_id)
 
     def delete_post(self, post_id: str) -> None:
         with self._connect() as connection:

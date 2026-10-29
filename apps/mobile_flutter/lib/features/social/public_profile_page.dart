@@ -869,44 +869,7 @@ List<ProfilePerson> _profileFollowers(
 }
 
 List<ProfilePerson> _sampleFollowers(PublicProfilePreview profile) {
-  final seed = profile.userId.codeUnits.fold<int>(0, (sum, item) => sum + item);
-  final count = profile.userId == 'friend_ari' ? 18 : 14 + seed % 9;
-  final names = [
-    'Lina Reef',
-    'Jo Tide',
-    'Maya Surfer',
-    'Kai Point',
-    'Nina Sets',
-    'Sam Sandbar',
-    'Rafa Dawn',
-    'Ella Glassy',
-    'Noah Lefts',
-    'Milo Tide',
-    'Sari Peaks',
-    'Ben Offshore',
-    'Cleo Foam',
-    'Taj Current',
-    'Ivy Reef',
-    'Oli Barrels',
-    'Zara Lineup',
-    'Leo Lagoon',
-    'Mina Shorey',
-    'Theo Trim',
-    'Ava Walled',
-    'Rio Banks',
-  ];
-  return names.take(count).map((name) {
-    return ProfilePerson(
-      profile: PublicProfilePreview(
-        userId:
-            'sample_${name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_')}',
-        displayName: name,
-        handle: _handleFromName(name),
-        subtitle: 'Surf traveler on Tydes',
-      ),
-      subtitle: 'Follower',
-    );
-  }).toList();
+  return const [];
 }
 
 PublicProfilePreview _profileForUserId(

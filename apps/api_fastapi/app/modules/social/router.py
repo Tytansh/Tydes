@@ -39,7 +39,9 @@ ALLOWED_VIDEO_TYPES = {
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v"}
 MAX_MEDIA_PER_POST = 3
 MAX_PHOTO_BYTES = 15 * 1024 * 1024
-MAX_VIDEO_BYTES = 60 * 1024 * 1024
+# Keep feed clips small enough to start quickly on mobile connections. Tydes
+# currently serves progressive MP4 files, not an adaptive HLS/DASH ladder.
+MAX_VIDEO_BYTES = 25 * 1024 * 1024
 MAX_THUMBNAIL_BYTES = 2 * 1024 * 1024
 MAX_VIDEO_DURATION_SECONDS = 30.5
 MAX_POST_BODY_CHARS = 1600

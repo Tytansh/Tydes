@@ -1436,7 +1436,7 @@ def test_social_feed_and_create_post(monkeypatch):
     access_token = _signup_access_token(monkeypatch, "socialpost@example.com")
     friends_response = client.get("/api/v1/social/friends")
     assert friends_response.status_code == 200
-    assert len(friends_response.json()) >= 1
+    assert friends_response.json() == []
 
     blocked_response = client.post(
         "/api/v1/social/posts",

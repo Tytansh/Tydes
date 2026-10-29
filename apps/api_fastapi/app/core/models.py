@@ -8,6 +8,27 @@ from pydantic import BaseModel, EmailStr, Field
 from app.core.runtime import public_media_url
 
 
+DEMO_SOCIAL_USER_IDS = frozenset(
+    {
+        "usr_demo",
+        "friend_lina",
+        "friend_ari",
+        "friend_jo",
+        "friend_maya",
+        "friend_kai",
+        "friend_noa",
+        "friend_sam",
+        "suggested_reef_milo",
+    }
+)
+
+
+def is_demo_social_user_id(user_id: str) -> bool:
+    return user_id in DEMO_SOCIAL_USER_IDS or user_id.startswith(
+        ("friend_", "suggested_", "random_", "follower_")
+    )
+
+
 class User(BaseModel):
     id: str
     email: EmailStr
@@ -4704,9 +4725,12 @@ def build_seed() -> dict[str, list[BaseModel] | User]:
         "alerts": alerts,
         "plans": plans,
         "ads": ads,
-        "friends": friends,
-        "posts": posts,
-        "comments": comments,
+        # Production starts with a genuinely empty community. Surf spots and
+        # forecasts remain seeded, but fake people/posts must never appear to
+        # visitors or be bootstrapped into the production database.
+        "friends": [],
+        "posts": [],
+        "comments": [],
     }
 
 

@@ -1,13 +1,11 @@
 import 'dart:async';
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
-
 import '../../core/network/api_models.dart';
 import '../../core/network/demo_persistence.dart';
 import '../../core/network/surf_repository.dart';
@@ -54,7 +52,8 @@ class DirectMessageThreadsNotifier
     final saved = <DirectMessageThread>[];
     for (final payload in savedPayloads) {
       try {
-        saved.add(DirectMessageThread.fromJson(payload));
+        final thread = DirectMessageThread.fromJson(payload);
+        if (!_legacyDemoThreadIds.contains(thread.id)) saved.add(thread);
       } catch (_) {
         // Ignore stale/corrupt demo DM rows instead of breaking the inbox.
       }
@@ -548,22 +547,7 @@ bool _isBlockedThread(DirectMessageThread thread, Set<String> blockedUserIds) {
   return threadKeys.any(blockedKeys.contains);
 }
 
-const _defaultFollowingThreadIds = {
-  'ari',
-  'aridawn',
-  'lina',
-  'linareef',
-  'jo',
-  'jotide',
-  'maya',
-  'mayasurfer',
-  'kai',
-  'kaiglass',
-  'noa',
-  'noacurrent',
-  'sam',
-  'samlines',
-};
+const _defaultFollowingThreadIds = <String>{};
 
 String _initialFor(String name) {
   final trimmed = name.trim();
@@ -2425,286 +2409,19 @@ String? _sharedPostMediaUrl(SocialPostModel post) {
       : post.media.first.url;
 }
 
-const _messageableProfiles = [
-  PublicProfilePreview(
-    userId: 'friend_ari',
-    displayName: 'Ari Dawn',
-    handle: 'aridawn',
-    subtitle: 'Surf traveler on Tydes',
-    location: 'Uluwatu',
-  ),
-  PublicProfilePreview(
-    userId: 'friend_lina',
-    displayName: 'Lina Reef',
-    handle: 'linareef',
-    subtitle: 'Surf traveler on Tydes',
-    location: 'Canggu',
-  ),
-  PublicProfilePreview(
-    userId: 'friend_jo',
-    displayName: 'Jo Tide',
-    handle: 'jotide',
-    subtitle: 'Surf traveler on Tydes',
-    location: 'Siargao',
-  ),
-  PublicProfilePreview(
-    userId: 'friend_maya',
-    displayName: 'Maya Surfer',
-    handle: 'mayasurfer',
-    subtitle: 'Surf traveler on Tydes',
-    location: 'Uluwatu',
-  ),
-  PublicProfilePreview(
-    userId: 'friend_kai',
-    displayName: 'Kai Glass',
-    handle: 'kaiglass',
-    subtitle: 'Surf traveler on Tydes',
-    location: 'Byron Bay',
-  ),
-  PublicProfilePreview(
-    userId: 'suggested_tara_sets',
-    displayName: 'Tara Sets',
-    handle: 'tarasets',
-    subtitle: 'Followed by Ari Dawn',
-    location: 'Canggu',
-  ),
-  PublicProfilePreview(
-    userId: 'suggested_reef_milo',
-    displayName: 'Reef Milo',
-    handle: 'reefmilo',
-    subtitle: 'Followed by Lina Reef',
-    location: 'Siargao',
-  ),
-  PublicProfilePreview(
-    userId: 'suggested_ella_tide',
-    displayName: 'Ella Tide',
-    handle: 'ellatide',
-    subtitle: 'Followed by Jo Tide',
-    location: 'Uluwatu',
-  ),
-  PublicProfilePreview(
-    userId: 'suggested_noah_glass',
-    displayName: 'Noah Glass',
-    handle: 'noahglass',
-    subtitle: 'Followed by Maya Surfer',
-    location: 'Arugam Bay',
-  ),
-  PublicProfilePreview(
-    userId: 'random_ivy_reef',
-    displayName: 'Ivy Reef',
-    handle: 'ivyreef',
-    subtitle: 'New to Tydes',
-    location: 'Uluwatu',
-  ),
-];
+const _messageableProfiles = <PublicProfilePreview>[];
 
-const _seedThreads = [
-  DirectMessageThread(
-    id: 'ari',
-    name: 'Ari Dawn',
-    handle: 'aridawn',
-    initial: 'A',
-    location: 'Uluwatu',
-    preview: 'Sunset Balangan still on if the wind stays light.',
-    time: '12m',
-    unreadCount: 0,
-    online: true,
-    messages: [
-      DirectChatMessage(
-        text: 'You still thinking Balangan later?',
-        time: '6:12 PM',
-        isMe: false,
-      ),
-      DirectChatMessage(
-        text: 'Yeah if the wind holds. Sunset could be fun.',
-        time: '6:14 PM',
-        isMe: true,
-      ),
-      DirectChatMessage(
-        text: 'Sweet. I can grab a scooter around 4:30.',
-        time: '6:18 PM',
-        isMe: false,
-      ),
-    ],
-  ),
-  DirectMessageThread(
-    id: 'lina',
-    name: 'Lina Reef',
-    handle: 'linareef',
-    initial: 'L',
-    location: 'Canggu',
-    preview: 'I can meet near Batu Bolong after coffee.',
-    time: '1h',
-    unreadCount: 0,
-    online: true,
-    messages: [
-      DirectChatMessage(
-        text: 'Longboard wave looks small but clean tomorrow.',
-        time: '5:03 PM',
-        isMe: false,
-      ),
-      DirectChatMessage(
-        text: 'I might check Batu Bolong after breakfast.',
-        time: '5:07 PM',
-        isMe: true,
-      ),
-      DirectChatMessage(
-        text: 'Perfect. I can meet near Batu Bolong after coffee.',
-        time: '5:09 PM',
-        isMe: false,
-      ),
-    ],
-  ),
-  DirectMessageThread(
-    id: 'kai',
-    name: 'Kai Glass',
-    handle: 'kaiglass',
-    initial: 'K',
-    location: 'Byron Bay',
-    preview: 'The Pass looked slow but clean this morning.',
-    time: '3h',
-    unreadCount: 0,
-    online: false,
-    messages: [
-      DirectChatMessage(
-        text: 'The Pass looked slow but clean this morning.',
-        time: '2:20 PM',
-        isMe: false,
-      ),
-      DirectChatMessage(
-        text: 'Any runners or mostly waiting?',
-        time: '2:24 PM',
-        isMe: true,
-      ),
-      DirectChatMessage(
-        text: 'Mostly waiting. One good set every fifteen.',
-        time: '2:31 PM',
-        isMe: false,
-      ),
-    ],
-  ),
-  DirectMessageThread(
-    id: 'jo',
-    name: 'Jo Tide',
-    handle: 'jotide',
-    initial: 'J',
-    location: 'Siargao',
-    preview: 'Cloud 9 watch mission sounds good.',
-    time: 'Yesterday',
-    unreadCount: 0,
-    online: false,
-    messages: [
-      DirectChatMessage(
-        text: 'Cloud 9 watch mission sounds good.',
-        time: 'Yesterday',
-        isMe: false,
-      ),
-      DirectChatMessage(
-        text: 'Might not paddle if it gets too serious haha.',
-        time: 'Yesterday',
-        isMe: false,
-      ),
-    ],
-  ),
-  DirectMessageThread(
-    id: 'maya',
-    name: 'Maya Surfer',
-    handle: 'mayasurfer',
-    initial: 'M',
-    location: 'Uluwatu',
-    preview: 'Friday hang is chill. Bring whoever.',
-    time: 'Mon',
-    unreadCount: 0,
-    online: true,
-    messages: [
-      DirectChatMessage(
-        text: 'Friday hang is chill. Bring whoever.',
-        time: 'Mon',
-        isMe: false,
-      ),
-      DirectChatMessage(
-        text: 'Good call. I will post it as an event too.',
-        time: 'Mon',
-        isMe: true,
-      ),
-    ],
-  ),
-  DirectMessageThread(
-    id: 'tarasets',
-    name: 'Tara Sets',
-    handle: 'tarasets',
-    initial: 'T',
-    location: 'Canggu',
-    preview: 'Hey, saw your Echo post. Is it beginner friendly today?',
-    time: '4m',
-    unreadCount: 1,
-    online: false,
-    messages: [
-      DirectChatMessage(
-        text: 'Hey, saw your Echo post. Is it beginner friendly today?',
-        time: '4m',
-        isMe: false,
-      ),
-    ],
-  ),
-  DirectMessageThread(
-    id: 'reefmilo',
-    name: 'Reef Milo',
-    handle: 'reefmilo',
-    initial: 'R',
-    location: 'Siargao',
-    preview: 'Do you know if Cloud 9 is worth watching tomorrow?',
-    time: '16m',
-    unreadCount: 1,
-    online: true,
-    messages: [
-      DirectChatMessage(
-        text: 'Do you know if Cloud 9 is worth watching tomorrow?',
-        time: '16m',
-        isMe: false,
-      ),
-    ],
-  ),
-  DirectMessageThread(
-    id: 'ellatide',
-    name: 'Ella Tide',
-    handle: 'ellatide',
-    initial: 'E',
-    location: 'Uluwatu',
-    preview: 'Random question, is Padang too heavy for intermediates?',
-    time: '27m',
-    unreadCount: 1,
-    online: false,
-    messages: [
-      DirectChatMessage(
-        text: 'Random question, is Padang too heavy for intermediates?',
-        time: '27m',
-        isMe: false,
-      ),
-    ],
-  ),
-];
+const _seedThreads = <DirectMessageThread>[];
 
-const _demoIncomingMessages = {
-  'lina': [
-    DirectChatMessage(
-      text: 'You around Canggu later? Echo looks fun before dark.',
-      time: '2m',
-      isMe: false,
-    ),
-  ],
-  'kai': [
-    DirectChatMessage(
-      text: 'Just checked The Pass. Cleaner than it looked online.',
-      time: '8m',
-      isMe: false,
-    ),
-  ],
-  'jo': [
-    DirectChatMessage(
-      text: 'Cloud 9 has a mellow window tomorrow morning if you are around.',
-      time: '18m',
-      isMe: false,
-    ),
-  ],
+const _demoIncomingMessages = <String, List<DirectChatMessage>>{};
+
+const _legacyDemoThreadIds = {
+  'ari',
+  'lina',
+  'kai',
+  'jo',
+  'maya',
+  'tarasets',
+  'reefmilo',
+  'ellatide',
 };

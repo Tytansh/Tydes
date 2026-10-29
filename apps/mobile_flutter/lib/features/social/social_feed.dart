@@ -137,64 +137,7 @@ Map<String, List<SocialComment>> _commentsByPost(
   return grouped;
 }
 
-const demoPostComments = {
-  'post_lina_canggu_photo': [
-    SocialComment(
-      id: 'comment_lina_photo_maya',
-      postId: 'post_lina_canggu_photo',
-      userId: 'friend_maya',
-      authorName: 'Maya Surfer',
-      authorInitial: 'M',
-      text: 'That waterfall shot is unreal.',
-    ),
-    SocialComment(
-      id: 'comment_lina_photo_ari',
-      postId: 'post_lina_canggu_photo',
-      userId: 'friend_ari',
-      authorName: 'Ari Dawn',
-      authorInitial: 'A',
-      text: 'Coffee run after Echo sounds dangerous haha.',
-    ),
-  ],
-  'post_ari_balangan_event': [
-    SocialComment(
-      id: 'comment_ari_event_lina',
-      postId: 'post_ari_balangan_event',
-      userId: 'friend_lina',
-      authorName: 'Lina Reef',
-      authorInitial: 'L',
-      text: 'I’m keen if the wind stays light.',
-    ),
-    SocialComment(
-      id: 'comment_ari_event_kai',
-      postId: 'post_ari_balangan_event',
-      userId: 'friend_kai',
-      authorName: 'Kai Glass',
-      authorInitial: 'K',
-      text: 'Save me a spot at the warung.',
-    ),
-  ],
-  'post_noa_arugam_event': [
-    SocialComment(
-      id: 'comment_noa_event_reef',
-      postId: 'post_noa_arugam_event',
-      userId: 'suggested_reef_milo',
-      authorName: 'Reef Milo',
-      authorInitial: 'R',
-      text: 'Main Point sunset mission sounds good.',
-    ),
-  ],
-  'post_maya_uluwatu_party': [
-    SocialComment(
-      id: 'comment_maya_party_jo',
-      postId: 'post_maya_uluwatu_party',
-      userId: 'friend_jo',
-      authorName: 'Jo Tide',
-      authorInitial: 'J',
-      text: 'Drop the time when you know it.',
-    ),
-  ],
-};
+const demoPostComments = <String, List<SocialComment>>{};
 
 class RepostActivity {
   const RepostActivity({
@@ -222,26 +165,7 @@ class RepostedPostItem {
   final DateTime activityAt;
 }
 
-const demoRepostActivities = [
-  RepostActivity(
-    postId: 'post_ari_balangan_event',
-    userId: 'friend_lina',
-    displayName: 'Lina Reef',
-    hoursAgo: 5,
-  ),
-  RepostActivity(
-    postId: 'post_lina_canggu_photo',
-    userId: 'friend_maya',
-    displayName: 'Maya Surfer',
-    hoursAgo: 7,
-  ),
-  RepostActivity(
-    postId: 'post_noa_arugam_event',
-    userId: 'friend_ari',
-    displayName: 'Ari Dawn',
-    hoursAgo: 9,
-  ),
-];
+const demoRepostActivities = <RepostActivity>[];
 
 List<RepostedPostItem> repostedItemsForFeed(
   List<SocialPostModel> posts,
@@ -3696,7 +3620,7 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
     try {
       final compressedInfo = await VideoCompress.compressVideo(
         source.path,
-        quality: VideoQuality.Res1920x1080Quality,
+        quality: VideoQuality.Res1280x720Quality,
         deleteOrigin: false,
         includeAudio: true,
         frameRate: 30,
@@ -5280,49 +5204,7 @@ List<PublicProfilePreview> _eventGuestProfiles(
   SocialPostModel post,
   String? currentViewerId,
 ) {
-  final guests = switch (post.id) {
-    'post_ari_balangan_event' => [
-      _eventGuest('friend_lina', 'Lina Reef', 'linareef', 'Canggu longboarder'),
-      _eventGuest('friend_sam', 'Sam Lines', 'samlines', 'Gold Coast surfer'),
-      _eventGuest('friend_maya', 'Maya Surfer', 'mayasurfer', 'Uluwatu crew'),
-    ],
-    'post_noa_arugam_event' => [
-      _eventGuest('friend_jo', 'Jo Tide', 'jotide', 'Siargao traveler'),
-      _eventGuest('friend_lina', 'Lina Reef', 'linareef', 'Canggu longboarder'),
-    ],
-    'post_maya_uluwatu_party' => [
-      _eventGuest('friend_ari', 'Ari Dawn', 'aridawn', 'Uluwatu surfer'),
-      _eventGuest('friend_kai', 'Kai Glass', 'kaiglass', 'Byron Bay surfer'),
-      _eventGuest('friend_noa', 'Noa Current', 'noacurrent', 'Arugam Bay'),
-    ],
-    'post_jo_cloud9_event' => [
-      _eventGuest('friend_kai', 'Kai Glass', 'kaiglass', 'Byron Bay surfer'),
-      _eventGuest('friend_noa', 'Noa Current', 'noacurrent', 'Arugam Bay'),
-    ],
-    _ => [
-      _eventGuest('friend_ari', 'Ari Dawn', 'aridawn', 'Uluwatu surfer'),
-      _eventGuest('friend_lina', 'Lina Reef', 'linareef', 'Canggu longboarder'),
-    ],
-  };
-
-  return guests
-      .where((profile) => profile.userId != post.userId)
-      .where((profile) => profile.userId != currentViewerId)
-      .toList();
-}
-
-PublicProfilePreview _eventGuest(
-  String userId,
-  String displayName,
-  String handle,
-  String subtitle,
-) {
-  return PublicProfilePreview(
-    userId: userId,
-    displayName: displayName,
-    handle: handle,
-    subtitle: subtitle,
-  );
+  return const [];
 }
 
 class _GoingPersonTile extends StatelessWidget {
@@ -5460,9 +5342,9 @@ class _ComposerPostDraft {
 const _maxPostMediaItems = 3;
 const _maxComposerDrafts = 8;
 const _maxPostPhotoBytes = 15 * 1024 * 1024;
-const _maxPostVideoBytes = 60 * 1024 * 1024;
+const _maxPostVideoBytes = 25 * 1024 * 1024;
 const _maxPostVideoDurationMilliseconds = 30500.0;
-const _minPostVideoCompressionBytes = 3 * 1024 * 1024;
+const _minPostVideoCompressionBytes = 1 * 1024 * 1024;
 const _videoPlayVisibilityThreshold = 0.6;
 const _postBodyPreviewMaxLines = 6;
 const _postCaptionMaxLines = 16;

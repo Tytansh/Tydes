@@ -207,15 +207,7 @@ class FollowerActions extends ConsumerWidget {
   }
 }
 
-const _defaultFollowedUserIds = {
-  'friend_lina',
-  'friend_ari',
-  'friend_jo',
-  'friend_maya',
-  'friend_kai',
-  'friend_noa',
-  'friend_sam',
-};
+const _defaultFollowedUserIds = <String>{};
 
 bool _isFollowingUser(WidgetRef ref, String userId) {
   if (ref.watch(blockedUserIdsProvider).contains(userId)) return false;

@@ -168,6 +168,7 @@ class SettingsPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final me = ref.watch(meProvider);
     final friends = ref.watch(friendsProvider);
+    final socialProfiles = ref.watch(socialProfilesProvider);
     final posts = ref.watch(socialPostsProvider);
     final spots = ref.watch(spotsProvider);
     final followedUserIds = ref.watch(followedUserIdsProvider);
@@ -189,10 +190,12 @@ class SettingsPage extends ConsumerWidget {
       friends.valueOrNull ?? const [],
       followedUserIds,
       hiddenFollowingUserIds,
+      socialProfiles.valueOrNull ?? const [],
     );
     final followerPeople = _profileFollowerPeople(
       followerUserIds,
       hiddenFollowerUserIds,
+      socialProfiles.valueOrNull ?? const [],
     );
     final excludedSuggestionIds = {
       ...followingPeople.map((person) => person.profile.userId),
@@ -200,7 +203,10 @@ class SettingsPage extends ConsumerWidget {
       ...followedUserIds,
       ...blockedUserIds,
     };
-    final suggestions = _profileSuggestions(excludedSuggestionIds);
+    final suggestions = _profileSuggestions(
+      socialProfiles.valueOrNull ?? const [],
+      excludedSuggestionIds,
+    );
 
     return Scaffold(
       body: RefreshIndicator.adaptive(
@@ -692,6 +698,7 @@ List<ProfilePerson> _profileFriendPeople(
   List<FriendProfileModel> friends,
   Set<String> followedUserIds,
   Set<String> hiddenFollowingUserIds,
+  List<SocialProfileModel> socialProfiles,
 ) {
   final people = friends
       .where((friend) => !hiddenFollowingUserIds.contains(friend.id))
@@ -715,10 +722,11 @@ List<ProfilePerson> _profileFriendPeople(
         hiddenFollowingUserIds.contains(userId)) {
       continue;
     }
+    final profile = _profilePreviewFromUserId(userId, socialProfiles);
     people.add(
       ProfilePerson(
-        profile: _profilePreviewFromUserId(userId),
-        subtitle: _profilePreviewFromUserId(userId).location ?? 'Following',
+        profile: profile,
+        subtitle: profile.location ?? 'Following',
         forceFollowing: true,
       ),
     );
@@ -730,51 +738,16 @@ List<ProfilePerson> _profileFriendPeople(
 List<ProfilePerson> _profileFollowerPeople(
   Set<String> followerUserIds,
   Set<String> hiddenFollowerUserIds,
+  List<SocialProfileModel> socialProfiles,
 ) {
-  final names = [
-    'Ari Dawn',
-    'Lina Reef',
-    'Jo Tide',
-    'Maya Surfer',
-    'Kai Point',
-    'Nina Sets',
-    'Sam Sandbar',
-    'Rafa Dawn',
-    'Ella Glassy',
-    'Noah Lefts',
-    'Milo Tide',
-    'Sari Peaks',
-    'Ben Offshore',
-    'Cleo Foam',
-  ];
-
-  final people = names
-      .map(
-        (name) => ProfilePerson(
-          profile: PublicProfilePreview(
-            userId: name == 'Ari Dawn'
-                ? 'friend_ari'
-                : 'follower_${name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_')}',
-            displayName: name,
-            handle: _handleFromName(name),
-            subtitle: 'Surf traveler on Tydes',
-          ),
-          subtitle: 'Follower',
-          forceFollowerActions: true,
-        ),
-      )
-      .where((person) => !hiddenFollowerUserIds.contains(person.profile.userId))
-      .toList();
-
-  final existingIds = people.map((person) => person.profile.userId).toSet();
+  final people = <ProfilePerson>[];
   for (final userId in followerUserIds) {
-    if (existingIds.contains(userId) ||
-        hiddenFollowerUserIds.contains(userId)) {
+    if (hiddenFollowerUserIds.contains(userId)) {
       continue;
     }
     people.add(
       ProfilePerson(
-        profile: _profilePreviewFromUserId(userId),
+        profile: _profilePreviewFromUserId(userId, socialProfiles),
         subtitle: 'Follower',
         forceFollowerActions: true,
       ),
@@ -783,105 +756,29 @@ List<ProfilePerson> _profileFollowerPeople(
   return people;
 }
 
-PublicProfilePreview _profilePreviewFromUserId(String userId) {
-  for (final profile in _knownProfilePreviews) {
-    if (profile.userId == userId) return profile;
+PublicProfilePreview _profilePreviewFromUserId(
+  String userId,
+  List<SocialProfileModel> socialProfiles,
+) {
+  for (final profile in socialProfiles) {
+    if (profile.userId != userId) continue;
+    return PublicProfilePreview(
+      userId: profile.userId,
+      displayName: profile.displayName,
+      handle: profile.handle,
+      avatarUrl: profile.avatarUrl,
+      premium: profile.premium,
+      subtitle: profile.subtitle,
+      location: profile.location,
+      surfSkill: profile.surfSkill ?? 'beginner',
+    );
   }
-  final name = userId
-      .replaceFirst(RegExp(r'^(friend|suggested|random|follower)_'), '')
-      .split('_')
-      .where((part) => part.isNotEmpty)
-      .map(
-        (part) => '${part.characters.first.toUpperCase()}${part.substring(1)}',
-      )
-      .join(' ');
   return PublicProfilePreview(
     userId: userId,
-    displayName: name.isEmpty ? 'Surfer' : name,
-    handle: _handleFromName(name),
+    displayName: 'Tydes surfer',
     subtitle: 'Surf traveler on Tydes',
   );
 }
-
-const _knownProfilePreviews = [
-  PublicProfilePreview(
-    userId: 'friend_ari',
-    displayName: 'Ari Dawn',
-    handle: 'aridawn',
-    subtitle: 'Intermediate, early sessions, shares rides.',
-    location: 'Uluwatu',
-  ),
-  PublicProfilePreview(
-    userId: 'friend_lina',
-    displayName: 'Lina Reef',
-    handle: 'linareef',
-    subtitle: 'Longboard mornings, coffee after.',
-    location: 'Canggu',
-  ),
-  PublicProfilePreview(
-    userId: 'friend_jo',
-    displayName: 'Jo Tide',
-    handle: 'jotide',
-    subtitle: 'Looking for reef buddies and clean rights.',
-    location: 'Siargao',
-  ),
-  PublicProfilePreview(
-    userId: 'friend_maya',
-    displayName: 'Maya Surfer',
-    handle: 'mayasurfer',
-    subtitle: 'Photos, reef notes, and mellow dawn missions.',
-    location: 'Uluwatu',
-  ),
-  PublicProfilePreview(
-    userId: 'friend_kai',
-    displayName: 'Kai Glass',
-    handle: 'kaiglass',
-    subtitle: 'Point-break addict, usually chasing long walls.',
-    location: 'Byron Bay',
-  ),
-  PublicProfilePreview(
-    userId: 'suggested_tara_sets',
-    displayName: 'Tara Sets',
-    handle: 'tarasets',
-    subtitle: 'Followed by Ari Dawn',
-    location: 'Canggu',
-  ),
-  PublicProfilePreview(
-    userId: 'suggested_reef_milo',
-    displayName: 'Reef Milo',
-    handle: 'reefmilo',
-    subtitle: 'Followed by Lina Reef',
-    location: 'Siargao',
-  ),
-  PublicProfilePreview(
-    userId: 'suggested_ella_tide',
-    displayName: 'Ella Tide',
-    handle: 'ellatide',
-    subtitle: 'Followed by Jo Tide',
-    location: 'Uluwatu',
-  ),
-  PublicProfilePreview(
-    userId: 'random_cleo_foam',
-    displayName: 'Cleo Foam',
-    handle: 'cleofoam',
-    subtitle: 'Popular in Bali',
-    location: 'Bali',
-  ),
-  PublicProfilePreview(
-    userId: 'random_taj_current',
-    displayName: 'Taj Current',
-    handle: 'tajcurrent',
-    subtitle: 'Surfs near you',
-    location: 'Bali',
-  ),
-  PublicProfilePreview(
-    userId: 'random_ivy_reef',
-    displayName: 'Ivy Reef',
-    handle: 'ivyreef',
-    subtitle: 'New to Tydes',
-    location: 'Uluwatu',
-  ),
-];
 
 String? _handleFromName(String? name) {
   if (name == null || name.trim().isEmpty) return null;
@@ -1311,7 +1208,7 @@ List<PublicProfilePreview> _blockedProfilePreviews(
     );
   }
   for (final userId in blockedIds) {
-    byId.putIfAbsent(userId, () => _profilePreviewFromUserId(userId));
+    byId.putIfAbsent(userId, () => _profilePreviewFromUserId(userId, profiles));
   }
   return byId.values.toList()
     ..sort((a, b) => a.displayName.compareTo(b.displayName));
@@ -1685,79 +1582,27 @@ class _SuggestedPersonCard extends StatelessWidget {
   }
 }
 
-List<_SuggestedPerson> _profileSuggestions(Set<String> excludedIds) {
-  return _suggestedPeople
-      .where((person) => !excludedIds.contains(person.userId))
+List<_SuggestedPerson> _profileSuggestions(
+  List<SocialProfileModel> profiles,
+  Set<String> excludedIds,
+) {
+  return profiles
+      .where((profile) => !excludedIds.contains(profile.userId))
+      .map(
+        (profile) => _SuggestedPerson(
+          userId: profile.userId,
+          displayName: profile.displayName,
+          initial: profile.displayName.trim().isEmpty
+              ? '?'
+              : profile.displayName.trim().characters.first.toUpperCase(),
+          reason: profile.subtitle ?? 'New to Tydes',
+          handle: profile.handle,
+          location: profile.location,
+        ),
+      )
       .take(8)
       .toList();
 }
-
-const _suggestedPeople = [
-  _SuggestedPerson(
-    userId: 'suggested_tara_sets',
-    displayName: 'Tara Sets',
-    initial: 'T',
-    reason: 'Followed by Ari Dawn',
-    handle: 'tarasets',
-    location: 'Canggu',
-  ),
-  _SuggestedPerson(
-    userId: 'suggested_reef_milo',
-    displayName: 'Reef Milo',
-    initial: 'R',
-    reason: 'Followed by Lina Reef',
-    handle: 'reefmilo',
-    location: 'Siargao',
-  ),
-  _SuggestedPerson(
-    userId: 'suggested_ella_tide',
-    displayName: 'Ella Tide',
-    initial: 'E',
-    reason: 'Followed by Jo Tide',
-    handle: 'ellatide',
-    location: 'Uluwatu',
-  ),
-  _SuggestedPerson(
-    userId: 'suggested_noah_glass',
-    displayName: 'Noah Glass',
-    initial: 'N',
-    reason: 'Followed by Maya Surfer',
-    handle: 'noahglass',
-    location: 'Arugam Bay',
-  ),
-  _SuggestedPerson(
-    userId: 'suggested_sari_peak',
-    displayName: 'Sari Peak',
-    initial: 'S',
-    reason: 'Followed by Kai Glass',
-    handle: 'saripeak',
-    location: 'Bukit',
-  ),
-  _SuggestedPerson(
-    userId: 'random_cleo_foam',
-    displayName: 'Cleo Foam',
-    initial: 'C',
-    reason: 'New to Tydes',
-    handle: 'cleofoam',
-    location: 'Bali',
-  ),
-  _SuggestedPerson(
-    userId: 'random_taj_current',
-    displayName: 'Taj Current',
-    initial: 'T',
-    reason: 'New to Tydes',
-    handle: 'tajcurrent',
-    location: 'Bali',
-  ),
-  _SuggestedPerson(
-    userId: 'random_ivy_reef',
-    displayName: 'Ivy Reef',
-    initial: 'I',
-    reason: 'New to Tydes',
-    handle: 'ivyreef',
-    location: 'Uluwatu',
-  ),
-];
 
 class _SuggestedPerson {
   const _SuggestedPerson({
@@ -1773,8 +1618,8 @@ class _SuggestedPerson {
   final String displayName;
   final String initial;
   final String reason;
-  final String handle;
-  final String location;
+  final String? handle;
+  final String? location;
 
   PublicProfilePreview get profile => PublicProfilePreview(
     userId: userId,
@@ -1794,7 +1639,7 @@ class _NoSuggestionsCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Text(
-          'You followed everyone suggested for now.',
+          'No other surfers have completed a profile yet.',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       ),
