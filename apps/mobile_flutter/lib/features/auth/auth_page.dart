@@ -480,7 +480,7 @@ class _DesktopAuthShowcase extends StatelessWidget {
               ClipRRect(
                 borderRadius: BorderRadius.circular(24),
                 child: Image.asset(
-                  'assets/branding/tydes-wave-blue.png',
+                  'assets/branding/tydes-wave-blue-256.png',
                   width: 82,
                   height: 82,
                   fit: BoxFit.cover,
@@ -713,7 +713,7 @@ class _SurfLogoBadge extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(22),
       child: Image.asset(
-        'assets/branding/tydes-wave-blue.png',
+        'assets/branding/tydes-wave-blue-256.png',
         width: 72,
         height: 72,
         fit: BoxFit.cover,

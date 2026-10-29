@@ -203,7 +203,7 @@ class _DesktopBrandMark extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(14),
       child: Image.asset(
-        'assets/branding/tydes-wave-blue.png',
+        'assets/branding/tydes-wave-blue-256.png',
         width: 52,
         height: 52,
         fit: BoxFit.cover,
