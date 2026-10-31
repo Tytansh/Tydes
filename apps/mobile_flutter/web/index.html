@@ -66,9 +66,14 @@
     .tydes-loader-mark {
       width: 74px;
       height: 74px;
+      display: grid;
+      place-items: center;
       border-radius: 22px;
+      overflow: hidden;
+      background: linear-gradient(145deg, #075a7a 0%, #0fc9cc 58%, #ffd374 100%);
       box-shadow: 0 18px 50px rgba(10, 74, 82, .2);
     }
+    .tydes-loader-mark svg { width: 62px; height: 62px; }
     .tydes-loader-card strong { display: block; margin-top: 16px; font-size: 22px; }
     .tydes-loader-card span { display: block; margin-top: 6px; color: #607175; font-size: 14px; }
   </style>
@@ -76,7 +81,12 @@
 <body>
   <div id="tydes-loader" aria-label="Loading Tydes">
     <div class="tydes-loader-card">
-      <img class="tydes-loader-mark" src="assets/assets/branding/tydes-wave-blue-256.png" alt="">
+      <div class="tydes-loader-mark" aria-hidden="true">
+        <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="14" cy="58" r="4" fill="white"/>
+          <path d="M24 58C40 52 48 32 63 36C74 39 76 48 75 58C71 52 66 48 60 49C51 50 48 59 52 66C56 73 65 73 73 69C80 65 87 65 93 67" stroke="white" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
       <strong>Tydes</strong>
       <span>Loading surf spots and forecasts…</span>
     </div>
