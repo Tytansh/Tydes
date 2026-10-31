@@ -4031,11 +4031,45 @@ class _ComposerMediaStageState extends State<_ComposerMediaStage> {
                       children: [
                         PageView.builder(
                           controller: _controller,
+                          physics: socialPostMediaCarouselPhysics(
+                            isWeb: kIsWeb,
+                          ),
                           itemCount: itemCount,
                           onPageChanged: (value) =>
                               setState(() => _index = value),
                           itemBuilder: _buildMediaPage,
                         ),
+                        if (socialPostMediaCarouselShowsArrows(
+                          isWeb: kIsWeb,
+                          mediaCount: itemCount,
+                        )) ...[
+                          if (_index > 0)
+                            Positioned(
+                              left: 12,
+                              top: 0,
+                              bottom: 0,
+                              child: Center(
+                                child: _CarouselArrowButton(
+                                  tooltip: 'Previous media',
+                                  icon: Icons.chevron_left_rounded,
+                                  onPressed: () => _showPage(_index - 1),
+                                ),
+                              ),
+                            ),
+                          if (_index < itemCount - 1)
+                            Positioned(
+                              right: 12,
+                              top: 0,
+                              bottom: 0,
+                              child: Center(
+                                child: _CarouselArrowButton(
+                                  tooltip: 'Next media',
+                                  icon: Icons.chevron_right_rounded,
+                                  onPressed: () => _showPage(_index + 1),
+                                ),
+                              ),
+                            ),
+                        ],
                         _ComposerRemoveButton(onTap: _removeCurrentMedia),
                         if (itemCount > 1)
                           Positioned(
@@ -4068,12 +4102,7 @@ class _ComposerMediaStageState extends State<_ComposerMediaStage> {
     final media = widget.media[index];
     final photo = media.photo;
     if (photo != null) {
-      return Image.file(
-        File(photo.thumbnail.path),
-        fit: BoxFit.cover,
-        width: double.infinity,
-        height: double.infinity,
-      );
+      return _ComposerPhotoPreview(photo: photo.thumbnail);
     }
 
     final video = media.video;
@@ -4085,6 +4114,74 @@ class _ComposerMediaStageState extends State<_ComposerMediaStage> {
 
   void _removeCurrentMedia() {
     widget.onRemoveMedia(widget.media[_index]);
+  }
+
+  Future<void> _showPage(int index) async {
+    if (!_controller.hasClients || index == _index) return;
+    await _controller.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+    );
+  }
+}
+
+class _ComposerPhotoPreview extends StatefulWidget {
+  const _ComposerPhotoPreview({required this.photo});
+
+  final XFile photo;
+
+  @override
+  State<_ComposerPhotoPreview> createState() => _ComposerPhotoPreviewState();
+}
+
+class _ComposerPhotoPreviewState extends State<_ComposerPhotoPreview> {
+  late Future<Uint8List> _bytes;
+
+  @override
+  void initState() {
+    super.initState();
+    _bytes = widget.photo.readAsBytes();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ComposerPhotoPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.photo.path != widget.photo.path ||
+        oldWidget.photo.name != widget.photo.name) {
+      _bytes = widget.photo.readAsBytes();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return FutureBuilder<Uint8List>(
+      future: _bytes,
+      builder: (context, snapshot) {
+        final bytes = snapshot.data;
+        if (bytes != null) {
+          return Image.memory(
+            bytes,
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
+            gaplessPlayback: true,
+          );
+        }
+        return ColoredBox(
+          color: scheme.surfaceContainerHighest,
+          child: Center(
+            child: snapshot.hasError
+                ? Icon(
+                    Icons.broken_image_outlined,
+                    color: scheme.onSurfaceVariant,
+                  )
+                : CircularProgressIndicator(color: scheme.primary),
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -4251,7 +4348,23 @@ class _ComposerVideoPreviewState extends State<_ComposerVideoPreview> {
   @override
   void initState() {
     super.initState();
-    final controller = VideoPlayerController.file(File(widget.video.path));
+    _initializeController();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ComposerVideoPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.video.path == widget.video.path) return;
+    _controller?.dispose();
+    _controller = null;
+    _failed = false;
+    _initializeController();
+  }
+
+  void _initializeController() {
+    final controller = kIsWeb
+        ? VideoPlayerController.networkUrl(Uri.parse(widget.video.path))
+        : VideoPlayerController.file(File(widget.video.path));
     _controller = controller;
     controller
       ..setLooping(true)
