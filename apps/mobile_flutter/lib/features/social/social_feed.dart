@@ -3102,30 +3102,16 @@ class _VideoPosterFrame extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF082F33), Color(0xFF0D5557), Color(0xFFBFECEE)],
+          stops: [0.0, 0.48, 0.78, 1.0],
+          colors: [
+            Color(0xFF07383D),
+            Color(0xFF087D88),
+            Color(0xFF20BBC0),
+            Color(0xFFF4D277),
+          ],
         ),
       ),
-      child: Stack(
-        children: [
-          Positioned(
-            top: -36,
-            right: -26,
-            child: _PosterGlow(size: 126, opacity: 0.22),
-          ),
-          Positioned(
-            left: -44,
-            bottom: -42,
-            child: _PosterGlow(size: 150, opacity: 0.16),
-          ),
-          Center(
-            child: Icon(
-              Icons.movie_creation_outlined,
-              size: 42,
-              color: Colors.white.withValues(alpha: 0.88),
-            ),
-          ),
-        ],
-      ),
+      child: const _TydesVideoLoader(),
     );
 
     return Stack(
@@ -3141,37 +3127,107 @@ class _VideoPosterFrame extends StatelessWidget {
             errorBuilder: (context, error, stackTrace) =>
                 const SizedBox.shrink(),
           ),
-        if (initializing)
+        if (initializing && thumbnailUrl != null)
           Container(
-            color: Colors.black.withValues(alpha: 0.18),
+            color: const Color(0xFF052F34).withValues(alpha: 0.48),
             alignment: Alignment.center,
-            child: const SizedBox.square(
-              dimension: 32,
-              child: CircularProgressIndicator(
-                strokeWidth: 3,
-                color: Colors.white,
-              ),
-            ),
+            child: const _TydesVideoLoader(compact: true),
           ),
       ],
     );
   }
 }
 
-class _PosterGlow extends StatelessWidget {
-  const _PosterGlow({required this.size, required this.opacity});
+class _TydesVideoLoader extends StatefulWidget {
+  const _TydesVideoLoader({this.compact = false});
 
-  final double size;
-  final double opacity;
+  final bool compact;
+
+  @override
+  State<_TydesVideoLoader> createState() => _TydesVideoLoaderState();
+}
+
+class _TydesVideoLoaderState extends State<_TydesVideoLoader>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _scale;
+  late final Animation<double> _opacity;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1250),
+    )..repeat(reverse: true);
+    final curve = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
+    _scale = Tween<double>(begin: 0.94, end: 1.03).animate(curve);
+    _opacity = Tween<double>(begin: 0.72, end: 1).animate(curve);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: opacity),
-        shape: BoxShape.circle,
+    final logoSize = widget.compact ? 46.0 : 72.0;
+    final ringSize = widget.compact ? 62.0 : 94.0;
+    return Semantics(
+      label: 'Tydes video loading',
+      child: Center(
+        child: ScaleTransition(
+          scale: _scale,
+          child: FadeTransition(
+            opacity: _opacity,
+            child: SizedBox.square(
+              dimension: ringSize,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Positioned.fill(
+                    child: CircularProgressIndicator(
+                      strokeWidth: widget.compact ? 2.4 : 3,
+                      color: const Color(0xFFF7DD8E),
+                      backgroundColor: Colors.white.withValues(alpha: 0.28),
+                    ),
+                  ),
+                  Container(
+                    padding: EdgeInsets.all(widget.compact ? 5 : 7),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.94),
+                      borderRadius: BorderRadius.circular(
+                        widget.compact ? 15 : 22,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(
+                            0xFF052F34,
+                          ).withValues(alpha: 0.26),
+                          blurRadius: 22,
+                          offset: const Offset(0, 9),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(
+                        widget.compact ? 11 : 17,
+                      ),
+                      child: Image.asset(
+                        'assets/branding/tydes-wave-blue-256.png',
+                        width: logoSize,
+                        height: logoSize,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
