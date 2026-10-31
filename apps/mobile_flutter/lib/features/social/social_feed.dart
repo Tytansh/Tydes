@@ -566,9 +566,9 @@ class _PostCard extends ConsumerWidget {
                     ),
                   ),
                   if (isOwnPost) ...[
-                    _SharePostButton(post: post, spot: spot),
+                    SharePostButton(post: post, spot: spot),
                     const SizedBox(width: 4),
-                    _OwnPostMenu(post: post),
+                    OwnPostMenu(post: post),
                   ] else ...[
                     FollowButton(userId: post.userId, compact: true),
                     const SizedBox(width: 4),
@@ -586,7 +586,7 @@ class _PostCard extends ConsumerWidget {
                       onPressed: () => context.push('/spot/${spot.id}'),
                     ),
                     const Spacer(),
-                    if (!isOwnPost) _SharePostButton(post: post, spot: spot),
+                    if (!isOwnPost) SharePostButton(post: post, spot: spot),
                   ],
                 ),
               ],
@@ -642,8 +642,8 @@ class _PostSafetyMenu extends ConsumerWidget {
   }
 }
 
-class _OwnPostMenu extends ConsumerWidget {
-  const _OwnPostMenu({required this.post});
+class OwnPostMenu extends ConsumerWidget {
+  const OwnPostMenu({super.key, required this.post});
 
   final SocialPostModel post;
 
@@ -1800,37 +1800,9 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
   }
 }
 
-int _baseLikeCount(SocialPostModel post) {
-  const counts = {
-    'post_lina_canggu_photo': 18,
-    'post_ari_balangan_event': 12,
-    'post_kai_byron_clip': 9,
-    'post_noa_arugam_event': 7,
-    'post_sam_snapper_photos': 15,
-    'post_maya_uluwatu_party': 11,
-    'post_jo_cloud9_event': 6,
-    'post_uluwatu_dawn': 14,
-    'post_balangan_friends': 8,
-  };
-  return counts[post.id] ??
-      (post.id.codeUnits.fold<int>(0, (total, unit) => total + unit) % 9) + 2;
-}
+int _baseLikeCount(SocialPostModel post) => post.likeCount;
 
-int _baseRepostCount(SocialPostModel post) {
-  const counts = {
-    'post_lina_canggu_photo': 4,
-    'post_ari_balangan_event': 3,
-    'post_kai_byron_clip': 2,
-    'post_noa_arugam_event': 2,
-    'post_sam_snapper_photos': 5,
-    'post_maya_uluwatu_party': 3,
-    'post_jo_cloud9_event': 1,
-    'post_uluwatu_dawn': 3,
-    'post_balangan_friends': 2,
-  };
-  return counts[post.id] ??
-      post.id.codeUnits.fold<int>(0, (total, unit) => total + unit) % 4;
-}
+int _baseRepostCount(SocialPostModel post) => post.repostCount;
 
 List<SocialComment> _topLevelComments(List<SocialComment> comments) {
   return comments.where((comment) => comment.replyToCommentId == null).toList();
@@ -2039,8 +2011,8 @@ Future<void> _toggleEventRsvp({
   }
 }
 
-class _SharePostButton extends StatelessWidget {
-  const _SharePostButton({required this.post, required this.spot});
+class SharePostButton extends StatelessWidget {
+  const SharePostButton({super.key, required this.post, required this.spot});
 
   final SocialPostModel post;
   final SpotModel? spot;

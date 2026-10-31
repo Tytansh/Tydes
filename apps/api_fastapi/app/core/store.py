@@ -1310,13 +1310,39 @@ class DemoStore:
         limit: int = 50,
     ) -> Iterable[SocialPost]:
         if self.postgres_social is not None:
-            posts = self.postgres_social.list_posts(limit=limit)
+            posts = self.postgres_social.list_posts(
+                limit=limit,
+                viewer_user_id=current_user_id,
+            )
         else:
             posts = sorted(
                 self.posts,
                 key=lambda post: post.created_at,
                 reverse=True,
             )[:limit]
+            viewer_is_local_user = current_user_id == self.user.id
+            posts = [
+                post.model_copy(
+                    update={
+                        "like_count": (
+                            0
+                            if viewer_is_local_user
+                            else int(post.id in self.liked_post_ids)
+                        ),
+                        "repost_count": (
+                            0
+                            if viewer_is_local_user
+                            else int(
+                                any(
+                                    item.post_id == post.id
+                                    for item in self.reposts
+                                )
+                            )
+                        ),
+                    }
+                )
+                for post in posts
+            ]
         blocked_user_ids = self._blocked_user_ids_for(current_user_id)
         if blocked_user_ids:
             posts = [

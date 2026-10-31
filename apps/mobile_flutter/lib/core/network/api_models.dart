@@ -682,6 +682,8 @@ class SocialPostModel {
     required this.meetupDate,
     this.meetupEndDate,
     required this.createdAt,
+    this.likeCount = 0,
+    this.repostCount = 0,
   });
 
   final String id;
@@ -698,6 +700,8 @@ class SocialPostModel {
   final String? meetupDate;
   final String? meetupEndDate;
   final String createdAt;
+  final int likeCount;
+  final int repostCount;
 
   factory SocialPostModel.fromJson(
     Map<String, dynamic> json,
@@ -721,6 +725,8 @@ class SocialPostModel {
     meetupDate: json['meetup_date'] as String?,
     meetupEndDate: json['meetup_end_date'] as String?,
     createdAt: json['created_at'] as String,
+    likeCount: json['like_count'] as int? ?? 0,
+    repostCount: json['repost_count'] as int? ?? 0,
   );
 }
 

@@ -401,33 +401,45 @@ class _PublicProfileHero extends StatelessWidget {
               ),
               const SizedBox(width: 18),
               Expanded(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _ProfileStat(value: postsCount.toString(), label: 'Posts'),
-                    _ProfileStat(
-                      value: friends.length.toString(),
-                      label: 'Following',
-                      onTap: () => showProfilePeopleSheet(
-                        context: context,
-                        title: 'Following',
-                        people: friends,
-                        onProfileTap: onPersonTap,
-                        emptyText: 'Not following anyone yet.',
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 56),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) => Align(
+                      alignment: Alignment.topLeft,
+                      child: Wrap(
+                        spacing: constraints.maxWidth >= 700 ? 42 : 22,
+                        runSpacing: 8,
+                        children: [
+                          _ProfileStat(
+                            value: postsCount.toString(),
+                            label: 'Posts',
+                          ),
+                          _ProfileStat(
+                            value: friends.length.toString(),
+                            label: 'Following',
+                            onTap: () => showProfilePeopleSheet(
+                              context: context,
+                              title: 'Following',
+                              people: friends,
+                              onProfileTap: onPersonTap,
+                              emptyText: 'Not following anyone yet.',
+                            ),
+                          ),
+                          _ProfileStat(
+                            value: followers.length.toString(),
+                            label: 'Followers',
+                            onTap: () => showProfilePeopleSheet(
+                              context: context,
+                              title: 'Followers',
+                              people: followers,
+                              onProfileTap: onPersonTap,
+                              emptyText: 'No followers yet.',
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    _ProfileStat(
-                      value: followers.length.toString(),
-                      label: 'Followers',
-                      onTap: () => showProfilePeopleSheet(
-                        context: context,
-                        title: 'Followers',
-                        people: followers,
-                        onProfileTap: onPersonTap,
-                        emptyText: 'No followers yet.',
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ],

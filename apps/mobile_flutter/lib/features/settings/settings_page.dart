@@ -1778,6 +1778,7 @@ class _ProfilePostCard extends StatelessWidget {
         ? post.authorAvatarUrl
         : profile.avatarUrl;
     final authorPremium = usePostAuthor ? post.authorPremium : profile.premium;
+    final ownsOriginalPost = post.userId == profile.id;
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Padding(
@@ -1832,14 +1833,21 @@ class _ProfilePostCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (spot != null)
-                  ActionChip(
-                    avatar: const Icon(Icons.place_outlined, size: 16),
-                    label: Text(spot.name),
-                    onPressed: () => context.push('/spot/${spot.id}'),
-                  ),
+                SharePostButton(post: post, spot: spot),
+                if (ownsOriginalPost) ...[
+                  const SizedBox(width: 4),
+                  OwnPostMenu(post: post),
+                ],
               ],
             ),
+            if (spot != null) ...[
+              const SizedBox(height: 10),
+              ActionChip(
+                avatar: const Icon(Icons.place_outlined, size: 16),
+                label: Text(spot.name),
+                onPressed: () => context.push('/spot/${spot.id}'),
+              ),
+            ],
             const SizedBox(height: 12),
             if (post.media.isNotEmpty) ...[
               SocialPostMediaCarousel(media: post.media, borderRadius: 20),

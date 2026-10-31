@@ -66,18 +66,45 @@ class PostgresSocialRepository:
             row = connection.execute("SELECT COUNT(*) AS count FROM social_posts").fetchone()
         return int(row["count"])
 
-    def list_posts(self, limit: int | None = None) -> list[SocialPost]:
-        query = "SELECT payload FROM social_posts ORDER BY created_at DESC"
-        parameters: tuple[int, ...] = ()
+    def list_posts(
+        self,
+        limit: int | None = None,
+        viewer_user_id: str | None = None,
+    ) -> list[SocialPost]:
+        viewer_id = (viewer_user_id or "").strip()
+        query = """
+            SELECT
+                posts.payload,
+                COALESCE(likes.like_count, 0) AS like_count,
+                COALESCE(reposts.repost_count, 0) AS repost_count
+            FROM social_posts AS posts
+            LEFT JOIN (
+                SELECT post_id, COUNT(*) AS like_count
+                FROM social_post_likes
+                WHERE user_id <> %s
+                GROUP BY post_id
+            ) AS likes ON likes.post_id = posts.id
+            LEFT JOIN (
+                SELECT post_id, COUNT(*) AS repost_count
+                FROM social_reposts
+                WHERE user_id <> %s
+                GROUP BY post_id
+            ) AS reposts ON reposts.post_id = posts.id
+            ORDER BY posts.created_at DESC
+        """
+        parameters: tuple[Any, ...] = (viewer_id, viewer_id)
         if limit is not None:
             query += " LIMIT %s"
-            parameters = (max(1, limit),)
+            parameters += (max(1, limit),)
         with self._connect() as connection:
             rows = connection.execute(query, parameters).fetchall()
-        return [
-            SocialPost.model_validate(_payload_dict(row["payload"]))
-            for row in rows
-        ]
+        posts: list[SocialPost] = []
+        for row in rows:
+            payload = _payload_dict(row["payload"])
+            payload["like_count"] = int(row["like_count"])
+            payload["repost_count"] = int(row["repost_count"])
+            posts.append(SocialPost.model_validate(payload))
+        return posts
 
     def count_user_posts_since(self, user_id: str, since: datetime) -> int:
         with self._connect() as connection:

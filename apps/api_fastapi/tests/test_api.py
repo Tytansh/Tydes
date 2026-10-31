@@ -1461,6 +1461,8 @@ def test_social_feed_and_create_post(monkeypatch):
     assert create_response.json()["body"].startswith("Anyone surfing")
     assert create_response.json()["visibility"] == "followers"
     assert create_response.json()["user_id"].startswith("usr_")
+    assert create_response.json()["like_count"] == 0
+    assert create_response.json()["repost_count"] == 0
     owner_user_id = create_response.json()["user_id"]
     post_id = create_response.json()["id"]
 
@@ -1491,6 +1493,11 @@ def test_social_feed_and_create_post(monkeypatch):
         post["body"].startswith("Anyone surfing")
         for post in posts_response.json()
     )
+    created_post = next(
+        post for post in posts_response.json() if post["id"] == post_id
+    )
+    assert created_post["like_count"] == 0
+    assert created_post["repost_count"] == 0
 
     blocked_relationships = client.get("/api/v1/social/relationships")
     assert blocked_relationships.status_code == 401

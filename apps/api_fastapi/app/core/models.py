@@ -219,6 +219,8 @@ class SocialPost(BaseModel):
     meetup_date: date | None = None
     meetup_end_date: date | None = None
     created_at: datetime
+    like_count: int = Field(default=0, ge=0)
+    repost_count: int = Field(default=0, ge=0)
 
 
 class SocialComment(BaseModel):
