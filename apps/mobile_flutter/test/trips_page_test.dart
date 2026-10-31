@@ -84,12 +84,12 @@ void main() {
     expect(find.text('Gold Coast, Australia'), findsOneWidget);
     expect(find.textContaining('Best break • Snapper Rocks'), findsOneWidget);
     await tester.scrollUntilVisible(
-      find.text('Surf bases worth a look'),
+      find.text('Choose your coast'),
       250,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('Surf bases worth a look'), findsOneWidget);
-    expect(find.text('Uluwatu'), findsWidgets);
+    expect(find.text('Surf bases worth a look'), findsNothing);
+    expect(find.text('Choose your coast'), findsOneWidget);
     expect(find.text('Swell outlooks and surf events'), findsNothing);
     expect(find.textContaining('We removed the demo itinerary'), findsNothing);
     expect(find.text('Dry Season Surf Sprint'), findsNothing);

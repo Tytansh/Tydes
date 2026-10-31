@@ -118,21 +118,10 @@ class _TravelLoadedBody extends StatelessWidget {
           (area) => area.name == 'Uluwatu',
         ) ??
         selectedRegion.areas.first;
-    final featuredBases = _buildFeaturedTravelBases(countries);
     final totalBreaks = countries.fold<int>(
       0,
       (total, country) => total + country.breakCount,
     );
-
-    void openBase(_FeaturedTravelBase base) {
-      onCountryChanged(base.country);
-      onLocationChanged(
-        _TravelLocationSelection(
-          regionId: base.region.id,
-          areaId: base.area.id,
-        ),
-      );
-    }
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 6, 18, 32),
@@ -143,25 +132,6 @@ class _TravelLoadedBody extends StatelessWidget {
         const SizedBox(height: 16),
         _NextSwellCard(recommendation: nextSwell),
         const SizedBox(height: 22),
-        const _SectionHeading(
-          title: 'Surf bases worth a look',
-          subtitle: 'Tap one to explore mapped breaks',
-        ),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 156,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: featuredBases.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 10),
-            itemBuilder: (context, index) => _FeaturedBaseCard(
-              base: featuredBases[index],
-              index: index,
-              onTap: () => openBase(featuredBases[index]),
-            ),
-          ),
-        ),
-        const SizedBox(height: 24),
         const _SectionHeading(
           title: 'Choose your coast',
           subtitle: 'Explore every country in Tydes',
@@ -784,105 +754,6 @@ class _TravelServicePill extends StatelessWidget {
   }
 }
 
-class _FeaturedBaseCard extends StatelessWidget {
-  const _FeaturedBaseCard({
-    required this.base,
-    required this.index,
-    required this.onTap,
-  });
-
-  final _FeaturedTravelBase base;
-  final int index;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    const gradients = [
-      [Color(0xFF143D5B), Color(0xFF0A9FA5)],
-      [Color(0xFF176B68), Color(0xFF6CC5A4)],
-      [Color(0xFF8F5C39), Color(0xFFE6A85D)],
-    ];
-    final colors = gradients[index % gradients.length];
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(24),
-      child: Ink(
-        width: 214,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: colors,
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(
-                  base.country.emoji,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: .7,
-                  ),
-                ),
-                const Spacer(),
-                const Icon(
-                  Icons.north_east_rounded,
-                  color: Colors.white,
-                  size: 18,
-                ),
-              ],
-            ),
-            const Spacer(),
-            Text(
-              base.area.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              '${base.region.name}, ${base.country.name}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Color(0xE6FFFFFF), fontSize: 12),
-            ),
-            const SizedBox(height: 9),
-            Row(
-              children: [
-                const Icon(Icons.waves_rounded, color: Colors.white, size: 16),
-                const SizedBox(width: 5),
-                Expanded(
-                  child: Text(
-                    base.area.breakCountLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _TravelAreaOverview extends StatelessWidget {
   const _TravelAreaOverview({
     required this.country,
@@ -1348,64 +1219,6 @@ class _TravelLocationSelection {
 
   final String regionId;
   final String areaId;
-}
-
-class _FeaturedTravelBase {
-  const _FeaturedTravelBase({
-    required this.country,
-    required this.region,
-    required this.area,
-  });
-
-  final _TravelCountryView country;
-  final _TravelRegionView region;
-  final _TravelAreaView area;
-}
-
-List<_FeaturedTravelBase> _buildFeaturedTravelBases(
-  List<_TravelCountryView> countries,
-) {
-  const preferred = [
-    (country: 'Indonesia', region: 'Bali', area: 'Uluwatu'),
-    (country: 'Philippines', region: 'Siargao', area: 'General Luna'),
-    (country: 'Australia', region: 'New South Wales', area: 'Bondi'),
-  ];
-  final bases = <_FeaturedTravelBase>[];
-
-  for (final target in preferred) {
-    final country = _firstWhereOrNull(
-      countries,
-      (item) => item.name == target.country,
-    );
-    if (country == null) continue;
-    final region =
-        _firstWhereOrNull(
-          country.regions,
-          (item) => item.name == target.region,
-        ) ??
-        country.regions.first;
-    final area =
-        _firstWhereOrNull(region.areas, (item) => item.name == target.area) ??
-        region.areas.first;
-    bases.add(
-      _FeaturedTravelBase(country: country, region: region, area: area),
-    );
-  }
-
-  if (bases.length >= 3) return bases;
-  for (final country in countries) {
-    if (bases.any((base) => base.country.id == country.id)) continue;
-    final region = country.regions.first;
-    bases.add(
-      _FeaturedTravelBase(
-        country: country,
-        region: region,
-        area: region.areas.first,
-      ),
-    );
-    if (bases.length == 3) break;
-  }
-  return bases;
 }
 
 List<_TravelCountryView> _buildTravelCountries(List<SpotModel> spots) {
