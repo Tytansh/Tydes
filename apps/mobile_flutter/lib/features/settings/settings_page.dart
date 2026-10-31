@@ -449,48 +449,41 @@ class _ProfileHero extends StatelessWidget {
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.only(right: 56),
-                      child: LayoutBuilder(
-                        builder: (context, constraints) => Align(
-                          alignment: Alignment.topLeft,
-                          child: Wrap(
-                            spacing: constraints.maxWidth >= 700 ? 42 : 22,
-                            runSpacing: 8,
-                            children: [
-                              _ProfileStat(
-                                value: postsCount.toString(),
-                                label: 'Posts',
-                              ),
-                              _ProfileStat(
-                                value: friends.length.toString(),
-                                label: 'Following',
-                                onTap: () => showProfilePeopleSheet(
-                                  context: context,
-                                  title: 'Following',
-                                  people: friends,
-                                  onProfileTap: (person) => context.push(
-                                    '/profile/${person.userId}',
-                                    extra: person,
-                                  ),
-                                  emptyText: 'Not following anyone yet.',
-                                ),
-                              ),
-                              _ProfileStat(
-                                value: followers.length.toString(),
-                                label: 'Followers',
-                                onTap: () => showProfilePeopleSheet(
-                                  context: context,
-                                  title: 'Followers',
-                                  people: followers,
-                                  onProfileTap: (person) => context.push(
-                                    '/profile/${person.userId}',
-                                    extra: person,
-                                  ),
-                                  emptyText: 'No followers yet.',
-                                ),
-                              ),
-                            ],
+                      child: ProfileStatsRow(
+                        children: [
+                          _ProfileStat(
+                            value: postsCount.toString(),
+                            label: 'Posts',
                           ),
-                        ),
+                          _ProfileStat(
+                            value: friends.length.toString(),
+                            label: 'Following',
+                            onTap: () => showProfilePeopleSheet(
+                              context: context,
+                              title: 'Following',
+                              people: friends,
+                              onProfileTap: (person) => context.push(
+                                '/profile/${person.userId}',
+                                extra: person,
+                              ),
+                              emptyText: 'Not following anyone yet.',
+                            ),
+                          ),
+                          _ProfileStat(
+                            value: followers.length.toString(),
+                            label: 'Followers',
+                            onTap: () => showProfilePeopleSheet(
+                              context: context,
+                              title: 'Followers',
+                              people: followers,
+                              onProfileTap: (person) => context.push(
+                                '/profile/${person.userId}',
+                                extra: person,
+                              ),
+                              emptyText: 'No followers yet.',
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

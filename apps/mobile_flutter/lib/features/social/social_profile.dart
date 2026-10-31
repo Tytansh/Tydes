@@ -79,6 +79,38 @@ class ProfilePerson {
   final bool forceFollowerActions;
 }
 
+class ProfileStatsRow extends StatelessWidget {
+  const ProfileStatsRow({super.key, required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final spacing = constraints.maxWidth >= 700 ? 42.0 : 18.0;
+        return Align(
+          alignment: Alignment.topLeft,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.topLeft,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var index = 0; index < children.length; index++) ...[
+                  if (index > 0) SizedBox(width: spacing),
+                  children[index],
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class FollowButton extends ConsumerWidget {
   const FollowButton({
     super.key,
