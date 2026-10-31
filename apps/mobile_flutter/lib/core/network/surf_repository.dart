@@ -81,9 +81,9 @@ class SurfRepository {
   final DemoPersistence _demoPersistence;
   final Dio _directUploadDio = Dio(
     BaseOptions(
-      connectTimeout: const Duration(seconds: 20),
-      sendTimeout: const Duration(minutes: 5),
-      receiveTimeout: const Duration(minutes: 2),
+      connectTimeout: const Duration(seconds: 45),
+      sendTimeout: const Duration(minutes: 10),
+      receiveTimeout: const Duration(minutes: 5),
     ),
   );
 
@@ -1039,9 +1039,15 @@ class SurfRepository {
         ? null
         : _mediaContentType(thumbnail, mediaType: 'photo');
     String? reservationId;
+    var uploadedToStorage = false;
     try {
       final reservationResponse = await _dio.post<Map<String, dynamic>>(
         '/social/media/uploads',
+        options: Options(
+          connectTimeout: const Duration(seconds: 30),
+          sendTimeout: const Duration(minutes: 1),
+          receiveTimeout: const Duration(minutes: 1),
+        ),
         data: {
           'media_type': mediaType,
           'content_type': contentType,
@@ -1067,14 +1073,30 @@ class SurfRepository {
           contentLength: thumbnailBytes,
         );
       }
+      uploadedToStorage = true;
       final completed = await _dio.post<Map<String, dynamic>>(
         '/social/media/uploads/$reservationId/complete',
+        options: Options(
+          connectTimeout: const Duration(seconds: 30),
+          sendTimeout: const Duration(minutes: 1),
+          receiveTimeout: const Duration(minutes: 3),
+        ),
       );
       return SocialMediaAttachmentModel.fromJson(completed.data!);
     } catch (_) {
-      if (reservationId != null) {
+      // Do not race the server's verification/copy step with a cancellation if
+      // the browser loses the response after the R2 upload already completed.
+      // Abandoned reservations are removed by the normal cleanup job.
+      if (reservationId != null && !uploadedToStorage) {
         try {
-          await _dio.delete<void>('/social/media/uploads/$reservationId');
+          await _dio.delete<void>(
+            '/social/media/uploads/$reservationId',
+            options: Options(
+              connectTimeout: const Duration(seconds: 20),
+              sendTimeout: const Duration(seconds: 30),
+              receiveTimeout: const Duration(seconds: 30),
+            ),
+          );
         } catch (_) {
           // The short-lived reservation expires and is cleaned up server-side.
         }
