@@ -38,6 +38,7 @@ from app.core.models import (
     TideForecast,
     Trip,
     User,
+    build_estimated_forecasts,
     build_seed,
     is_demo_social_user_id,
 )
@@ -747,8 +748,10 @@ class DemoStore:
                 spot.id,
                 type(error).__name__,
             )
-            # Fall back to seeded values only if Open-Meteo is unreachable.
-            return [item for item in self.forecasts if item.spot_id == spot.id]
+            # Never reuse startup-time forecast dates here. A long-running
+            # process can otherwise surface estimates from days or months ago
+            # whenever the live provider has a temporary outage.
+            return build_estimated_forecasts(spot, date.today())
 
     def _locked_free_forecast_estimate(self, forecast: ForecastEntry) -> ForecastEntry:
         wave_height = (

@@ -413,10 +413,7 @@ class SurfRepository {
       if (spotId != null) {
         queryParameters['spot_id'] = spotId;
       }
-      final response = await _dio.get<List<dynamic>>(
-        '/forecasts',
-        queryParameters: queryParameters,
-      );
+      final response = await _fetchForecastResponse(queryParameters);
       return response.data!
           .map((item) => ForecastModel.fromJson(item as Map<String, dynamic>))
           .toList();
@@ -425,6 +422,36 @@ class SurfRepository {
           ? DemoSeed.forecasts
           : DemoSeed.forecasts.where((item) => item.spotId == spotId).toList();
     }
+  }
+
+  Future<Response<List<dynamic>>> _fetchForecastResponse(
+    Map<String, dynamic> queryParameters,
+  ) async {
+    const timeout = Duration(seconds: 40);
+    try {
+      return await _dio.get<List<dynamic>>(
+        '/forecasts',
+        queryParameters: queryParameters,
+        options: Options(receiveTimeout: timeout),
+      );
+    } on DioException catch (error) {
+      if (!_shouldRetryForecast(error)) rethrow;
+      return _dio.get<List<dynamic>>(
+        '/forecasts',
+        queryParameters: queryParameters,
+        options: Options(receiveTimeout: timeout),
+      );
+    }
+  }
+
+  bool _shouldRetryForecast(DioException error) {
+    final statusCode = error.response?.statusCode;
+    return error.type == DioExceptionType.connectionError ||
+        error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.receiveTimeout ||
+        statusCode == 502 ||
+        statusCode == 503 ||
+        statusCode == 504;
   }
 
   Future<NextSwellModel> fetchNextSwell() async {

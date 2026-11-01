@@ -653,6 +653,36 @@ def test_forecasts_fallback_uses_estimated_spot_values(monkeypatch):
     assert all(row["wave_height_m"] is not None for row in rows)
     assert all(row["wave_height_min_m"] is None for row in rows)
     assert all(row["wave_height_max_m"] is None for row in rows)
+    assert rows[0]["day"] == date.today().isoformat()
+
+
+def test_profile_name_and_handle_length_limits(monkeypatch):
+    token = _signup_access_token(monkeypatch, "profile-limits@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    base_payload = {
+        "display_name": "Tydes Surfer",
+        "handle": "tydessurfer",
+        "bio": "",
+        "surf_skill": "intermediate",
+        "home_region": "Bali",
+        "avatar_url": None,
+    }
+
+    long_name = client.put(
+        "/api/v1/users/me",
+        headers=headers,
+        json={**base_payload, "display_name": "N" * 33},
+    )
+    long_handle = client.put(
+        "/api/v1/users/me",
+        headers=headers,
+        json={**base_payload, "handle": "h" * 21},
+    )
+
+    assert long_name.status_code == 400
+    assert long_name.json()["detail"] == "Display name must be 32 characters or fewer"
+    assert long_handle.status_code == 400
+    assert long_handle.json()["detail"] == "Handle is too long"
 
 
 def test_open_meteo_forecast_keeps_swell_direction():

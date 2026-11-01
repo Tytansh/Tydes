@@ -1210,6 +1210,14 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
       _showProfileErrorDialog('Name and @tag are required.');
       return;
     }
+    if (displayName.length > 32) {
+      _showProfileErrorDialog('Name must be 32 characters or fewer.');
+      return;
+    }
+    if (handle.length > 20) {
+      setState(() => _handleError = 'Use 20 characters or fewer');
+      return;
+    }
 
     setState(() {
       _handleError = null;
@@ -1544,6 +1552,7 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
               TextField(
                 controller: _nameController,
                 textCapitalization: TextCapitalization.words,
+                maxLength: 32,
                 decoration: const InputDecoration(
                   labelText: 'Name',
                   hintText: 'Your display name',
@@ -1552,6 +1561,7 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
               const SizedBox(height: 14),
               TextField(
                 controller: _handleController,
+                maxLength: 20,
                 decoration: InputDecoration(
                   labelText: '@tag',
                   hintText: 'yourtag',

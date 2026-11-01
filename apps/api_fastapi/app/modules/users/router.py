@@ -49,6 +49,11 @@ def update_me(payload: UpdateProfileRequest, user=Depends(require_authenticated_
 
     if not display_name:
         raise HTTPException(status_code=400, detail="Display name is required")
+    if len(display_name) > 32:
+        raise HTTPException(
+            status_code=400,
+            detail="Display name must be 32 characters or fewer",
+        )
     if not handle:
         raise HTTPException(status_code=400, detail="Handle is required")
     if handle.startswith("@"):

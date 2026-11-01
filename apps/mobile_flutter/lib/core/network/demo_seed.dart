@@ -5822,12 +5822,12 @@ class DemoSeed {
     final (windMin, windMax) = _windBandForDifficulty(spot.difficulty);
     final quality = spot.difficulty == 'beginner' ? 'fair' : 'good';
 
-    return List<ForecastModel>.generate(
-      5,
-      (index) => ForecastModel(
+    return List<ForecastModel>.generate(5, (index) {
+      final day = DateTime.now().add(Duration(days: index));
+      return ForecastModel(
         id: 'est_${spot.id}_${index + 1}',
         spotId: spot.id,
-        day: '2026-04-${(15 + index).toString().padLeft(2, '0')}',
+        day: _isoDay(day),
         waveHeightM: _roundBandValue(spot.waveHeightM),
         waveHeightMinM: null,
         waveHeightMaxM: null,
@@ -5845,9 +5845,14 @@ class DemoSeed {
         confidence: 'estimated',
         confidenceNote:
             'Estimated surf height based on the spot profile while live marine data is unavailable.',
-      ),
-    );
+      );
+    });
   }
+
+  static String _isoDay(DateTime day) =>
+      '${day.year.toString().padLeft(4, '0')}-'
+      '${day.month.toString().padLeft(2, '0')}-'
+      '${day.day.toString().padLeft(2, '0')}';
 
   static (double, double) _windBandForDifficulty(String difficulty) {
     switch (difficulty) {
