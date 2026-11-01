@@ -1471,6 +1471,28 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 16),
+              Center(
+                child: Column(
+                  children: [
+                    TydesProfileAvatar(
+                      size: 84,
+                      displayName: widget.profile.displayName,
+                      backgroundColor: const Color(0xFFE6F3F1),
+                      imageUrl: widget.profile.avatarUrl,
+                      image: _avatarBytes == null
+                          ? null
+                          : MemoryImage(_avatarBytes!),
+                    ),
+                    const SizedBox(height: 10),
+                    TextButton.icon(
+                      onPressed: _saving ? null : _pickAvatar,
+                      icon: const Icon(Icons.photo_camera_outlined),
+                      label: const Text('Change profile picture'),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
               AspectRatio(
                 aspectRatio: 8 / 3,
                 child: ClipRRect(
@@ -1548,28 +1570,6 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
                   'Best size: 1600 × 600. Tydes crops it to fit every screen.',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 12, color: Color(0xFF65757A)),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Center(
-                child: Column(
-                  children: [
-                    TydesProfileAvatar(
-                      size: 84,
-                      displayName: widget.profile.displayName,
-                      backgroundColor: const Color(0xFFE6F3F1),
-                      imageUrl: widget.profile.avatarUrl,
-                      image: _avatarBytes == null
-                          ? null
-                          : MemoryImage(_avatarBytes!),
-                    ),
-                    const SizedBox(height: 10),
-                    TextButton.icon(
-                      onPressed: _saving ? null : _pickAvatar,
-                      icon: const Icon(Icons.photo_camera_outlined),
-                      label: const Text('Change profile picture'),
-                    ),
-                  ],
                 ),
               ),
               const SizedBox(height: 10),
