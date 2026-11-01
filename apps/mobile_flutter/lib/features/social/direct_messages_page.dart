@@ -752,6 +752,7 @@ List<PublicProfilePreview> _filteredMessageableProfiles({
         displayName: profile.displayName,
         handle: profile.handle,
         avatarUrl: profile.avatarUrl,
+        coverUrl: profile.coverUrl,
         premium: profile.premium,
         subtitle: profile.subtitle,
         location: profile.location,
@@ -817,21 +818,10 @@ class _NewMessagePersonTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 7),
         child: Row(
           children: [
-            CircleAvatar(
-              radius: 25,
-              backgroundColor: tydesAvatarBackground,
-              backgroundImage: profile.avatarUrl == null
-                  ? null
-                  : NetworkImage(profile.avatarUrl!),
-              child: profile.avatarUrl == null
-                  ? Text(
-                      _initialFor(profile.displayName),
-                      style: const TextStyle(
-                        color: tydesAvatarForeground,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    )
-                  : null,
+            TydesProfileAvatar(
+              size: 50,
+              displayName: profile.displayName,
+              imageUrl: profile.avatarUrl,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1585,22 +1575,10 @@ class _SharedPostPreview extends ConsumerWidget {
                   const SizedBox(height: 10),
                   Row(
                     children: [
-                      CircleAvatar(
-                        radius: 16,
-                        backgroundColor: tydesAvatarBackground,
-                        backgroundImage:
-                            message.sharedPostAuthorAvatarUrl == null
-                            ? null
-                            : NetworkImage(message.sharedPostAuthorAvatarUrl!),
-                        child: message.sharedPostAuthorAvatarUrl == null
-                            ? Text(
-                                _initialFor(message.sharedPostAuthor ?? 'S'),
-                                style: const TextStyle(
-                                  color: tydesAvatarForeground,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              )
-                            : null,
+                      TydesProfileAvatar(
+                        size: 32,
+                        displayName: message.sharedPostAuthor ?? 'Surfer',
+                        imageUrl: message.sharedPostAuthorAvatarUrl,
                       ),
                       const SizedBox(width: 10),
                       Expanded(

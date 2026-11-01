@@ -16,12 +16,14 @@ final _publicProfileBundleProvider = FutureProvider((ref) async {
     repository.fetchFriends(),
     repository.fetchSocialPosts(),
     repository.fetchSpots(),
+    repository.fetchSocialProfiles(),
   ]);
   return _PublicProfileBundle(
     me: results[0] as UserProfile,
     friends: results[1] as List<FriendProfileModel>,
     posts: results[2] as List<SocialPostModel>,
     spots: results[3] as List<SpotModel>,
+    socialProfiles: results[4] as List<SocialProfileModel>,
   );
 });
 
@@ -359,120 +361,103 @@ class _PublicProfileHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF064D63), Color(0xFF0AAFB3), Color(0xFFE9B872)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(30),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
-                ),
-                child: CircleAvatar(
-                  radius: 34,
-                  backgroundColor: tydesAvatarBackground,
-                  backgroundImage: profile.avatarUrl == null
-                      ? null
-                      : NetworkImage(profile.avatarUrl!),
-                  child: profile.avatarUrl == null
-                      ? Text(
-                          tydesProfileInitial(profile.displayName),
-                          style: const TextStyle(
-                            fontSize: 30,
-                            fontWeight: FontWeight.w900,
-                            color: tydesAvatarForeground,
-                          ),
-                        )
-                      : null,
-                ),
-              ),
-              const SizedBox(width: 18),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 56),
-                  child: ProfileStatsRow(
-                    children: [
-                      _ProfileStat(
-                        value: postsCount.toString(),
-                        label: 'Posts',
-                      ),
-                      _ProfileStat(
-                        value: friends.length.toString(),
-                        label: 'Following',
-                        onTap: () => showProfilePeopleSheet(
-                          context: context,
-                          title: 'Following',
-                          people: friends,
-                          onProfileTap: onPersonTap,
-                          emptyText: 'Not following anyone yet.',
-                        ),
-                      ),
-                      _ProfileStat(
-                        value: followers.length.toString(),
-                        label: 'Followers',
-                        onTap: () => showProfilePeopleSheet(
-                          context: context,
-                          title: 'Followers',
-                          people: followers,
-                          onProfileTap: onPersonTap,
-                          emptyText: 'No followers yet.',
-                        ),
-                      ),
-                    ],
+    return TydesProfileCover(
+      coverUrl: profile.coverUrl,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: TydesProfileAvatar(
+                    size: 68,
+                    displayName: profile.displayName,
+                    imageUrl: profile.avatarUrl,
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Flexible(
-                child: Text(
-                  profile.displayName,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.headlineMedium?.copyWith(color: Colors.white),
-                  overflow: TextOverflow.ellipsis,
+                const SizedBox(width: 18),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 56),
+                    child: ProfileStatsRow(
+                      children: [
+                        _ProfileStat(
+                          value: postsCount.toString(),
+                          label: 'Posts',
+                        ),
+                        _ProfileStat(
+                          value: friends.length.toString(),
+                          label: 'Following',
+                          onTap: () => showProfilePeopleSheet(
+                            context: context,
+                            title: 'Following',
+                            people: friends,
+                            onProfileTap: onPersonTap,
+                            emptyText: 'Not following anyone yet.',
+                          ),
+                        ),
+                        _ProfileStat(
+                          value: followers.length.toString(),
+                          label: 'Followers',
+                          onTap: () => showProfilePeopleSheet(
+                            context: context,
+                            title: 'Followers',
+                            people: followers,
+                            onProfileTap: onPersonTap,
+                            emptyText: 'No followers yet.',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-              if (profile.premium) ...[
-                const SizedBox(width: 8),
-                const Icon(Icons.verified_rounded, color: Color(0xFF8DE7DF)),
               ],
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            [
-              if (profile.handle != null && profile.handle!.isNotEmpty)
-                '@${profile.handle}',
-              profile.location ?? 'Bali',
-              _skillLabel(profile.surfSkill),
-            ].join(' • '),
-            style: const TextStyle(color: Colors.white70),
-          ),
-          if (profile.subtitle != null && profile.subtitle!.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(
-              profile.subtitle!,
-              style: const TextStyle(color: Colors.white),
             ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    profile.displayName,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.headlineMedium?.copyWith(color: Colors.white),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (profile.premium) ...[
+                  const SizedBox(width: 8),
+                  const Icon(Icons.verified_rounded, color: Color(0xFF8DE7DF)),
+                ],
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              [
+                if (profile.handle != null && profile.handle!.isNotEmpty)
+                  '@${profile.handle}',
+                profile.location ?? 'Bali',
+                _skillLabel(profile.surfSkill),
+              ].join(' • '),
+              style: const TextStyle(color: Colors.white70),
+            ),
+            if (profile.subtitle != null && profile.subtitle!.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                profile.subtitle!,
+                style: const TextStyle(color: Colors.white),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -556,20 +541,10 @@ class _PublicProfilePostCard extends StatelessWidget {
             ],
             Row(
               children: [
-                CircleAvatar(
-                  backgroundColor: tydesAvatarBackground,
-                  backgroundImage: profile.avatarUrl == null
-                      ? null
-                      : NetworkImage(profile.avatarUrl!),
-                  child: profile.avatarUrl == null
-                      ? Text(
-                          tydesProfileInitial(profile.displayName),
-                          style: const TextStyle(
-                            color: tydesAvatarForeground,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        )
-                      : null,
+                TydesProfileAvatar(
+                  size: 40,
+                  displayName: profile.displayName,
+                  imageUrl: profile.avatarUrl,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -681,12 +656,14 @@ class _PublicProfileBundle {
     required this.friends,
     required this.posts,
     required this.spots,
+    required this.socialProfiles,
   });
 
   final UserProfile me;
   final List<FriendProfileModel> friends;
   final List<SocialPostModel> posts;
   final List<SpotModel> spots;
+  final List<SocialProfileModel> socialProfiles;
 }
 
 PublicProfilePreview _buildResolvedProfile(
@@ -700,6 +677,7 @@ PublicProfilePreview _buildResolvedProfile(
       displayName: data.me.displayName,
       handle: data.me.handle,
       avatarUrl: data.me.avatarUrl,
+      coverUrl: data.me.coverUrl,
       premium: data.me.premium,
       subtitle: data.me.bio,
       location: data.me.homeRegion,
@@ -709,28 +687,52 @@ PublicProfilePreview _buildResolvedProfile(
 
   final friend = _friendForId(data.friends, userId);
   final post = _firstPostForUser(data.posts, userId);
+  final socialProfile = _socialProfileForId(data.socialProfiles, userId);
   return PublicProfilePreview(
     userId: userId,
     displayName:
         seed?.displayName ??
+        socialProfile?.displayName ??
         friend?.displayName ??
         post?.authorName ??
         'Surfer',
     handle:
         seed?.handle ??
+        socialProfile?.handle ??
         post?.authorHandle ??
         _handleFromName(friend?.displayName),
-    avatarUrl: seed?.avatarUrl ?? post?.authorAvatarUrl,
-    premium: seed?.premium ?? post?.authorPremium ?? false,
-    subtitle: friend?.vibe ?? seed?.subtitle ?? 'Surf traveler on Tydes.',
-    location: friend?.homeRegion ?? seed?.location ?? 'Bali',
-    surfSkill: seed?.surfSkill ?? 'beginner',
+    avatarUrl:
+        seed?.avatarUrl ?? socialProfile?.avatarUrl ?? post?.authorAvatarUrl,
+    coverUrl: seed?.coverUrl ?? socialProfile?.coverUrl,
+    premium:
+        seed?.premium ?? socialProfile?.premium ?? post?.authorPremium ?? false,
+    subtitle:
+        friend?.vibe ??
+        seed?.subtitle ??
+        socialProfile?.subtitle ??
+        'Surf traveler on Tydes.',
+    location:
+        friend?.homeRegion ??
+        seed?.location ??
+        socialProfile?.location ??
+        'Bali',
+    surfSkill: seed?.surfSkill ?? socialProfile?.surfSkill ?? 'beginner',
   );
 }
 
 FriendProfileModel? _friendForId(List<FriendProfileModel> friends, String id) {
   for (final friend in friends) {
     if (friend.id == id) return friend;
+  }
+  return null;
+}
+
+SocialProfileModel? _socialProfileForId(
+  List<SocialProfileModel> profiles,
+  String id,
+) {
+  for (final profile in profiles) {
+    if (profile.userId == id) return profile;
   }
   return null;
 }
@@ -820,6 +822,7 @@ List<ProfilePerson> _profileFriends(
           displayName: data.me.displayName,
           handle: data.me.handle,
           avatarUrl: data.me.avatarUrl,
+          coverUrl: data.me.coverUrl,
           premium: data.me.premium,
           subtitle: data.me.bio,
         ),
@@ -847,6 +850,7 @@ List<ProfilePerson> _profileFollowers(
           displayName: data.me.displayName,
           handle: data.me.handle,
           avatarUrl: data.me.avatarUrl,
+          coverUrl: data.me.coverUrl,
           premium: data.me.premium,
           subtitle: data.me.bio,
         ),
@@ -887,6 +891,7 @@ PublicProfilePreview _profileForUserId(
       displayName: data.me.displayName,
       handle: data.me.handle,
       avatarUrl: data.me.avatarUrl,
+      coverUrl: data.me.coverUrl,
       premium: data.me.premium,
       subtitle: data.me.bio,
       location: data.me.homeRegion,

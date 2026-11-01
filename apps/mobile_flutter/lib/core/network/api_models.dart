@@ -7,6 +7,7 @@ class UserProfile {
     required this.bio,
     required this.surfSkill,
     required this.avatarUrl,
+    this.coverUrl,
     required this.homeRegion,
     required this.locale,
     required this.premium,
@@ -24,6 +25,7 @@ class UserProfile {
   final String bio;
   final String surfSkill;
   final String? avatarUrl;
+  final String? coverUrl;
   final String homeRegion;
   final String locale;
   final bool premium;
@@ -60,6 +62,8 @@ class UserProfile {
     String? bio,
     String? surfSkill,
     String? avatarUrl,
+    String? coverUrl,
+    bool clearCoverUrl = false,
     String? homeRegion,
     String? locale,
     bool? premium,
@@ -77,6 +81,7 @@ class UserProfile {
     bio: bio ?? this.bio,
     surfSkill: surfSkill ?? this.surfSkill,
     avatarUrl: avatarUrl ?? this.avatarUrl,
+    coverUrl: clearCoverUrl ? null : (coverUrl ?? this.coverUrl),
     homeRegion: homeRegion ?? this.homeRegion,
     locale: locale ?? this.locale,
     premium: premium ?? this.premium,
@@ -98,6 +103,7 @@ class UserProfile {
     bio: json['bio'] as String? ?? '',
     surfSkill: json['surf_skill'] as String? ?? '',
     avatarUrl: json['avatar_url'] as String?,
+    coverUrl: json['cover_url'] as String?,
     homeRegion: json['home_region'] as String,
     locale: json['locale'] as String,
     premium: json['premium'] as bool? ?? false,
@@ -888,6 +894,7 @@ class SocialProfileModel {
     required this.displayName,
     required this.handle,
     required this.avatarUrl,
+    this.coverUrl,
     required this.premium,
     required this.location,
     required this.subtitle,
@@ -898,6 +905,7 @@ class SocialProfileModel {
   final String displayName;
   final String? handle;
   final String? avatarUrl;
+  final String? coverUrl;
   final bool premium;
   final String? location;
   final String? subtitle;
@@ -909,6 +917,7 @@ class SocialProfileModel {
         displayName: json['display_name'] as String,
         handle: json['handle'] as String?,
         avatarUrl: json['avatar_url'] as String?,
+        coverUrl: json['cover_url'] as String?,
         premium: json['premium'] as bool? ?? false,
         location: json['location'] as String?,
         subtitle: json['subtitle'] as String?,

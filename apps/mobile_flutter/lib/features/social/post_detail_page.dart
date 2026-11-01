@@ -89,20 +89,10 @@ class _PostDetailCard extends StatelessWidget {
                     '/profile/${profile.userId}',
                     extra: profile,
                   ),
-                  child: CircleAvatar(
-                    backgroundColor: tydesAvatarBackground,
-                    backgroundImage: profile.avatarUrl == null
-                        ? null
-                        : NetworkImage(profile.avatarUrl!),
-                    child: profile.avatarUrl == null
-                        ? Text(
-                            tydesProfileInitial(profile.displayName),
-                            style: const TextStyle(
-                              color: tydesAvatarForeground,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          )
-                        : null,
+                  child: TydesProfileAvatar(
+                    size: 40,
+                    displayName: profile.displayName,
+                    imageUrl: profile.avatarUrl,
                   ),
                 ),
                 const SizedBox(width: 12),

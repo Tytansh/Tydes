@@ -354,21 +354,10 @@ class _UserSearchResultTile extends ConsumerWidget {
           padding: const EdgeInsets.all(14),
           child: Row(
             children: [
-              CircleAvatar(
-                radius: 24,
-                backgroundColor: tydesAvatarBackground,
-                backgroundImage: profile.avatarUrl == null
-                    ? null
-                    : NetworkImage(profile.avatarUrl!),
-                child: profile.avatarUrl == null
-                    ? Text(
-                        _initialFor(profile.displayName),
-                        style: const TextStyle(
-                          color: tydesAvatarForeground,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      )
-                    : null,
+              TydesProfileAvatar(
+                size: 48,
+                displayName: profile.displayName,
+                imageUrl: profile.avatarUrl,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -490,6 +479,7 @@ List<PublicProfilePreview> _searchProfiles({
         displayName: profile.displayName,
         handle: profile.handle,
         avatarUrl: profile.avatarUrl,
+        coverUrl: profile.coverUrl,
         premium: profile.premium,
         subtitle: profile.subtitle,
         location: profile.location,
@@ -610,10 +600,4 @@ void _openSearchProfile(
 String? _handleFromName(String? name) {
   if (name == null || name.trim().isEmpty) return null;
   return name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
-}
-
-String _initialFor(String name) {
-  final trimmed = name.trim();
-  if (trimmed.isEmpty) return '?';
-  return trimmed.characters.first.toUpperCase();
 }

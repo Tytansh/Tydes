@@ -80,6 +80,32 @@ def test_upload_ledger_enforces_per_user_retained_storage_limit():
         ledger.reserve(_reservation(2), limits)
 
 
+def test_profile_media_can_be_found_by_public_url_and_retained():
+    ledger = MediaUploadLedger()
+    limits = UploadLimits(
+        uploads_per_minute=10,
+        videos_per_user_day=10,
+        media_per_user_day=10,
+        user_bytes_per_day=1_000,
+        user_retained_bytes=10_000,
+        global_bytes_per_day=10_000,
+        global_uploads_per_day=100,
+        global_retained_bytes=10_000,
+    )
+    reservation = _reservation(7, media_type="photo")
+    ledger.reserve(reservation, limits)
+    ledger.set_status(reservation.id, reservation.user_id, "complete")
+
+    media_id = ledger.media_id_for_url(
+        reservation.user_id,
+        reservation.thumbnail_public_url,
+    )
+    ledger.mark_used(reservation.user_id, [media_id])
+
+    assert media_id == reservation.id
+    assert ledger.get(reservation.id, reservation.user_id).status == "used"
+
+
 def test_cleanup_deletes_abandoned_completed_uploads(monkeypatch):
     ledger = MediaUploadLedger()
     limits = UploadLimits(

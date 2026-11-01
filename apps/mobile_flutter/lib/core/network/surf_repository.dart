@@ -294,6 +294,9 @@ class SurfRepository {
     required String surfSkill,
     required String homeRegion,
     String? avatarUrl,
+    String? avatarMediaId,
+    String? coverUrl,
+    String? coverMediaId,
   }) async {
     ensureAllowedContent([displayName, bio, homeRegion]);
     try {
@@ -306,6 +309,9 @@ class SurfRepository {
           'surf_skill': surfSkill,
           'home_region': homeRegion,
           'avatar_url': avatarUrl,
+          'avatar_media_id': avatarMediaId,
+          'cover_url': coverUrl,
+          'cover_media_id': coverMediaId,
         },
       );
       final profile = UserProfile.fromJson(response.data!);
@@ -325,6 +331,8 @@ class SurfRepository {
         surfSkill: surfSkill,
         homeRegion: homeRegion,
         avatarUrl: avatarUrl,
+        coverUrl: coverUrl,
+        clearCoverUrl: coverUrl == null,
       );
       return DemoSeed.me;
     }

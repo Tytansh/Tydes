@@ -421,6 +421,7 @@ class DemoStore:
         surf_skill: str,
         home_region: str,
         avatar_url: str | None,
+        cover_url: str | None,
     ) -> User:
         self.user.display_name = display_name
         self.user.handle = handle
@@ -428,6 +429,7 @@ class DemoStore:
         self.user.surf_skill = surf_skill
         self.user.home_region = home_region
         self.user.avatar_url = avatar_url
+        self.user.cover_url = cover_url
         for post in self.posts:
             if post.user_id == self.user.id:
                 post.author_name = display_name
@@ -1168,6 +1170,7 @@ class DemoStore:
                     "display_name": display_name,
                     "handle": handle,
                     "avatar_url": user.avatar_url,
+                    "cover_url": user.cover_url,
                     "premium": user.premium,
                     "location": user.home_region or None,
                     "subtitle": "Tydes surfer",
@@ -1191,6 +1194,7 @@ class DemoStore:
                     "display_name": "Blocked surfer",
                     "handle": None,
                     "avatar_url": None,
+                    "cover_url": None,
                     "premium": False,
                     "location": None,
                     "subtitle": "Blocked on Tydes",
@@ -1221,6 +1225,7 @@ class DemoStore:
                     "display_name": display_name,
                     "handle": handle or None,
                     "avatar_url": user.avatar_url,
+                    "cover_url": user.cover_url,
                     "premium": user.premium,
                     "location": user.home_region or None,
                     "subtitle": "Blocked on Tydes",

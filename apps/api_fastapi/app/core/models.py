@@ -37,6 +37,7 @@ class User(BaseModel):
     bio: str = "Looking for clean waves, easy travel days, and people to paddle out with."
     surf_skill: Literal["", "beginner", "intermediate", "pro"] = "intermediate"
     avatar_url: str | None = None
+    cover_url: str | None = None
     home_region: str
     locale: str
     premium: bool = False

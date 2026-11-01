@@ -41,12 +41,129 @@ String tydesProfileInitial(String? name, {String fallback = '?'}) {
   return trimmed.characters.first.toUpperCase();
 }
 
+class TydesProfileAvatar extends StatelessWidget {
+  const TydesProfileAvatar({
+    super.key,
+    required this.displayName,
+    required this.size,
+    this.imageUrl,
+    this.image,
+    this.backgroundColor = tydesAvatarBackground,
+    this.foregroundColor = tydesAvatarForeground,
+  });
+
+  final String displayName;
+  final double size;
+  final String? imageUrl;
+  final ImageProvider<Object>? image;
+  final Color backgroundColor;
+  final Color foregroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final fontSize = size * 0.42;
+    return SizedBox.square(
+      dimension: size,
+      child: ClipOval(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ColoredBox(
+              color: backgroundColor,
+              child: Center(
+                child: Text(
+                  tydesProfileInitial(displayName),
+                  style: TextStyle(
+                    fontSize: fontSize,
+                    fontWeight: FontWeight.w900,
+                    color: foregroundColor,
+                  ),
+                ),
+              ),
+            ),
+            if (image != null)
+              Image(
+                image: image!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => const SizedBox.shrink(),
+              )
+            else if (imageUrl != null && imageUrl!.trim().isNotEmpty)
+              Image.network(
+                imageUrl!,
+                fit: BoxFit.cover,
+                webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+                errorBuilder: (_, _, _) => const SizedBox.shrink(),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class TydesProfileCover extends StatelessWidget {
+  const TydesProfileCover({
+    super.key,
+    required this.child,
+    this.coverUrl,
+    this.borderRadius = 30,
+  });
+
+  final Widget child;
+  final String? coverUrl;
+  final double borderRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasCover = coverUrl != null && coverUrl!.trim().isNotEmpty;
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF064D63), Color(0xFF0AAFB3), Color(0xFFE9B872)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(borderRadius),
+      ),
+      child: Stack(
+        children: [
+          if (hasCover)
+            Positioned.fill(
+              child: Image.network(
+                coverUrl!,
+                fit: BoxFit.cover,
+                alignment: Alignment.center,
+                webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+                errorBuilder: (_, _, _) => const SizedBox.shrink(),
+              ),
+            ),
+          if (hasCover)
+            const Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xB3053F51), Color(0x5900212A)],
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                  ),
+                ),
+              ),
+            ),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
 class PublicProfilePreview {
   const PublicProfilePreview({
     required this.userId,
     required this.displayName,
     this.handle,
     this.avatarUrl,
+    this.coverUrl,
     this.premium = false,
     this.subtitle,
     this.location,
@@ -57,6 +174,7 @@ class PublicProfilePreview {
   final String displayName;
   final String? handle;
   final String? avatarUrl;
+  final String? coverUrl;
   final bool premium;
   final String? subtitle;
   final String? location;
@@ -521,20 +639,10 @@ class _ProfilePersonTile extends StatelessWidget {
         ),
         child: Row(
           children: [
-            CircleAvatar(
-              backgroundColor: tydesAvatarBackground,
-              backgroundImage: profile.avatarUrl == null
-                  ? null
-                  : NetworkImage(profile.avatarUrl!),
-              child: profile.avatarUrl == null
-                  ? Text(
-                      tydesProfileInitial(profile.displayName),
-                      style: const TextStyle(
-                        color: tydesAvatarForeground,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    )
-                  : null,
+            TydesProfileAvatar(
+              size: 40,
+              displayName: profile.displayName,
+              imageUrl: profile.avatarUrl,
             ),
             const SizedBox(width: 12),
             Expanded(

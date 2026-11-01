@@ -20,6 +20,7 @@ os.environ.setdefault(
 from app.main import app
 from app.core import email_sender
 from app.core.models import Alert, SurfWindowForecast, SurfWindowHour, TideForecast, Trip
+from app.core.media_uploads import MediaUploadLedger, UploadLimits, UploadReservation
 from app.core.persistent_cache import CachedJson
 from app.core.rate_limit import api_rate_limiter
 from app.core.store import store
@@ -65,8 +66,84 @@ def _signup_access_token(monkeypatch, email: str) -> str:
             "locale": "en",
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     return response.json()["session"]["access_token"]
+
+
+def test_profile_picture_and_cover_uploads_are_retained(monkeypatch):
+    token = _signup_access_token(monkeypatch, "profile-media@example.com")
+    profile = client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()
+    now = datetime.now(timezone.utc)
+    ledger = MediaUploadLedger()
+    limits = UploadLimits(
+        uploads_per_minute=10,
+        videos_per_user_day=10,
+        media_per_user_day=10,
+        user_bytes_per_day=10_000,
+        user_retained_bytes=100_000,
+        global_bytes_per_day=100_000,
+        global_uploads_per_day=100,
+        global_retained_bytes=100_000,
+    )
+    avatar = UploadReservation(
+        id="media_avatar",
+        user_id=profile["id"],
+        client_ip_hash="ip",
+        media_type="photo",
+        content_type="image/jpeg",
+        thumbnail_content_type="image/jpeg",
+        expected_bytes=100,
+        expected_thumbnail_bytes=50,
+        pending_name="pending/avatar.jpg",
+        final_name="media/avatar.jpg",
+        pending_thumbnail_name="pending/avatar_thumb.jpg",
+        final_thumbnail_name="media/avatar_thumb.jpg",
+        public_url="https://media.test/avatar.jpg",
+        thumbnail_public_url="https://media.test/avatar_thumb.jpg",
+        status="complete",
+        created_at=now,
+        expires_at=now + timedelta(minutes=5),
+    )
+    cover = UploadReservation(
+        **{
+            **avatar.__dict__,
+            "id": "media_cover",
+            "pending_name": "pending/cover.jpg",
+            "final_name": "media/cover.jpg",
+            "pending_thumbnail_name": "pending/cover_thumb.jpg",
+            "final_thumbnail_name": "media/cover_thumb.jpg",
+            "public_url": "https://media.test/cover.jpg",
+            "thumbnail_public_url": "https://media.test/cover_thumb.jpg",
+        }
+    )
+    ledger.reserve(avatar, limits)
+    ledger.reserve(cover, limits)
+    monkeypatch.setattr("app.modules.users.router.upload_ledger", ledger)
+
+    response = client.put(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "display_name": "Profile Media",
+            "handle": "profilemedia",
+            "bio": profile["bio"],
+            "surf_skill": profile["surf_skill"],
+            "home_region": profile["home_region"],
+            "avatar_url": avatar.thumbnail_public_url,
+            "avatar_media_id": avatar.id,
+            "cover_url": cover.public_url,
+            "cover_media_id": cover.id,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["avatar_url"] == avatar.thumbnail_public_url
+    assert response.json()["cover_url"] == cover.public_url
+    assert ledger.get(avatar.id, profile["id"]).status == "used"
+    assert ledger.get(cover.id, profile["id"]).status == "used"
 
 
 def test_health():

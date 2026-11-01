@@ -154,6 +154,35 @@ class MediaUploadLedger:
         for media_id in media_ids:
             self.set_status(media_id, user_id, "used")
 
+    def media_id_for_url(self, user_id: str, url: str | None) -> str | None:
+        if not url:
+            return None
+        if self.database_url is not None:
+            with self._connect() as connection:
+                row = connection.execute(
+                    """
+                    SELECT id FROM media_upload_reservations
+                    WHERE user_id = %s
+                      AND (public_url = %s OR thumbnail_public_url = %s)
+                      AND status IN ('complete', 'used')
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (user_id, url, url),
+                ).fetchone()
+            return str(row["id"]) if row is not None else None
+        with self._lock:
+            matches = [
+                reservation
+                for reservation in self._memory.values()
+                if reservation.user_id == user_id
+                and url in {reservation.public_url, reservation.thumbnail_public_url}
+                and reservation.status in {"complete", "used"}
+            ]
+        if not matches:
+            return None
+        return max(matches, key=lambda item: item.created_at).id
+
     def queue_media_deletion(
         self,
         user_id: str,

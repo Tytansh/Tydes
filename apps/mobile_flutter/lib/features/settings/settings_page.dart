@@ -403,178 +403,161 @@ class _ProfileHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF064D63), Color(0xFF0AAFB3), Color(0xFFE9B872)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(30),
-      ),
-      child: Stack(
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2),
-                    ),
-                    child: CircleAvatar(
-                      radius: 34,
-                      backgroundColor: Colors.white,
-                      backgroundImage: profile.avatarUrl == null
-                          ? null
-                          : NetworkImage(profile.avatarUrl!),
-                      child: profile.avatarUrl == null
-                          ? Text(
-                              tydesProfileInitial(profile.displayName),
-                              style: const TextStyle(
-                                fontSize: 30,
-                                fontWeight: FontWeight.w900,
-                                color: Color(0xFF087E8B),
-                              ),
-                            )
-                          : null,
-                    ),
-                  ),
-                  const SizedBox(width: 18),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 56),
-                      child: ProfileStatsRow(
-                        children: [
-                          _ProfileStat(
-                            value: postsCount.toString(),
-                            label: 'Posts',
-                          ),
-                          _ProfileStat(
-                            value: friends.length.toString(),
-                            label: 'Following',
-                            onTap: () => showProfilePeopleSheet(
-                              context: context,
-                              title: 'Following',
-                              people: friends,
-                              onProfileTap: (person) => context.push(
-                                '/profile/${person.userId}',
-                                extra: person,
-                              ),
-                              emptyText: 'Not following anyone yet.',
-                            ),
-                          ),
-                          _ProfileStat(
-                            value: followers.length.toString(),
-                            label: 'Followers',
-                            onTap: () => showProfilePeopleSheet(
-                              context: context,
-                              title: 'Followers',
-                              people: followers,
-                              onProfileTap: (person) => context.push(
-                                '/profile/${person.userId}',
-                                extra: person,
-                              ),
-                              emptyText: 'No followers yet.',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      profile.displayName,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.headlineMedium?.copyWith(color: Colors.white),
-                    ),
-                  ),
-                  if (profile.premium) ...[
-                    const SizedBox(width: 8),
+    return TydesProfileCover(
+      coverUrl: profile.coverUrl,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Stack(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
+                      padding: const EdgeInsets.all(3),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.24),
-                        ),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
                       ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.verified_rounded,
-                            size: 14,
-                            color: Colors.white,
-                          ),
-                          SizedBox(width: 4),
-                          Text(
-                            'Premium',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12,
+                      child: TydesProfileAvatar(
+                        size: 68,
+                        displayName: profile.displayName,
+                        imageUrl: profile.avatarUrl,
+                        backgroundColor: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 18),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 56),
+                        child: ProfileStatsRow(
+                          children: [
+                            _ProfileStat(
+                              value: postsCount.toString(),
+                              label: 'Posts',
                             ),
-                          ),
-                        ],
+                            _ProfileStat(
+                              value: friends.length.toString(),
+                              label: 'Following',
+                              onTap: () => showProfilePeopleSheet(
+                                context: context,
+                                title: 'Following',
+                                people: friends,
+                                onProfileTap: (person) => context.push(
+                                  '/profile/${person.userId}',
+                                  extra: person,
+                                ),
+                                emptyText: 'Not following anyone yet.',
+                              ),
+                            ),
+                            _ProfileStat(
+                              value: followers.length.toString(),
+                              label: 'Followers',
+                              onTap: () => showProfilePeopleSheet(
+                                context: context,
+                                title: 'Followers',
+                                people: followers,
+                                onProfileTap: (person) => context.push(
+                                  '/profile/${person.userId}',
+                                  extra: person,
+                                ),
+                                emptyText: 'No followers yet.',
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                '@${profile.handle} • ${profile.homeRegion} • ${_skillLabel(profile.surfSkill)}',
-                style: const TextStyle(color: Colors.white70),
-              ),
-              const SizedBox(height: 12),
-              Text(profile.bio, style: const TextStyle(color: Colors.white)),
-            ],
-          ),
-          Positioned(
-            top: 0,
-            right: 0,
-            child: Column(
-              children: [
-                _ProfileHeroIconButton(
-                  onPressed: onSettingsPressed,
-                  tooltip: 'Profile settings',
-                  icon: Icons.settings_outlined,
                 ),
-                const SizedBox(height: 8),
-                _ProfileHeroIconButton(
-                  onPressed: onMessagesPressed,
-                  tooltip: 'Direct messages',
-                  icon: Icons.mail_outline_rounded,
-                  badgeCount: unreadMessageThreads,
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        profile.displayName,
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(color: Colors.white),
+                      ),
+                    ),
+                    if (profile.premium) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.24),
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.verified_rounded,
+                              size: 14,
+                              color: Colors.white,
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              'Premium',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-                const SizedBox(height: 8),
-                _ProfileHeroIconButton(
-                  onPressed: onNotificationsPressed,
-                  tooltip: 'Notifications',
-                  icon: Icons.notifications_none_rounded,
-                  badgeCount: unreadNotifications,
+                const SizedBox(height: 6),
+                Text(
+                  '@${profile.handle} • ${profile.homeRegion} • ${_skillLabel(profile.surfSkill)}',
+                  style: const TextStyle(color: Colors.white70),
                 ),
+                const SizedBox(height: 12),
+                Text(profile.bio, style: const TextStyle(color: Colors.white)),
               ],
             ),
-          ),
-        ],
+            Positioned(
+              top: 0,
+              right: 0,
+              child: Column(
+                children: [
+                  _ProfileHeroIconButton(
+                    onPressed: onSettingsPressed,
+                    tooltip: 'Profile settings',
+                    icon: Icons.settings_outlined,
+                  ),
+                  const SizedBox(height: 8),
+                  _ProfileHeroIconButton(
+                    onPressed: onMessagesPressed,
+                    tooltip: 'Direct messages',
+                    icon: Icons.mail_outline_rounded,
+                    badgeCount: unreadMessageThreads,
+                  ),
+                  const SizedBox(height: 8),
+                  _ProfileHeroIconButton(
+                    onPressed: onNotificationsPressed,
+                    tooltip: 'Notifications',
+                    icon: Icons.notifications_none_rounded,
+                    badgeCount: unreadNotifications,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -760,6 +743,7 @@ PublicProfilePreview _profilePreviewFromUserId(
       displayName: profile.displayName,
       handle: profile.handle,
       avatarUrl: profile.avatarUrl,
+      coverUrl: profile.coverUrl,
       premium: profile.premium,
       subtitle: profile.subtitle,
       location: profile.location,
@@ -1118,20 +1102,10 @@ class _BlockedUserTile extends ConsumerWidget {
         padding: const EdgeInsets.all(14),
         child: Row(
           children: [
-            CircleAvatar(
-              backgroundColor: tydesAvatarBackground,
-              backgroundImage: profile.avatarUrl == null
-                  ? null
-                  : NetworkImage(profile.avatarUrl!),
-              child: profile.avatarUrl == null
-                  ? Text(
-                      tydesProfileInitial(profile.displayName),
-                      style: const TextStyle(
-                        color: tydesAvatarForeground,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    )
-                  : null,
+            TydesProfileAvatar(
+              size: 40,
+              displayName: profile.displayName,
+              imageUrl: profile.avatarUrl,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1194,6 +1168,7 @@ List<PublicProfilePreview> _blockedProfilePreviews(
       displayName: profile.displayName,
       handle: profile.handle,
       avatarUrl: profile.avatarUrl,
+      coverUrl: profile.coverUrl,
       premium: profile.premium,
       subtitle: profile.subtitle,
       location: profile.location,
@@ -1226,6 +1201,9 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
   String? _handleError;
   XFile? _avatarImage;
   Uint8List? _avatarBytes;
+  XFile? _coverImage;
+  Uint8List? _coverBytes;
+  bool _removeCover = false;
   bool _saving = false;
 
   @override
@@ -1271,6 +1249,7 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
     });
     try {
       String? avatarUrl = widget.profile.avatarUrl;
+      String? avatarMediaId;
       final avatarImage = _avatarImage;
       if (avatarImage != null) {
         final thumbnail = await _createProfileThumbnail(avatarImage);
@@ -1278,6 +1257,31 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
             .read(surfRepositoryProvider)
             .uploadPostPhoto(image: avatarImage, thumbnail: thumbnail);
         avatarUrl = uploaded.thumbnailUrl;
+        avatarMediaId = uploaded.id;
+      }
+      String? coverUrl = _removeCover ? null : widget.profile.coverUrl;
+      String? coverMediaId;
+      final coverImage = _coverImage;
+      if (coverImage != null) {
+        final cover = await _createProfileCover(
+          coverImage,
+          width: 1600,
+          height: 600,
+          quality: 80,
+          prefix: 'profile_cover',
+        );
+        final coverThumbnail = await _createProfileCover(
+          coverImage,
+          width: 800,
+          height: 300,
+          quality: 72,
+          prefix: 'profile_cover_thumb',
+        );
+        final uploaded = await ref
+            .read(surfRepositoryProvider)
+            .uploadPostPhoto(image: cover, thumbnail: coverThumbnail);
+        coverUrl = uploaded.url;
+        coverMediaId = uploaded.id;
       }
       await ref
           .read(surfRepositoryProvider)
@@ -1288,6 +1292,9 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
             surfSkill: _skill,
             homeRegion: location,
             avatarUrl: avatarUrl,
+            avatarMediaId: avatarMediaId,
+            coverUrl: coverUrl,
+            coverMediaId: coverMediaId,
           );
       ref.invalidate(meProvider);
       ref.invalidate(socialPostsProvider);
@@ -1345,6 +1352,31 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
     });
   }
 
+  Future<void> _pickCover() async {
+    final picked = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 2400,
+      imageQuality: 88,
+      requestFullMetadata: false,
+    );
+    if (picked == null || !mounted) return;
+    final bytes = await picked.readAsBytes();
+    if (!mounted) return;
+    setState(() {
+      _coverImage = picked;
+      _coverBytes = bytes;
+      _removeCover = false;
+    });
+  }
+
+  void _clearCover() {
+    setState(() {
+      _coverImage = null;
+      _coverBytes = null;
+      _removeCover = true;
+    });
+  }
+
   Future<XFile> _createProfileThumbnail(XFile source) async {
     final bytes = await source.readAsBytes();
     final decoded = image_tools.decodeImage(bytes);
@@ -1353,6 +1385,52 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
     final resized = image_tools.copyResizeCropSquare(decoded, size: 500);
     final encoded = image_tools.encodeJpg(resized, quality: 72);
     final name = 'profile_thumb_${DateTime.now().microsecondsSinceEpoch}.jpg';
+    if (kIsWeb) {
+      return XFile.fromData(encoded, name: name, mimeType: 'image/jpeg');
+    }
+    final tempDir = await getTemporaryDirectory();
+    final path = '${tempDir.path}/$name';
+    final file = await File(path).writeAsBytes(encoded, flush: true);
+    return XFile(
+      file.path,
+      name: file.uri.pathSegments.last,
+      mimeType: 'image/jpeg',
+    );
+  }
+
+  Future<XFile> _createProfileCover(
+    XFile source, {
+    required int width,
+    required int height,
+    required int quality,
+    required String prefix,
+  }) async {
+    final bytes = await source.readAsBytes();
+    final decoded = image_tools.decodeImage(bytes);
+    if (decoded == null) return source;
+
+    final targetRatio = width / height;
+    final sourceRatio = decoded.width / decoded.height;
+    final cropWidth = sourceRatio > targetRatio
+        ? (decoded.height * targetRatio).round()
+        : decoded.width;
+    final cropHeight = sourceRatio > targetRatio
+        ? decoded.height
+        : (decoded.width / targetRatio).round();
+    final cropped = image_tools.copyCrop(
+      decoded,
+      x: ((decoded.width - cropWidth) / 2).round(),
+      y: ((decoded.height - cropHeight) / 2).round(),
+      width: cropWidth,
+      height: cropHeight,
+    );
+    final resized = image_tools.copyResize(
+      cropped,
+      width: width,
+      height: height,
+    );
+    final encoded = image_tools.encodeJpg(resized, quality: quality);
+    final name = '${prefix}_${DateTime.now().microsecondsSinceEpoch}.jpg';
     if (kIsWeb) {
       return XFile.fromData(encoded, name: name, mimeType: 'image/jpeg');
     }
@@ -1393,30 +1471,97 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 16),
+              AspectRatio(
+                aspectRatio: 8 / 3,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      const DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Color(0xFF064D63),
+                              Color(0xFF0AAFB3),
+                              Color(0xFFE9B872),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                        ),
+                      ),
+                      if (_coverBytes != null)
+                        Image.memory(_coverBytes!, fit: BoxFit.cover)
+                      else if (!_removeCover &&
+                          widget.profile.coverUrl != null &&
+                          widget.profile.coverUrl!.isNotEmpty)
+                        Image.network(
+                          widget.profile.coverUrl!,
+                          fit: BoxFit.cover,
+                          webHtmlElementStrategy:
+                              WebHtmlElementStrategy.fallback,
+                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                        ),
+                      const DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Color(0x5C003B48), Color(0x26001319)],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                          ),
+                        ),
+                      ),
+                      if (_coverBytes == null &&
+                          (_removeCover ||
+                              (widget.profile.coverUrl == null ||
+                                  widget.profile.coverUrl!.isEmpty)))
+                        const Center(
+                          child: Icon(
+                            Icons.landscape_outlined,
+                            color: Colors.white70,
+                            size: 36,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  TextButton.icon(
+                    onPressed: _saving ? null : _pickCover,
+                    icon: const Icon(Icons.add_photo_alternate_outlined),
+                    label: const Text('Change cover photo'),
+                  ),
+                  if (_coverBytes != null ||
+                      (!_removeCover && widget.profile.coverUrl != null))
+                    TextButton(
+                      onPressed: _saving ? null : _clearCover,
+                      child: const Text('Remove'),
+                    ),
+                ],
+              ),
+              const Center(
+                child: Text(
+                  'Best size: 1600 × 600. Tydes crops it to fit every screen.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: Color(0xFF65757A)),
+                ),
+              ),
+              const SizedBox(height: 16),
               Center(
                 child: Column(
                   children: [
-                    CircleAvatar(
-                      radius: 42,
+                    TydesProfileAvatar(
+                      size: 84,
+                      displayName: widget.profile.displayName,
                       backgroundColor: const Color(0xFFE6F3F1),
-                      backgroundImage: _avatarBytes != null
-                          ? MemoryImage(_avatarBytes!)
-                          : (widget.profile.avatarUrl != null
-                                    ? NetworkImage(widget.profile.avatarUrl!)
-                                    : null)
-                                as ImageProvider<Object>?,
-                      child:
-                          _avatarImage == null &&
-                              widget.profile.avatarUrl == null
-                          ? Text(
-                              tydesProfileInitial(widget.profile.displayName),
-                              style: const TextStyle(
-                                fontSize: 30,
-                                fontWeight: FontWeight.w900,
-                                color: Color(0xFF087E8B),
-                              ),
-                            )
-                          : null,
+                      imageUrl: widget.profile.avatarUrl,
+                      image: _avatarBytes == null
+                          ? null
+                          : MemoryImage(_avatarBytes!),
                     ),
                     const SizedBox(height: 10),
                     TextButton.icon(
@@ -1785,14 +1930,11 @@ class _ProfilePostCard extends StatelessWidget {
             ],
             Row(
               children: [
-                CircleAvatar(
+                TydesProfileAvatar(
+                  size: 40,
+                  displayName: authorName,
+                  imageUrl: authorAvatarUrl,
                   backgroundColor: Colors.white,
-                  backgroundImage: authorAvatarUrl == null
-                      ? null
-                      : NetworkImage(authorAvatarUrl),
-                  child: authorAvatarUrl == null
-                      ? Text(tydesProfileInitial(authorName))
-                      : null,
                 ),
                 const SizedBox(width: 12),
                 Expanded(

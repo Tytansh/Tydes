@@ -119,24 +119,10 @@ class _NotificationTile extends StatelessWidget {
               InkWell(
                 customBorder: const CircleBorder(),
                 onTap: () => _openNotificationProfile(context, item),
-                child: CircleAvatar(
-                  radius: 24,
-                  backgroundColor: tydesAvatarBackground,
-                  backgroundImage: item.profile?.avatarUrl == null
-                      ? null
-                      : NetworkImage(item.profile!.avatarUrl!),
-                  child: item.profile?.avatarUrl == null
-                      ? Text(
-                          tydesProfileInitial(
-                            item.profile?.displayName,
-                            fallback: 'T',
-                          ),
-                          style: const TextStyle(
-                            color: tydesAvatarForeground,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        )
-                      : null,
+                child: TydesProfileAvatar(
+                  size: 48,
+                  displayName: item.profile?.displayName ?? 'Tydes surfer',
+                  imageUrl: item.profile?.avatarUrl,
                 ),
               ),
               const SizedBox(width: 12),

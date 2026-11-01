@@ -503,20 +503,10 @@ class _PostCard extends ConsumerWidget {
                       profile: authorProfile,
                       isMe: isOwnPost,
                     ),
-                    child: CircleAvatar(
-                      backgroundColor: tydesAvatarBackground,
-                      backgroundImage: authorAvatarUrl == null
-                          ? null
-                          : NetworkImage(authorAvatarUrl),
-                      child: authorAvatarUrl == null
-                          ? Text(
-                              tydesProfileInitial(authorName),
-                              style: const TextStyle(
-                                color: tydesAvatarForeground,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            )
-                          : null,
+                    child: TydesProfileAvatar(
+                      size: 40,
+                      displayName: authorName,
+                      imageUrl: authorAvatarUrl,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -1259,22 +1249,12 @@ class _CommentPreviewTile extends ConsumerWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            radius: isReply ? 13 : 16,
-            backgroundColor: tydesAvatarBackground,
-            backgroundImage: comment.authorAvatarUrl == null
-                ? null
-                : NetworkImage(comment.authorAvatarUrl!),
-            child: comment.authorAvatarUrl == null
-                ? Text(
-                    initial,
-                    style: TextStyle(
-                      color: tydesAvatarForeground,
-                      fontSize: isReply ? 10 : 12,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  )
-                : null,
+          TydesProfileAvatar(
+            size: isReply ? 26 : 32,
+            displayName: comment.authorName.isEmpty
+                ? initial
+                : comment.authorName,
+            imageUrl: comment.authorAvatarUrl,
           ),
           const SizedBox(width: 9),
           Expanded(
@@ -5394,20 +5374,10 @@ class _GoingPersonTile extends StatelessWidget {
             ),
             child: Row(
               children: [
-                CircleAvatar(
-                  backgroundColor: tydesAvatarBackground,
-                  backgroundImage: profile.avatarUrl == null
-                      ? null
-                      : NetworkImage(profile.avatarUrl!),
-                  child: profile.avatarUrl == null
-                      ? Text(
-                          tydesProfileInitial(profile.displayName),
-                          style: const TextStyle(
-                            color: tydesAvatarForeground,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        )
-                      : null,
+                TydesProfileAvatar(
+                  size: 40,
+                  displayName: profile.displayName,
+                  imageUrl: profile.avatarUrl,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
