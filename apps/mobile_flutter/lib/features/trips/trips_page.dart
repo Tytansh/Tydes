@@ -12,6 +12,10 @@ final nextSwellProvider = FutureProvider(
   (ref) => ref.watch(surfRepositoryProvider).fetchNextSwell(),
 );
 
+final travelEventsProvider = FutureProvider(
+  (ref) => ref.watch(surfRepositoryProvider).fetchSocialPosts(),
+);
+
 class TripsPage extends ConsumerStatefulWidget {
   const TripsPage({super.key});
 
@@ -39,18 +43,13 @@ class _TripsPageState extends ConsumerState<TripsPage> {
             data: (spots) => _TravelLoadedBody(
               spots: spots,
               nextSwell: ref.watch(nextSwellProvider),
+              events: ref.watch(travelEventsProvider),
               selectedCountryId: _selectedCountryId,
               selectedRegionId: _selectedRegionId,
               selectedAreaId: _selectedAreaId,
-              onCountryChanged: (country) {
-                setState(() {
-                  _selectedCountryId = country.id;
-                  _selectedRegionId = null;
-                  _selectedAreaId = null;
-                });
-              },
               onLocationChanged: (selection) {
                 setState(() {
+                  _selectedCountryId = selection.countryId;
                   _selectedRegionId = selection.regionId;
                   _selectedAreaId = selection.areaId;
                 });
@@ -67,19 +66,19 @@ class _TravelLoadedBody extends StatelessWidget {
   const _TravelLoadedBody({
     required this.spots,
     required this.nextSwell,
+    required this.events,
     required this.selectedCountryId,
     required this.selectedRegionId,
     required this.selectedAreaId,
-    required this.onCountryChanged,
     required this.onLocationChanged,
   });
 
   final List<SpotModel> spots;
   final AsyncValue<NextSwellModel> nextSwell;
+  final AsyncValue<List<SocialPostModel>> events;
   final String? selectedCountryId;
   final String? selectedRegionId;
   final String? selectedAreaId;
-  final ValueChanged<_TravelCountryView> onCountryChanged;
   final ValueChanged<_TravelLocationSelection> onLocationChanged;
 
   @override
@@ -132,29 +131,6 @@ class _TravelLoadedBody extends StatelessWidget {
         const SizedBox(height: 16),
         _NextSwellCard(recommendation: nextSwell),
         const SizedBox(height: 22),
-        const _SectionHeading(
-          title: 'Choose your coast',
-          subtitle: 'Explore every country in Tydes',
-        ),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 58,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: countries.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 10),
-            itemBuilder: (context, index) {
-              final country = countries[index];
-              final selected = country.id == selectedCountry.id;
-              return _CountryChip(
-                country: country,
-                selected: selected,
-                onTap: () => onCountryChanged(country),
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 14),
         Row(
           children: [
             Expanded(
@@ -168,6 +144,7 @@ class _TravelLoadedBody extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         _TravelLocationButton(
+          countries: countries,
           country: selectedCountry,
           region: selectedRegion,
           area: selectedArea,
@@ -175,6 +152,14 @@ class _TravelLoadedBody extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         _TravelAreaOverview(
+          country: selectedCountry,
+          region: selectedRegion,
+          area: selectedArea,
+        ),
+        const SizedBox(height: 20),
+        _TravelEventsSection(
+          posts: events,
+          spots: spots,
           country: selectedCountry,
           region: selectedRegion,
           area: selectedArea,
@@ -828,70 +813,206 @@ class _TravelAreaOverview extends StatelessWidget {
   }
 }
 
-class _CountryChip extends StatelessWidget {
-  const _CountryChip({
+class _TravelEventsSection extends StatelessWidget {
+  const _TravelEventsSection({
+    required this.posts,
+    required this.spots,
     required this.country,
-    required this.selected,
-    required this.onTap,
+    required this.region,
+    required this.area,
   });
 
+  final AsyncValue<List<SocialPostModel>> posts;
+  final List<SpotModel> spots;
   final _TravelCountryView country;
-  final bool selected;
-  final VoidCallback onTap;
+  final _TravelRegionView region;
+  final _TravelAreaView area;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFF143F3D) : const Color(0xFFF2EEE6),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: selected ? const Color(0xFF143F3D) : const Color(0xFFE0D8CA),
-          ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeading(
+          title: 'Events in ${area.name}',
+          subtitle: 'Upcoming surf meetups for this location',
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              country.emoji,
-              style: TextStyle(
-                color: selected ? Colors.white : const Color(0xFF263331),
-                fontSize: 20,
-              ),
+        const SizedBox(height: 10),
+        posts.when(
+          data: (items) {
+            final events = _eventsForLocation(
+              items,
+              spots,
+              country: country.name,
+              region: region.name,
+              area: area.name,
+            );
+            if (events.isEmpty) {
+              return _EmptyTravelEventsCard(areaName: area.name);
+            }
+            return Column(
+              children: [
+                for (final event in events.take(4)) ...[
+                  _TravelEventCard(event: event),
+                  if (event != events.take(4).last) const SizedBox(height: 10),
+                ],
+              ],
+            );
+          },
+          loading: () => const _TravelEventsLoadingCard(),
+          error: (_, _) => const _TravelEventsUnavailableCard(),
+        ),
+      ],
+    );
+  }
+}
+
+class _TravelEventCard extends StatelessWidget {
+  const _TravelEventCard({required this.event});
+
+  final _TravelEventView event;
+
+  @override
+  Widget build(BuildContext context) {
+    final body = event.post.body.trim();
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAF6F4),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFC7E5E0)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 48,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF087E7A),
+              borderRadius: BorderRadius.circular(15),
             ),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+            child: Column(
               children: [
                 Text(
-                  country.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: selected ? Colors.white : const Color(0xFF263331),
-                    fontSize: 13,
-                    height: 1.05,
+                  _eventMonth(event.date),
+                  style: const TextStyle(
+                    color: Color(0xFFD8F3EE),
+                    fontSize: 10,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
                 Text(
-                  '${country.regions.length} regions',
-                  style: TextStyle(
-                    color: selected ? Colors.white70 : const Color(0xFF6B6760),
-                    fontSize: 11,
+                  '${event.date.day}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
                     height: 1.05,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ],
             ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  body.isEmpty ? 'Surf meetup at ${event.spot.name}' : body,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  '${event.spot.name} • ${event.post.authorName}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF52625F),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Icon(Icons.chevron_right_rounded, color: Color(0xFF087E7A)),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyTravelEventsCard extends StatelessWidget {
+  const _EmptyTravelEventsCard({required this.areaName});
+
+  final String areaName;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF2EEE6),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.event_available_outlined, color: Color(0xFF087E7A)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'No upcoming events in $areaName',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'When someone plans a surf here, it will show up automatically.',
+                  style: TextStyle(color: Color(0xFF626A66), height: 1.35),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TravelEventsLoadingCard extends StatelessWidget {
+  const _TravelEventsLoadingCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      height: 92,
+      child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+    );
+  }
+}
+
+class _TravelEventsUnavailableCard extends StatelessWidget {
+  const _TravelEventsUnavailableCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Text('Could not load events for this location right now.'),
       ),
     );
   }
@@ -899,12 +1020,14 @@ class _CountryChip extends StatelessWidget {
 
 class _TravelLocationButton extends StatelessWidget {
   const _TravelLocationButton({
+    required this.countries,
     required this.country,
     required this.region,
     required this.area,
     required this.onChanged,
   });
 
+  final List<_TravelCountryView> countries;
   final _TravelCountryView country;
   final _TravelRegionView? region;
   final _TravelAreaView? area;
@@ -916,7 +1039,8 @@ class _TravelLocationButton extends StatelessWidget {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => _TravelLocationSheet(
-        country: country,
+        countries: countries,
+        selectedCountryId: country.id,
         selectedRegionId: region?.id,
         selectedAreaId: area?.id,
       ),
@@ -976,19 +1100,42 @@ class _TravelLocationButton extends StatelessWidget {
   }
 }
 
-class _TravelLocationSheet extends StatelessWidget {
+class _TravelLocationSheet extends StatefulWidget {
   const _TravelLocationSheet({
-    required this.country,
+    required this.countries,
+    required this.selectedCountryId,
     required this.selectedRegionId,
     required this.selectedAreaId,
   });
 
-  final _TravelCountryView country;
+  final List<_TravelCountryView> countries;
+  final String selectedCountryId;
   final String? selectedRegionId;
   final String? selectedAreaId;
 
   @override
+  State<_TravelLocationSheet> createState() => _TravelLocationSheetState();
+}
+
+class _TravelLocationSheetState extends State<_TravelLocationSheet> {
+  late String _countryId;
+
+  @override
+  void initState() {
+    super.initState();
+    _countryId = widget.selectedCountryId;
+  }
+
+  _TravelCountryView get _country =>
+      _firstWhereOrNull(
+        widget.countries,
+        (country) => country.id == _countryId,
+      ) ??
+      widget.countries.first;
+
+  @override
   Widget build(BuildContext context) {
+    final country = _country;
     return DraggableScrollableSheet(
       initialChildSize: 0.72,
       minChildSize: 0.45,
@@ -1020,8 +1167,28 @@ class _TravelLocationSheet extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                '${country.name} • ${country.regions.length} surf regions',
+                'Pick a country, then choose the surf area you want to explore.',
                 style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 14),
+              DropdownButtonFormField<String>(
+                initialValue: country.id,
+                decoration: const InputDecoration(
+                  labelText: 'Country',
+                  prefixIcon: Icon(Icons.public_rounded),
+                ),
+                items: widget.countries
+                    .map(
+                      (item) => DropdownMenuItem(
+                        value: item.id,
+                        child: Text('${item.emoji}  ${item.name}'),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null || value == _countryId) return;
+                  setState(() => _countryId = value);
+                },
               ),
               const SizedBox(height: 14),
               ...country.regions.map(
@@ -1030,8 +1197,12 @@ class _TravelLocationSheet extends StatelessWidget {
                   child: _TravelRegionTile(
                     country: country,
                     region: region,
-                    selectedRegionId: selectedRegionId,
-                    selectedAreaId: selectedAreaId,
+                    selectedRegionId: country.id == widget.selectedCountryId
+                        ? widget.selectedRegionId
+                        : null,
+                    selectedAreaId: country.id == widget.selectedCountryId
+                        ? widget.selectedAreaId
+                        : null,
                   ),
                 ),
               ),
@@ -1124,9 +1295,13 @@ class _TravelAreaTile extends StatelessWidget {
         trailing: selected
             ? const Icon(Icons.check_circle, color: Color(0xFF087E7A))
             : const Icon(Icons.chevron_right),
-        onTap: () => Navigator.of(
-          context,
-        ).pop(_TravelLocationSelection(regionId: region.id, areaId: area.id)),
+        onTap: () => Navigator.of(context).pop(
+          _TravelLocationSelection(
+            countryId: country.id,
+            regionId: region.id,
+            areaId: area.id,
+          ),
+        ),
       ),
     );
   }
@@ -1213,12 +1388,75 @@ class _TravelAreaView {
 
 class _TravelLocationSelection {
   const _TravelLocationSelection({
+    required this.countryId,
     required this.regionId,
     required this.areaId,
   });
 
+  final String countryId;
   final String regionId;
   final String areaId;
+}
+
+class _TravelEventView {
+  const _TravelEventView({
+    required this.post,
+    required this.spot,
+    required this.date,
+  });
+
+  final SocialPostModel post;
+  final SpotModel spot;
+  final DateTime date;
+}
+
+List<_TravelEventView> _eventsForLocation(
+  List<SocialPostModel> posts,
+  List<SpotModel> spots, {
+  required String country,
+  required String region,
+  required String area,
+}) {
+  final spotsById = {for (final spot in spots) spot.id: spot};
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final events = <_TravelEventView>[];
+
+  for (final post in posts) {
+    if (post.postType != 'surf_plan' || post.meetupDate == null) continue;
+    final date = DateTime.tryParse(post.meetupDate!);
+    final spot = post.spotId == null ? null : spotsById[post.spotId];
+    if (date == null || date.isBefore(today) || spot == null) continue;
+    if (spot.country != country || spot.region != region || spot.area != area) {
+      continue;
+    }
+    events.add(_TravelEventView(post: post, spot: spot, date: date));
+  }
+
+  events.sort((a, b) {
+    final dateCompare = a.date.compareTo(b.date);
+    if (dateCompare != 0) return dateCompare;
+    return a.post.createdAt.compareTo(b.post.createdAt);
+  });
+  return events;
+}
+
+String _eventMonth(DateTime date) {
+  const months = [
+    'JAN',
+    'FEB',
+    'MAR',
+    'APR',
+    'MAY',
+    'JUN',
+    'JUL',
+    'AUG',
+    'SEP',
+    'OCT',
+    'NOV',
+    'DEC',
+  ];
+  return months[date.month - 1];
 }
 
 List<_TravelCountryView> _buildTravelCountries(List<SpotModel> spots) {

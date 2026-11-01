@@ -64,6 +64,32 @@ void main() {
                   'Forecast-model guidance for trip planning, not a safety call.',
             ),
           ),
+          travelEventsProvider.overrideWith(
+            (_) async => [
+              SocialPostModel(
+                id: 'post_uluwatu_event',
+                userId: 'usr_event_host',
+                authorName: 'Maya Surfer',
+                authorHandle: 'mayasurfer',
+                authorAvatarUrl: null,
+                authorPremium: false,
+                spotId: DemoSeed.spots
+                    .firstWhere(
+                      (spot) =>
+                          spot.country == 'Indonesia' &&
+                          spot.region == 'Bali' &&
+                          spot.area == 'Uluwatu',
+                    )
+                    .id,
+                postType: 'surf_plan',
+                visibility: 'public',
+                body: 'Sunset paddle and dinner after',
+                media: const [],
+                meetupDate: '2030-01-02',
+                createdAt: '2026-10-31T12:00:00Z',
+              ),
+            ],
+          ),
         ],
         child: MaterialApp(theme: AppTheme.light(), home: const TripsPage()),
       ),
@@ -84,12 +110,15 @@ void main() {
     expect(find.text('Gold Coast, Australia'), findsOneWidget);
     expect(find.textContaining('Best break • Snapper Rocks'), findsOneWidget);
     await tester.scrollUntilVisible(
-      find.text('Choose your coast'),
+      find.text('Events in Uluwatu'),
       250,
       scrollable: find.byType(Scrollable).first,
     );
     expect(find.text('Surf bases worth a look'), findsNothing);
-    expect(find.text('Choose your coast'), findsOneWidget);
+    expect(find.text('Choose your coast'), findsNothing);
+    expect(find.text('Events in Uluwatu'), findsOneWidget);
+    expect(find.text('Sunset paddle and dinner after'), findsOneWidget);
+    expect(find.textContaining('Maya Surfer'), findsOneWidget);
     expect(find.text('Swell outlooks and surf events'), findsNothing);
     expect(find.textContaining('We removed the demo itinerary'), findsNothing);
     expect(find.text('Dry Season Surf Sprint'), findsNothing);
