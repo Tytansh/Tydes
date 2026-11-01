@@ -229,6 +229,62 @@ class ProfileStatsRow extends StatelessWidget {
   }
 }
 
+class ProfileNamePremiumRow extends StatelessWidget {
+  const ProfileNamePremiumRow({
+    super.key,
+    required this.displayName,
+    required this.premium,
+    this.style,
+  });
+
+  final String displayName;
+  final bool premium;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Text(
+            displayName,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: style,
+          ),
+        ),
+        if (premium) ...[
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.24)),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.verified_rounded, size: 14, color: Colors.white),
+                SizedBox(width: 4),
+                Text(
+                  'Premium',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class FollowButton extends ConsumerWidget {
   const FollowButton({
     super.key,

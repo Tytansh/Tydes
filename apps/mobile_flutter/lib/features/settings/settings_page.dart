@@ -473,57 +473,25 @@ class _ProfileHero extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 16),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        profile.displayName,
-                        style: Theme.of(context).textTheme.headlineMedium
-                            ?.copyWith(color: Colors.white),
-                      ),
-                    ),
-                    if (profile.premium) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.24),
-                          ),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.verified_rounded,
-                              size: 14,
-                              color: Colors.white,
-                            ),
-                            SizedBox(width: 4),
-                            Text(
-                              'Premium',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
+                Padding(
+                  padding: const EdgeInsets.only(right: 64),
+                  child: ProfileNamePremiumRow(
+                    displayName: profile.displayName,
+                    premium: profile.premium,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.headlineMedium?.copyWith(color: Colors.white),
+                  ),
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  '@${profile.handle} • ${profile.homeRegion} • ${_skillLabel(profile.surfSkill)}',
-                  style: const TextStyle(color: Colors.white70),
+                Padding(
+                  padding: const EdgeInsets.only(right: 64),
+                  child: Text(
+                    '@${profile.handle} • ${profile.homeRegion} • ${_skillLabel(profile.surfSkill)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white70),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Text(profile.bio, style: const TextStyle(color: Colors.white)),
