@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
+import '../social/direct_messages_page.dart';
+import '../social/event_chat_page.dart';
 
 final travelSpotsProvider = FutureProvider(
   (ref) => ref.watch(surfRepositoryProvider).fetchSpots(),
@@ -104,36 +106,24 @@ class _TravelLoadedBody extends StatelessWidget {
     if (countries.isEmpty) {
       return const _TravelLoadError();
     }
-    final selectedCountry =
-        _firstWhereOrNull(
-          countries,
-          (country) => country.id == selectedCountryId,
-        ) ??
-        _firstWhereOrNull(
-          countries,
-          (country) => country.name == 'Indonesia',
-        ) ??
-        countries.first;
-    final selectedRegion =
-        _firstWhereOrNull(
-          selectedCountry.regions,
-          (region) => region.id == selectedRegionId,
-        ) ??
-        _firstWhereOrNull(
-          selectedCountry.regions,
-          (region) => region.name == 'Bali',
-        ) ??
-        selectedCountry.regions.first;
-    final selectedArea =
-        _firstWhereOrNull(
-          selectedRegion.areas,
-          (area) => area.id == selectedAreaId,
-        ) ??
-        _firstWhereOrNull(
-          selectedRegion.areas,
-          (area) => area.name == 'Uluwatu',
-        ) ??
-        selectedRegion.areas.first;
+    final selectedCountry = selectedCountryId == null
+        ? null
+        : _firstWhereOrNull(
+            countries,
+            (country) => country.id == selectedCountryId,
+          );
+    final selectedRegion = selectedCountry == null || selectedRegionId == null
+        ? null
+        : _firstWhereOrNull(
+            selectedCountry.regions,
+            (region) => region.id == selectedRegionId,
+          );
+    final selectedArea = selectedRegion == null || selectedAreaId == null
+        ? null
+        : _firstWhereOrNull(
+            selectedRegion.areas,
+            (area) => area.id == selectedAreaId,
+          );
     final totalBreaks = countries.fold<int>(
       0,
       (total, country) => total + country.breakCount,
@@ -152,11 +142,13 @@ class _TravelLoadedBody extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                'Explore a surf area',
+                'Choose your spot',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
             ),
-            _StatusPill(label: '${selectedCountry.breakCount} breaks'),
+            _StatusPill(
+              label: '${selectedCountry?.breakCount ?? totalBreaks} breaks',
+            ),
           ],
         ),
         const SizedBox(height: 10),
@@ -167,22 +159,26 @@ class _TravelLoadedBody extends StatelessWidget {
           area: selectedArea,
           onChanged: onLocationChanged,
         ),
-        const SizedBox(height: 10),
-        _TravelAreaOverview(
-          country: selectedCountry,
-          region: selectedRegion,
-          area: selectedArea,
-        ),
-        const SizedBox(height: 20),
-        _TravelEventsSection(
-          posts: events,
-          spots: spots,
-          country: selectedCountry,
-          region: selectedRegion,
-          area: selectedArea,
-          scope: eventScope,
-          onScopeChanged: onEventScopeChanged,
-        ),
+        if (selectedCountry != null &&
+            selectedRegion != null &&
+            selectedArea != null) ...[
+          const SizedBox(height: 10),
+          _TravelAreaOverview(
+            country: selectedCountry,
+            region: selectedRegion,
+            area: selectedArea,
+          ),
+          const SizedBox(height: 20),
+          _TravelEventsSection(
+            posts: events,
+            spots: spots,
+            country: selectedCountry,
+            region: selectedRegion,
+            area: selectedArea,
+            scope: eventScope,
+            onScopeChanged: onEventScopeChanged,
+          ),
+        ],
       ],
     );
   }
@@ -874,21 +870,24 @@ class _TravelEventsSection extends ConsumerWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
-            _EventScopeChip(
-              label: area.name,
-              selected: scope == _EventScope.area,
-              onSelected: () => onScopeChanged(_EventScope.area),
-            ),
-            _EventScopeChip(
-              label: region.name,
-              selected: scope == _EventScope.region,
-              onSelected: () => onScopeChanged(_EventScope.region),
-            ),
-            _EventScopeChip(
-              label: country.name,
-              selected: scope == _EventScope.country,
-              onSelected: () => onScopeChanged(_EventScope.country),
-            ),
+            if (scope != _EventScope.area)
+              TextButton.icon(
+                onPressed: () => onScopeChanged(_EventScope.area),
+                icon: const Icon(Icons.near_me_outlined, size: 18),
+                label: const Text('Near this spot'),
+              ),
+            if (scope != _EventScope.region)
+              TextButton.icon(
+                onPressed: () => onScopeChanged(_EventScope.region),
+                icon: const Icon(Icons.view_list_outlined, size: 18),
+                label: Text('See all ${region.name}'),
+              ),
+            if (scope != _EventScope.country)
+              TextButton.icon(
+                onPressed: () => onScopeChanged(_EventScope.country),
+                icon: const Icon(Icons.public_rounded, size: 18),
+                label: Text('See all ${country.name}'),
+              ),
           ],
         ),
         const SizedBox(height: 10),
@@ -926,35 +925,6 @@ class _TravelEventsSection extends ConsumerWidget {
   }
 }
 
-class _EventScopeChip extends StatelessWidget {
-  const _EventScopeChip({
-    required this.label,
-    required this.selected,
-    required this.onSelected,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => onSelected(),
-      selectedColor: const Color(0xFFD1EFEB),
-      side: BorderSide(
-        color: selected ? const Color(0xFF087E7A) : const Color(0xFFD7D8D1),
-      ),
-      labelStyle: TextStyle(
-        color: selected ? const Color(0xFF075F5C) : const Color(0xFF4F5956),
-        fontWeight: FontWeight.w800,
-      ),
-    );
-  }
-}
-
 class _TravelEventCard extends ConsumerStatefulWidget {
   const _TravelEventCard({required this.event, required this.joined});
 
@@ -977,8 +947,13 @@ class _TravelEventCardState extends ConsumerState<_TravelEventCard> {
           .setEventRsvp(postId: widget.event.post.id, joined: !widget.joined);
       ref.invalidate(travelEngagementProvider);
       ref.invalidate(travelEventsProvider);
+      ref.invalidate(joinedEventChatsProvider);
       if (!widget.joined && mounted) {
-        await _showJoinChatPrompt();
+        await showEventChatJoinPrompt(
+          context,
+          postId: widget.event.post.id,
+          eventTitle: widget.event.post.body,
+        );
       }
     } catch (_) {
       if (mounted) {
@@ -990,32 +965,6 @@ class _TravelEventCardState extends ConsumerState<_TravelEventCard> {
       }
     } finally {
       if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _showJoinChatPrompt() async {
-    final openChat = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('You’re going'),
-        content: const Text(
-          'Join the group chat with everyone going to this event?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Maybe later'),
-          ),
-          FilledButton.icon(
-            onPressed: () => Navigator.of(context).pop(true),
-            icon: const Icon(Icons.forum_outlined),
-            label: const Text('Join group chat'),
-          ),
-        ],
-      ),
-    );
-    if (openChat == true && mounted) {
-      context.push('/event/${widget.event.post.id}/chat');
     }
   }
 
@@ -1309,7 +1258,7 @@ class _TravelLocationButton extends StatelessWidget {
   });
 
   final List<_TravelCountryView> countries;
-  final _TravelCountryView country;
+  final _TravelCountryView? country;
   final _TravelRegionView? region;
   final _TravelAreaView? area;
   final ValueChanged<_TravelLocationSelection> onChanged;
@@ -1321,7 +1270,7 @@ class _TravelLocationButton extends StatelessWidget {
       backgroundColor: Colors.transparent,
       builder: (context) => _TravelLocationSheet(
         countries: countries,
-        selectedCountryId: country.id,
+        selectedCountryId: country?.id,
         selectedRegionId: region?.id,
         selectedAreaId: area?.id,
       ),
@@ -1334,6 +1283,7 @@ class _TravelLocationButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
+      key: const Key('travel-location-picker'),
       borderRadius: BorderRadius.circular(24),
       onTap: () => _openSelector(context),
       child: Container(
@@ -1360,14 +1310,14 @@ class _TravelLocationButton extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    area?.name ?? 'Choose travel area',
+                    area?.name ?? 'Choose your spot',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    area == null || region == null
-                        ? '${country.name} • ${country.breakCount} breaks'
-                        : '${region!.name}, ${country.name} • ${area!.breakCountLabel}',
+                    area == null || region == null || country == null
+                        ? 'Pick a country, coast, and surf area'
+                        : '${region!.name}, ${country!.name} • ${area!.breakCountLabel}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -1390,7 +1340,7 @@ class _TravelLocationSheet extends StatefulWidget {
   });
 
   final List<_TravelCountryView> countries;
-  final String selectedCountryId;
+  final String? selectedCountryId;
   final String? selectedRegionId;
   final String? selectedAreaId;
 
@@ -1404,7 +1354,13 @@ class _TravelLocationSheetState extends State<_TravelLocationSheet> {
   @override
   void initState() {
     super.initState();
-    _countryId = widget.selectedCountryId;
+    _countryId =
+        widget.selectedCountryId ??
+        _firstWhereOrNull(
+          widget.countries,
+          (country) => country.name == 'Indonesia',
+        )?.id ??
+        widget.countries.first.id;
   }
 
   _TravelCountryView get _country =>
@@ -1443,7 +1399,7 @@ class _TravelLocationSheetState extends State<_TravelLocationSheet> {
                 ),
               ),
               Text(
-                'Choose travel area',
+                'Choose your spot',
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
               const SizedBox(height: 4),

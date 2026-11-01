@@ -39,6 +39,60 @@ final dmSocialProfilesProvider = FutureProvider.autoDispose((ref) {
   return ref.watch(surfRepositoryProvider).fetchSocialProfiles();
 });
 
+final joinedEventChatsProvider =
+    FutureProvider.autoDispose<List<JoinedEventChatSummary>>((ref) async {
+      ref.watch(socialRefreshKeyProvider);
+      final repository = ref.watch(surfRepositoryProvider);
+      final results = await Future.wait<dynamic>([
+        repository.fetchSocialPosts(),
+        repository.fetchSocialEngagement(),
+        repository.fetchMe(),
+      ]);
+      final posts = results[0] as List<SocialPostModel>;
+      final engagement = results[1] as SocialEngagementModel;
+      final viewer = results[2] as UserProfile;
+      final chats = posts
+          .where(
+            (post) =>
+                (post.postType == 'surf_plan' ||
+                    post.postType == 'looking_for_buddy') &&
+                (engagement.rsvpPostIds.contains(post.id) ||
+                    post.userId == viewer.id),
+          )
+          .map(JoinedEventChatSummary.fromPost)
+          .toList();
+      chats.sort((a, b) => a.sortDate.compareTo(b.sortDate));
+      return chats;
+    });
+
+class JoinedEventChatSummary {
+  const JoinedEventChatSummary({
+    required this.postId,
+    required this.title,
+    required this.hostName,
+    required this.meetupDate,
+    required this.sortDate,
+  });
+
+  final String postId;
+  final String title;
+  final String hostName;
+  final String? meetupDate;
+  final DateTime sortDate;
+
+  factory JoinedEventChatSummary.fromPost(SocialPostModel post) {
+    final title = post.body.trim();
+    final parsedDate = DateTime.tryParse(post.meetupDate ?? '');
+    return JoinedEventChatSummary(
+      postId: post.id,
+      title: title.isEmpty ? 'Event group chat' : title,
+      hostName: post.authorName,
+      meetupDate: post.meetupDate,
+      sortDate: parsedDate ?? DateTime(9999),
+    );
+  }
+}
+
 class DirectMessageThreadsNotifier
     extends StateNotifier<List<DirectMessageThread>> {
   DirectMessageThreadsNotifier(this._persistence) : super(_seedThreads) {
@@ -386,6 +440,7 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage> {
   @override
   Widget build(BuildContext context) {
     final threads = ref.watch(directMessageThreadsProvider);
+    final eventChats = ref.watch(joinedEventChatsProvider);
     final followedUserIds = ref.watch(followedUserIdsProvider);
     final hiddenFollowingUserIds = ref.watch(hiddenFollowingUserIdsProvider);
     final blockedUserIds = ref.watch(blockedUserIdsProvider);
@@ -433,6 +488,12 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage> {
           .toLowerCase();
       return haystack.contains(_query.toLowerCase());
     }).toList();
+    final filteredEventChats = (eventChats.valueOrNull ?? const []).where((
+      chat,
+    ) {
+      final haystack = '${chat.title} ${chat.hostName}'.toLowerCase();
+      return haystack.contains(_query.toLowerCase());
+    }).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -453,6 +514,22 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage> {
             onChanged: (value) => setState(() => _query = value),
           ),
           const SizedBox(height: 18),
+          if (eventChats.isLoading)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 16),
+              child: LinearProgressIndicator(minHeight: 2),
+            ),
+          if (filteredEventChats.isNotEmpty) ...[
+            Text('Event chats', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 6),
+            ...filteredEventChats.map(
+              (chat) => _EventChatThreadTile(
+                chat: chat,
+                onTap: () => context.push('/event/${chat.postId}/chat'),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           Row(
             children: [
               Text('Primary', style: Theme.of(context).textTheme.titleLarge),
@@ -490,6 +567,96 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage> {
       ),
     );
   }
+}
+
+class _EventChatThreadTile extends StatelessWidget {
+  const _EventChatThreadTile({required this.chat, required this.onTap});
+
+  final JoinedEventChatSummary chat;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      borderRadius: BorderRadius.circular(22),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            const CircleAvatar(
+              radius: 29,
+              backgroundColor: Color(0xFFD7EFEC),
+              child: Icon(
+                Icons.groups_2_outlined,
+                color: Color(0xFF087E7A),
+                size: 28,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    chat.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    'Event group chat • ${chat.hostName}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  if (chat.meetupDate != null) ...[
+                    const SizedBox(height: 5),
+                    Text(
+                      _eventChatDateLabel(chat.meetupDate!),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Icon(
+              Icons.chevron_right,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _eventChatDateLabel(String value) {
+  final date = DateTime.tryParse(value);
+  if (date == null) return 'Upcoming event';
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  return '${months[date.month - 1]} ${date.day}';
 }
 
 String _normalizeThreadId(String value) {

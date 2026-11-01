@@ -18,6 +18,7 @@ import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import 'direct_messages_page.dart';
+import 'event_chat_page.dart';
 import 'social_profile.dart';
 
 final travelFeedPostsProvider = FutureProvider((ref) {
@@ -1968,11 +1969,13 @@ Future<void> _toggleCommentLike(WidgetRef ref, String commentId) async {
 }
 
 Future<void> _toggleEventRsvp({
+  required BuildContext context,
   required WidgetRef ref,
-  required String postId,
+  required SocialPostModel post,
   required Set<String> joinedInviteIds,
   required bool joined,
 }) async {
+  final postId = post.id;
   final previous = joinedInviteIds;
   final next = {...joinedInviteIds};
   if (joined) {
@@ -1986,6 +1989,14 @@ Future<void> _toggleEventRsvp({
         .read(surfRepositoryProvider)
         .setEventRsvp(postId: postId, joined: !joined);
     _applySocialEngagement(ref, engagement);
+    ref.invalidate(joinedEventChatsProvider);
+    if (!joined && context.mounted) {
+      await showEventChatJoinPrompt(
+        context,
+        postId: postId,
+        eventTitle: post.body,
+      );
+    }
   } catch (_) {
     ref.read(surfInviteRsvpProvider.notifier).state = previous;
   }
@@ -5178,8 +5189,9 @@ class SurfInviteActions extends ConsumerWidget {
                   onPressed: () {
                     unawaited(
                       _toggleEventRsvp(
+                        context: context,
                         ref: ref,
-                        postId: post.id,
+                        post: post,
                         joinedInviteIds: joinedInviteIds,
                         joined: joined,
                       ),

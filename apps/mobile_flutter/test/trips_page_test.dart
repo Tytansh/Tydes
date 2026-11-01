@@ -119,16 +119,36 @@ void main() {
     expect(find.text('NEXT SWELL'), findsOneWidget);
     expect(find.text('Gold Coast, Australia'), findsOneWidget);
     expect(find.textContaining('Best break • Snapper Rocks'), findsOneWidget);
+    expect(find.text('Surf bases worth a look'), findsNothing);
+    expect(find.text('Choose your coast'), findsNothing);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('travel-location-picker')),
+      220,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Choose your spot'), findsNWidgets(2));
+    expect(find.text('Events in Uluwatu'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('travel-location-picker')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'Pick a country, then choose the surf area you want to explore.',
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Bali'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Uluwatu'));
+    await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
       find.text('Events in Uluwatu'),
       250,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('Surf bases worth a look'), findsNothing);
-    expect(find.text('Choose your coast'), findsNothing);
     expect(find.text('Events in Uluwatu'), findsOneWidget);
-    expect(find.text('Bali'), findsOneWidget);
-    expect(find.text('Indonesia'), findsOneWidget);
+    expect(find.text('See all Bali'), findsOneWidget);
+    expect(find.text('See all Indonesia'), findsOneWidget);
     expect(find.text('Sunset paddle and dinner after'), findsOneWidget);
     expect(find.textContaining('Maya Surfer'), findsOneWidget);
     expect(find.text('Join now'), findsOneWidget);

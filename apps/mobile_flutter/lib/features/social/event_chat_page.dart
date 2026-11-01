@@ -2,9 +2,43 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
+
+Future<void> showEventChatJoinPrompt(
+  BuildContext context, {
+  required String postId,
+  String? eventTitle,
+}) async {
+  final title = eventTitle?.trim();
+  final openChat = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Join the event group chat?'),
+      content: Text(
+        title == null || title.isEmpty
+            ? 'Chat with everyone going, plan the meetup, and share updates.'
+            : 'Chat with everyone going to “$title”, plan the meetup, and share updates.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('Maybe later'),
+        ),
+        FilledButton.icon(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          icon: const Icon(Icons.forum_outlined),
+          label: const Text('Join group chat'),
+        ),
+      ],
+    ),
+  );
+  if (openChat == true && context.mounted) {
+    context.push('/event/$postId/chat');
+  }
+}
 
 class EventChatPage extends ConsumerStatefulWidget {
   const EventChatPage({super.key, required this.postId});
