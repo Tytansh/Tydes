@@ -21,6 +21,8 @@ from app.core.models import (
     Alert,
     BillingPlan,
     Dashboard,
+    EventAttendee,
+    EventChatMessage,
     ForecastEntry,
     FriendProfile,
     NextSwellRecommendation,
@@ -173,6 +175,8 @@ class DemoStore:
         self.reposts: list[SocialRepost] = []
         self.liked_comment_ids: set[str] = set()
         self.rsvp_post_ids: set[str] = set()
+        self.rsvp_user_ids_by_post: dict[str, set[str]] = {}
+        self.event_chat_messages: list[EventChatMessage] = []
         self.followed_user_ids: set[str] = set()
         self.follower_user_ids: set[str] = set()
         self.blocked_user_ids: set[str] = set()
@@ -1207,18 +1211,24 @@ class DemoStore:
         profiles: list[dict[str, object]] = []
         if not user_ids:
             return profiles
-        for account in self.auth_accounts.values():
-            user_payload = account.get("user")
-            if not isinstance(user_payload, dict):
-                continue
-            try:
-                user = User.model_validate(user_payload)
-            except ValueError:
-                continue
+        if self.postgres_auth is not None:
+            account_users = self.postgres_auth.list_account_users(limit=200)
+            users = [user for _, user in account_users]
+        else:
+            users = []
+            for account in self.auth_accounts.values():
+                user_payload = account.get("user")
+                if not isinstance(user_payload, dict):
+                    continue
+                try:
+                    users.append(User.model_validate(user_payload))
+                except ValueError:
+                    continue
+        for user in users:
             if user.id not in user_ids:
                 continue
             handle = user.handle.strip().lower().lstrip("@")
-            display_name = user.display_name.strip() or "Blocked surfer"
+            display_name = user.display_name.strip() or "Tydes surfer"
             profiles.append(
                 {
                     "user_id": user.id,
@@ -1228,7 +1238,7 @@ class DemoStore:
                     "cover_url": user.cover_url,
                     "premium": user.premium,
                     "location": user.home_region or None,
-                    "subtitle": "Blocked on Tydes",
+                    "subtitle": "Tydes surfer",
                     "surf_skill": user.surf_skill or None,
                 }
             )
@@ -1344,6 +1354,9 @@ class DemoStore:
                                 )
                             )
                         ),
+                        "rsvp_count": len(
+                            self.rsvp_user_ids_by_post.get(post.id, set())
+                        ),
                     }
                 )
                 for post in posts
@@ -1402,6 +1415,12 @@ class DemoStore:
         self.liked_post_ids.discard(post_id)
         self.reposts = [item for item in self.reposts if item.post_id != post_id]
         self.rsvp_post_ids.discard(post_id)
+        self.rsvp_user_ids_by_post.pop(post_id, None)
+        self.event_chat_messages = [
+            message
+            for message in self.event_chat_messages
+            if message.post_id != post_id
+        ]
         self.liked_comment_ids.difference_update(removed_comment_ids)
         self._save_state()
         return post
@@ -1421,7 +1440,13 @@ class DemoStore:
                 reverse=True,
             ),
             liked_comment_ids=sorted(self.liked_comment_ids),
-            rsvp_post_ids=sorted(self.rsvp_post_ids),
+            rsvp_post_ids=sorted(
+                {
+                    post_id
+                    for post_id, user_ids in self.rsvp_user_ids_by_post.items()
+                    if self.user.id in user_ids
+                }
+            ),
             comments=sorted(
                 self.comments,
                 key=lambda comment: comment.created_at,
@@ -1473,10 +1498,126 @@ class DemoStore:
             return self.social_engagement_state()
         if joined:
             self.rsvp_post_ids.add(post_id)
+            self.rsvp_user_ids_by_post.setdefault(post_id, set()).add(
+                self.user.id
+            )
         else:
             self.rsvp_post_ids.discard(post_id)
+            self.rsvp_user_ids_by_post.setdefault(post_id, set()).discard(
+                self.user.id
+            )
         self._save_state()
         return self.social_engagement_state()
+
+    def list_event_attendees(self, post_id: str) -> list[EventAttendee] | None:
+        post = self.get_post(post_id)
+        if post is None or post.post_type not in {"surf_plan", "looking_for_buddy"}:
+            return None
+        if self.postgres_social is not None:
+            joined_user_ids = self.postgres_social.list_rsvp_user_ids(post_id)
+        else:
+            joined_user_ids = sorted(
+                self.rsvp_user_ids_by_post.get(post_id, set())
+            )
+        attendees = [
+            EventAttendee(
+                user_id=post.user_id,
+                display_name=post.author_name.strip() or "Event organizer",
+                handle=post.author_handle,
+                avatar_url=post.author_avatar_url,
+                premium=post.author_premium,
+                organizer=True,
+            )
+        ]
+        attendee_ids = set(joined_user_ids) - {post.user_id}
+        profiles = self._social_profiles_for_user_ids(attendee_ids)
+        profile_by_id = {
+            str(profile["user_id"]): profile for profile in profiles
+        }
+        if self.user.id in attendee_ids and self.user.id not in profile_by_id:
+            profile_by_id[self.user.id] = {
+                "user_id": self.user.id,
+                "display_name": self.user.display_name,
+                "handle": self.user.handle,
+                "avatar_url": self.user.avatar_url,
+                "premium": self.user.premium,
+            }
+        for user_id in joined_user_ids:
+            if user_id == post.user_id:
+                continue
+            profile = profile_by_id.get(user_id)
+            attendees.append(
+                EventAttendee(
+                    user_id=user_id,
+                    display_name=(
+                        str(profile.get("display_name"))
+                        if profile is not None
+                        else "Tydes surfer"
+                    ),
+                    handle=(
+                        str(profile.get("handle"))
+                        if profile is not None and profile.get("handle")
+                        else None
+                    ),
+                    avatar_url=(
+                        str(profile.get("avatar_url"))
+                        if profile is not None and profile.get("avatar_url")
+                        else None
+                    ),
+                    premium=bool(profile.get("premium")) if profile else False,
+                )
+            )
+        return attendees
+
+    def can_access_event_chat(self, post_id: str) -> bool:
+        post = self.get_post(post_id)
+        if post is None or post.post_type not in {"surf_plan", "looking_for_buddy"}:
+            return False
+        if post.user_id == self.user.id:
+            return True
+        if self.postgres_social is not None:
+            return self.postgres_social.is_rsvped(self.user.id, post_id)
+        return self.user.id in self.rsvp_user_ids_by_post.get(post_id, set())
+
+    def list_event_chat_messages(self, post_id: str) -> list[EventChatMessage] | None:
+        if not self.can_access_event_chat(post_id):
+            return None
+        if self.postgres_social is not None:
+            return self.postgres_social.list_event_messages(post_id)
+        return sorted(
+            [
+                message
+                for message in self.event_chat_messages
+                if message.post_id == post_id
+            ],
+            key=lambda message: message.created_at,
+        )
+
+    def add_event_chat_message(
+        self,
+        *,
+        post_id: str,
+        message_id: str,
+        text: str,
+    ) -> EventChatMessage | None:
+        if not self.can_access_event_chat(post_id):
+            return None
+        message = EventChatMessage(
+            id=message_id,
+            post_id=post_id,
+            user_id=self.user.id,
+            author_name=self.user.display_name,
+            author_handle=self.user.handle,
+            author_avatar_url=self.user.avatar_url,
+            text=text.strip(),
+            created_at=datetime.now(timezone.utc),
+        )
+        if self.postgres_social is not None:
+            self.postgres_social.save_event_message(message)
+            return message
+        self.event_chat_messages.append(message)
+        self._save_state()
+        return message
 
     def add_comment(
         self,
@@ -1771,6 +1912,10 @@ class DemoStore:
                 for post_id in state.rsvp_post_ids
                 if self.get_post(post_id) is not None
             }
+            for post_id in self.rsvp_post_ids:
+                self.rsvp_user_ids_by_post.setdefault(post_id, set()).add(
+                    self.user.id
+                )
 
         relationship_data = data.get("social_relationships")
         if isinstance(relationship_data, dict):

@@ -690,6 +690,7 @@ class SocialPostModel {
     required this.createdAt,
     this.likeCount = 0,
     this.repostCount = 0,
+    this.rsvpCount = 0,
   });
 
   final String id;
@@ -708,6 +709,7 @@ class SocialPostModel {
   final String createdAt;
   final int likeCount;
   final int repostCount;
+  final int rsvpCount;
 
   factory SocialPostModel.fromJson(
     Map<String, dynamic> json,
@@ -733,7 +735,70 @@ class SocialPostModel {
     createdAt: json['created_at'] as String,
     likeCount: json['like_count'] as int? ?? 0,
     repostCount: json['repost_count'] as int? ?? 0,
+    rsvpCount: json['rsvp_count'] as int? ?? 0,
   );
+}
+
+class EventAttendeeModel {
+  const EventAttendeeModel({
+    required this.userId,
+    required this.displayName,
+    required this.handle,
+    required this.avatarUrl,
+    required this.premium,
+    required this.organizer,
+  });
+
+  final String userId;
+  final String displayName;
+  final String? handle;
+  final String? avatarUrl;
+  final bool premium;
+  final bool organizer;
+
+  factory EventAttendeeModel.fromJson(Map<String, dynamic> json) =>
+      EventAttendeeModel(
+        userId: json['user_id'] as String,
+        displayName: json['display_name'] as String,
+        handle: json['handle'] as String?,
+        avatarUrl: json['avatar_url'] as String?,
+        premium: json['premium'] as bool? ?? false,
+        organizer: json['organizer'] as bool? ?? false,
+      );
+}
+
+class EventChatMessageModel {
+  const EventChatMessageModel({
+    required this.id,
+    required this.postId,
+    required this.userId,
+    required this.authorName,
+    required this.authorHandle,
+    required this.authorAvatarUrl,
+    required this.text,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String postId;
+  final String userId;
+  final String authorName;
+  final String? authorHandle;
+  final String? authorAvatarUrl;
+  final String text;
+  final String createdAt;
+
+  factory EventChatMessageModel.fromJson(Map<String, dynamic> json) =>
+      EventChatMessageModel(
+        id: json['id'] as String,
+        postId: json['post_id'] as String,
+        userId: json['user_id'] as String,
+        authorName: json['author_name'] as String,
+        authorHandle: json['author_handle'] as String?,
+        authorAvatarUrl: json['author_avatar_url'] as String?,
+        text: json['text'] as String,
+        createdAt: json['created_at'] as String,
+      );
 }
 
 class SocialMediaAttachmentModel {

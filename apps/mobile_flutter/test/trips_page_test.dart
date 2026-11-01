@@ -90,6 +90,16 @@ void main() {
               ),
             ],
           ),
+          travelEngagementProvider.overrideWith(
+            (_) async => SocialEngagementModel(
+              likedPostIds: const {},
+              repostedPostIds: const [],
+              reposts: const [],
+              likedCommentIds: const {},
+              rsvpPostIds: const {},
+              comments: const [],
+            ),
+          ),
         ],
         child: MaterialApp(theme: AppTheme.light(), home: const TripsPage()),
       ),
@@ -117,8 +127,13 @@ void main() {
     expect(find.text('Surf bases worth a look'), findsNothing);
     expect(find.text('Choose your coast'), findsNothing);
     expect(find.text('Events in Uluwatu'), findsOneWidget);
+    expect(find.text('Bali'), findsOneWidget);
+    expect(find.text('Indonesia'), findsOneWidget);
     expect(find.text('Sunset paddle and dinner after'), findsOneWidget);
     expect(find.textContaining('Maya Surfer'), findsOneWidget);
+    expect(find.text('Join now'), findsOneWidget);
+    expect(find.text('Who’s going'), findsOneWidget);
+    expect(find.text('See post'), findsOneWidget);
     expect(find.text('Swell outlooks and surf events'), findsNothing);
     expect(find.textContaining('We removed the demo itinerary'), findsNothing);
     expect(find.text('Dry Season Surf Sprint'), findsNothing);

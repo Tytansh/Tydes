@@ -8,6 +8,7 @@ import '../features/home/home_page.dart';
 import '../features/paywall/paywall_page.dart';
 import '../features/settings/settings_page.dart';
 import '../features/social/direct_messages_page.dart';
+import '../features/social/event_chat_page.dart';
 import '../features/social/notifications_page.dart';
 import '../features/social/post_detail_page.dart';
 import '../features/social/public_profile_page.dart';
@@ -64,6 +65,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: 'post/:postId',
             builder: (context, state) =>
                 PostDetailPage(postId: state.pathParameters['postId']!),
+          ),
+          GoRoute(
+            path: 'event/:postId/chat',
+            builder: (context, state) =>
+                EventChatPage(postId: state.pathParameters['postId']!),
           ),
           GoRoute(
             path: 'profile/:userId',

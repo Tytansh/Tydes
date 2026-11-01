@@ -77,6 +77,10 @@ class SocialCommentCreateRequest(BaseModel):
     reply_to_comment_id: str | None = None
 
 
+class EventChatMessageCreateRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=600)
+
+
 class SocialReportCreateRequest(BaseModel):
     target_type: Literal["post", "profile", "comment", "message"]
     target_id: str = Field(min_length=1, max_length=120)
@@ -263,6 +267,60 @@ def leave_event(post_id: str, _user=Depends(require_authenticated_user)):
     if state is None:
         raise HTTPException(status_code=404, detail="Event post not found.")
     return state
+
+
+@router.get("/posts/{post_id}/attendees")
+def list_event_attendees(post_id: str, _user=Depends(require_authenticated_user)):
+    attendees = store.list_event_attendees(post_id)
+    if attendees is None:
+        raise HTTPException(status_code=404, detail="Event post not found.")
+    return attendees
+
+
+@router.get("/posts/{post_id}/chat")
+def list_event_chat(post_id: str, _user=Depends(require_authenticated_user)):
+    post = store.get_post(post_id)
+    if post is None or post.post_type not in {"surf_plan", "looking_for_buddy"}:
+        raise HTTPException(status_code=404, detail="Event post not found.")
+    messages = store.list_event_chat_messages(post_id)
+    if messages is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Join this event to enter its group chat.",
+        )
+    return messages
+
+
+@router.post("/posts/{post_id}/chat")
+def create_event_chat_message(
+    post_id: str,
+    payload: EventChatMessageCreateRequest,
+    user=Depends(require_authenticated_user),
+):
+    _limit_user_action(
+        user.id,
+        "event-chat-message",
+        _positive_env("SOCIAL_EVENT_CHAT_MESSAGES_PER_USER_DAY", 100),
+    )
+    text = payload.text.strip()
+    try:
+        ensure_allowed_content(text)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    post = store.get_post(post_id)
+    if post is None or post.post_type not in {"surf_plan", "looking_for_buddy"}:
+        raise HTTPException(status_code=404, detail="Event post not found.")
+    message = store.add_event_chat_message(
+        post_id=post_id,
+        message_id=f"event_message_{uuid4().hex[:12]}",
+        text=text,
+    )
+    if message is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Join this event to enter its group chat.",
+        )
+    return message
 
 
 @router.post("/comments")

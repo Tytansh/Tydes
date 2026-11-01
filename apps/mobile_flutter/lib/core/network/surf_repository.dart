@@ -911,6 +911,41 @@ class SurfRepository {
     return SocialEngagementModel.fromJson(response.data!);
   }
 
+  Future<List<EventAttendeeModel>> fetchEventAttendees(String postId) async {
+    final response = await _dio.get<List<dynamic>>(
+      '/social/posts/$postId/attendees',
+    );
+    return response.data!
+        .map(
+          (item) => EventAttendeeModel.fromJson(item as Map<String, dynamic>),
+        )
+        .toList();
+  }
+
+  Future<List<EventChatMessageModel>> fetchEventChat(String postId) async {
+    final response = await _dio.get<List<dynamic>>(
+      '/social/posts/$postId/chat',
+    );
+    return response.data!
+        .map(
+          (item) =>
+              EventChatMessageModel.fromJson(item as Map<String, dynamic>),
+        )
+        .toList();
+  }
+
+  Future<EventChatMessageModel> sendEventChatMessage({
+    required String postId,
+    required String text,
+  }) async {
+    ensureAllowedContent([text]);
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/social/posts/$postId/chat',
+      data: {'text': text.trim()},
+    );
+    return EventChatMessageModel.fromJson(response.data!);
+  }
+
   Future<SocialEngagementModel> createComment({
     required String postId,
     required String text,

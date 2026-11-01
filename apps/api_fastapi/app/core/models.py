@@ -222,6 +222,27 @@ class SocialPost(BaseModel):
     created_at: datetime
     like_count: int = Field(default=0, ge=0)
     repost_count: int = Field(default=0, ge=0)
+    rsvp_count: int = Field(default=0, ge=0)
+
+
+class EventAttendee(BaseModel):
+    user_id: str
+    display_name: str
+    handle: str | None = None
+    avatar_url: str | None = None
+    premium: bool = False
+    organizer: bool = False
+
+
+class EventChatMessage(BaseModel):
+    id: str
+    post_id: str
+    user_id: str
+    author_name: str
+    author_handle: str | None = None
+    author_avatar_url: str | None = None
+    text: str
+    created_at: datetime
 
 
 class SocialComment(BaseModel):

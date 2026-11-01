@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
@@ -16,6 +17,12 @@ final travelEventsProvider = FutureProvider(
   (ref) => ref.watch(surfRepositoryProvider).fetchSocialPosts(),
 );
 
+final travelEngagementProvider = FutureProvider(
+  (ref) => ref.watch(surfRepositoryProvider).fetchSocialEngagement(),
+);
+
+enum _EventScope { area, region, country }
+
 class TripsPage extends ConsumerStatefulWidget {
   const TripsPage({super.key});
 
@@ -27,6 +34,7 @@ class _TripsPageState extends ConsumerState<TripsPage> {
   String? _selectedCountryId;
   String? _selectedRegionId;
   String? _selectedAreaId;
+  _EventScope _eventScope = _EventScope.area;
 
   @override
   Widget build(BuildContext context) {
@@ -47,11 +55,16 @@ class _TripsPageState extends ConsumerState<TripsPage> {
               selectedCountryId: _selectedCountryId,
               selectedRegionId: _selectedRegionId,
               selectedAreaId: _selectedAreaId,
+              eventScope: _eventScope,
+              onEventScopeChanged: (scope) {
+                setState(() => _eventScope = scope);
+              },
               onLocationChanged: (selection) {
                 setState(() {
                   _selectedCountryId = selection.countryId;
                   _selectedRegionId = selection.regionId;
                   _selectedAreaId = selection.areaId;
+                  _eventScope = _EventScope.area;
                 });
               },
             ),
@@ -70,6 +83,8 @@ class _TravelLoadedBody extends StatelessWidget {
     required this.selectedCountryId,
     required this.selectedRegionId,
     required this.selectedAreaId,
+    required this.eventScope,
+    required this.onEventScopeChanged,
     required this.onLocationChanged,
   });
 
@@ -79,6 +94,8 @@ class _TravelLoadedBody extends StatelessWidget {
   final String? selectedCountryId;
   final String? selectedRegionId;
   final String? selectedAreaId;
+  final _EventScope eventScope;
+  final ValueChanged<_EventScope> onEventScopeChanged;
   final ValueChanged<_TravelLocationSelection> onLocationChanged;
 
   @override
@@ -163,6 +180,8 @@ class _TravelLoadedBody extends StatelessWidget {
           country: selectedCountry,
           region: selectedRegion,
           area: selectedArea,
+          scope: eventScope,
+          onScopeChanged: onEventScopeChanged,
         ),
       ],
     );
@@ -813,13 +832,15 @@ class _TravelAreaOverview extends StatelessWidget {
   }
 }
 
-class _TravelEventsSection extends StatelessWidget {
+class _TravelEventsSection extends ConsumerWidget {
   const _TravelEventsSection({
     required this.posts,
     required this.spots,
     required this.country,
     required this.region,
     required this.area,
+    required this.scope,
+    required this.onScopeChanged,
   });
 
   final AsyncValue<List<SocialPostModel>> posts;
@@ -827,15 +848,48 @@ class _TravelEventsSection extends StatelessWidget {
   final _TravelCountryView country;
   final _TravelRegionView region;
   final _TravelAreaView area;
+  final _EventScope scope;
+  final ValueChanged<_EventScope> onScopeChanged;
+
+  String get _scopeName => switch (scope) {
+    _EventScope.area => area.name,
+    _EventScope.region => region.name,
+    _EventScope.country => country.name,
+  };
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final joinedPostIds =
+        ref.watch(travelEngagementProvider).valueOrNull?.rsvpPostIds ??
+        const <String>{};
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _SectionHeading(
-          title: 'Events in ${area.name}',
-          subtitle: 'Upcoming surf meetups for this location',
+          title: 'Events in $_scopeName',
+          subtitle: 'Upcoming surf meetups, from local to country-wide',
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _EventScopeChip(
+              label: area.name,
+              selected: scope == _EventScope.area,
+              onSelected: () => onScopeChanged(_EventScope.area),
+            ),
+            _EventScopeChip(
+              label: region.name,
+              selected: scope == _EventScope.region,
+              onSelected: () => onScopeChanged(_EventScope.region),
+            ),
+            _EventScopeChip(
+              label: country.name,
+              selected: scope == _EventScope.country,
+              onSelected: () => onScopeChanged(_EventScope.country),
+            ),
+          ],
         ),
         const SizedBox(height: 10),
         posts.when(
@@ -846,15 +900,20 @@ class _TravelEventsSection extends StatelessWidget {
               country: country.name,
               region: region.name,
               area: area.name,
+              scope: scope,
             );
             if (events.isEmpty) {
-              return _EmptyTravelEventsCard(areaName: area.name);
+              return _EmptyTravelEventsCard(areaName: _scopeName);
             }
+            final visibleEvents = events.take(8).toList();
             return Column(
               children: [
-                for (final event in events.take(4)) ...[
-                  _TravelEventCard(event: event),
-                  if (event != events.take(4).last) const SizedBox(height: 10),
+                for (final event in visibleEvents) ...[
+                  _TravelEventCard(
+                    event: event,
+                    joined: joinedPostIds.contains(event.post.id),
+                  ),
+                  if (event != visibleEvents.last) const SizedBox(height: 10),
                 ],
               ],
             );
@@ -867,13 +926,110 @@ class _TravelEventsSection extends StatelessWidget {
   }
 }
 
-class _TravelEventCard extends StatelessWidget {
-  const _TravelEventCard({required this.event});
+class _EventScopeChip extends StatelessWidget {
+  const _EventScopeChip({
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+  });
 
-  final _TravelEventView event;
+  final String label;
+  final bool selected;
+  final VoidCallback onSelected;
 
   @override
   Widget build(BuildContext context) {
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onSelected(),
+      selectedColor: const Color(0xFFD1EFEB),
+      side: BorderSide(
+        color: selected ? const Color(0xFF087E7A) : const Color(0xFFD7D8D1),
+      ),
+      labelStyle: TextStyle(
+        color: selected ? const Color(0xFF075F5C) : const Color(0xFF4F5956),
+        fontWeight: FontWeight.w800,
+      ),
+    );
+  }
+}
+
+class _TravelEventCard extends ConsumerStatefulWidget {
+  const _TravelEventCard({required this.event, required this.joined});
+
+  final _TravelEventView event;
+  final bool joined;
+
+  @override
+  ConsumerState<_TravelEventCard> createState() => _TravelEventCardState();
+}
+
+class _TravelEventCardState extends ConsumerState<_TravelEventCard> {
+  bool _busy = false;
+
+  Future<void> _toggleJoin() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await ref
+          .read(surfRepositoryProvider)
+          .setEventRsvp(postId: widget.event.post.id, joined: !widget.joined);
+      ref.invalidate(travelEngagementProvider);
+      ref.invalidate(travelEventsProvider);
+      if (!widget.joined && mounted) {
+        await _showJoinChatPrompt();
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not update this event right now.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _showJoinChatPrompt() async {
+    final openChat = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('You’re going'),
+        content: const Text(
+          'Join the group chat with everyone going to this event?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Maybe later'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.forum_outlined),
+            label: const Text('Join group chat'),
+          ),
+        ],
+      ),
+    );
+    if (openChat == true && mounted) {
+      context.push('/event/${widget.event.post.id}/chat');
+    }
+  }
+
+  void _showAttendees() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => _EventAttendeesSheet(postId: widget.event.post.id),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final event = widget.event;
     final body = event.post.body.trim();
     return Container(
       padding: const EdgeInsets.all(16),
@@ -882,68 +1038,193 @@ class _TravelEventCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: const Color(0xFFC7E5E0)),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 48,
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF087E7A),
-              borderRadius: BorderRadius.circular(15),
-            ),
-            child: Column(
-              children: [
-                Text(
-                  _eventMonth(event.date),
-                  style: const TextStyle(
-                    color: Color(0xFFD8F3EE),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                  ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 48,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF087E7A),
+                  borderRadius: BorderRadius.circular(15),
                 ),
-                Text(
-                  '${event.date.day}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    height: 1.05,
-                    fontWeight: FontWeight.w900,
-                  ),
+                child: Column(
+                  children: [
+                    Text(
+                      _eventMonth(event.date),
+                      style: const TextStyle(
+                        color: Color(0xFFD8F3EE),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    Text(
+                      '${event.date.day}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        height: 1.05,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      body.isEmpty ? 'Surf meetup at ${event.spot.name}' : body,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      '${event.spot.name} • ${event.post.authorName}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF52625F),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilledButton.icon(
+                onPressed: _busy ? null : _toggleJoin,
+                icon: _busy
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(
+                        widget.joined
+                            ? Icons.check_circle_outline
+                            : Icons.add_circle_outline,
+                      ),
+                label: Text(widget.joined ? 'Going' : 'Join now'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _showAttendees,
+                icon: const Icon(Icons.groups_2_outlined),
+                label: Text(
+                  event.post.rsvpCount > 0
+                      ? 'Who’s going (${event.post.rsvpCount + 1})'
+                      : 'Who’s going',
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => context.push('/post/${event.post.id}'),
+                icon: const Icon(Icons.article_outlined),
+                label: const Text('See post'),
+              ),
+              if (widget.joined)
+                TextButton.icon(
+                  onPressed: () => context.push('/event/${event.post.id}/chat'),
+                  icon: const Icon(Icons.forum_outlined),
+                  label: const Text('Group chat'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EventAttendeesSheet extends ConsumerWidget {
+  const _EventAttendeesSheet({required this.postId});
+
+  final String postId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+        child: FutureBuilder<List<EventAttendeeModel>>(
+          future: ref.read(surfRepositoryProvider).fetchEventAttendees(postId),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData && !snapshot.hasError) {
+              return const SizedBox(
+                height: 220,
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            if (snapshot.hasError) {
+              return const SizedBox(
+                height: 180,
+                child: Center(
+                  child: Text('Could not load attendees right now.'),
+                ),
+              );
+            }
+            final attendees = snapshot.data!;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  body.isEmpty ? 'Surf meetup at ${event.spot.name}' : body,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w900,
-                  ),
+                  'Who’s going',
+                  style: Theme.of(context).textTheme.headlineSmall,
                 ),
-                const SizedBox(height: 5),
-                Text(
-                  '${event.spot.name} • ${event.post.authorName}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF52625F),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
+                const SizedBox(height: 12),
+                for (final attendee in attendees)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      backgroundImage: attendee.avatarUrl == null
+                          ? null
+                          : NetworkImage(attendee.avatarUrl!),
+                      child: attendee.avatarUrl == null
+                          ? Text(
+                              attendee.displayName.trim().isEmpty
+                                  ? '?'
+                                  : attendee.displayName
+                                        .trim()[0]
+                                        .toUpperCase(),
+                            )
+                          : null,
+                    ),
+                    title: Text(attendee.displayName),
+                    subtitle: Text(
+                      attendee.organizer
+                          ? 'Organizer'
+                          : attendee.handle == null
+                          ? 'Going'
+                          : '@${attendee.handle}',
+                    ),
+                    trailing: attendee.organizer
+                        ? const Icon(
+                            Icons.star_rounded,
+                            color: Color(0xFF087E7A),
+                          )
+                        : const Icon(
+                            Icons.check_circle,
+                            color: Color(0xFF2AA7A1),
+                          ),
                   ),
-                ),
               ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          const Icon(Icons.chevron_right_rounded, color: Color(0xFF087E7A)),
-        ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -1416,6 +1697,7 @@ List<_TravelEventView> _eventsForLocation(
   required String country,
   required String region,
   required String area,
+  required _EventScope scope,
 }) {
   final spotsById = {for (final spot in spots) spot.id: spot};
   final now = DateTime.now();
@@ -1427,7 +1709,13 @@ List<_TravelEventView> _eventsForLocation(
     final date = DateTime.tryParse(post.meetupDate!);
     final spot = post.spotId == null ? null : spotsById[post.spotId];
     if (date == null || date.isBefore(today) || spot == null) continue;
-    if (spot.country != country || spot.region != region || spot.area != area) {
+    final matchesLocation = switch (scope) {
+      _EventScope.country => spot.country == country,
+      _EventScope.region => spot.country == country && spot.region == region,
+      _EventScope.area =>
+        spot.country == country && spot.region == region && spot.area == area,
+    };
+    if (!matchesLocation) {
       continue;
     }
     events.add(_TravelEventView(post: post, spot: spot, date: date));

@@ -398,6 +398,79 @@ def test_post_owner_can_delete_post_but_other_accounts_cannot(monkeypatch):
     assert store.get_post(post_id) is None
 
 
+def test_event_attendees_and_group_chat_follow_rsvp_membership(monkeypatch):
+    owner_token = _signup_access_token(monkeypatch, "event-owner@example.com")
+    guest_token = _signup_access_token(monkeypatch, "event-guest@example.com")
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    guest_headers = {"Authorization": f"Bearer {guest_token}"}
+
+    created = client.post(
+        "/api/v1/social/posts",
+        headers=owner_headers,
+        json={
+            "body": "Saturday surf meetup",
+            "post_type": "surf_plan",
+            "meetup_date": "2030-01-05",
+        },
+    )
+    assert created.status_code == 200, created.text
+    post_id = created.json()["id"]
+
+    blocked_chat = client.get(
+        f"/api/v1/social/posts/{post_id}/chat",
+        headers=guest_headers,
+    )
+    assert blocked_chat.status_code == 403
+
+    joined = client.post(
+        f"/api/v1/social/posts/{post_id}/rsvp",
+        headers=guest_headers,
+    )
+    assert joined.status_code == 200
+    assert post_id in joined.json()["rsvp_post_ids"]
+
+    attendees = client.get(
+        f"/api/v1/social/posts/{post_id}/attendees",
+        headers=guest_headers,
+    )
+    assert attendees.status_code == 200
+    attendee_payload = attendees.json()
+    assert len(attendee_payload) == 2
+    assert attendee_payload[0]["organizer"] is True
+    assert {item["user_id"] for item in attendee_payload} == {
+        created.json()["user_id"],
+        store.resolve_session_user(guest_token).id,
+    }
+
+    sent = client.post(
+        f"/api/v1/social/posts/{post_id}/chat",
+        headers=guest_headers,
+        json={"text": "See everyone at the break."},
+    )
+    assert sent.status_code == 200, sent.text
+    assert sent.json()["text"] == "See everyone at the break."
+
+    messages = client.get(
+        f"/api/v1/social/posts/{post_id}/chat",
+        headers=owner_headers,
+    )
+    assert messages.status_code == 200
+    assert [item["text"] for item in messages.json()] == [
+        "See everyone at the break."
+    ]
+
+    left = client.delete(
+        f"/api/v1/social/posts/{post_id}/rsvp",
+        headers=guest_headers,
+    )
+    assert left.status_code == 200
+    blocked_again = client.get(
+        f"/api/v1/social/posts/{post_id}/chat",
+        headers=guest_headers,
+    )
+    assert blocked_again.status_code == 403
+
+
 def test_alert_changes_are_limited_to_the_owning_account(monkeypatch):
     owner_token = _signup_access_token(monkeypatch, "alert-owner@example.com")
     other_token = _signup_access_token(monkeypatch, "alert-other@example.com")

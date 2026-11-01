@@ -6,6 +6,7 @@ from typing import Any
 
 from app.core.models import (
     DEMO_SOCIAL_USER_IDS,
+    EventChatMessage,
     SocialComment,
     SocialEngagementState,
     SocialNotification,
@@ -76,7 +77,8 @@ class PostgresSocialRepository:
             SELECT
                 posts.payload,
                 COALESCE(likes.like_count, 0) AS like_count,
-                COALESCE(reposts.repost_count, 0) AS repost_count
+                COALESCE(reposts.repost_count, 0) AS repost_count,
+                COALESCE(rsvps.rsvp_count, 0) AS rsvp_count
             FROM social_posts AS posts
             LEFT JOIN (
                 SELECT post_id, COUNT(*) AS like_count
@@ -90,6 +92,11 @@ class PostgresSocialRepository:
                 WHERE user_id <> %s
                 GROUP BY post_id
             ) AS reposts ON reposts.post_id = posts.id
+            LEFT JOIN (
+                SELECT post_id, COUNT(*) AS rsvp_count
+                FROM social_rsvps
+                GROUP BY post_id
+            ) AS rsvps ON rsvps.post_id = posts.id
             ORDER BY posts.created_at DESC
         """
         parameters: tuple[Any, ...] = (viewer_id, viewer_id)
@@ -103,6 +110,7 @@ class PostgresSocialRepository:
             payload = _payload_dict(row["payload"])
             payload["like_count"] = int(row["like_count"])
             payload["repost_count"] = int(row["repost_count"])
+            payload["rsvp_count"] = int(row["rsvp_count"])
             posts.append(SocialPost.model_validate(payload))
         return posts
 
@@ -379,6 +387,69 @@ class PostgresSocialRepository:
                     (user_id, post_id),
                 )
 
+    def list_rsvp_user_ids(self, post_id: str) -> list[str]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT user_id FROM social_rsvps
+                WHERE post_id = %s
+                ORDER BY created_at
+                """,
+                (post_id,),
+            ).fetchall()
+        return [str(row["user_id"]) for row in rows]
+
+    def is_rsvped(self, user_id: str, post_id: str) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM social_rsvps
+                    WHERE user_id = %s AND post_id = %s
+                ) AS exists
+                """,
+                (user_id, post_id),
+            ).fetchone()
+        return bool(row["exists"])
+
+    def list_event_messages(
+        self,
+        post_id: str,
+        *,
+        limit: int = 200,
+    ) -> list[EventChatMessage]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT payload FROM social_event_messages
+                WHERE post_id = %s
+                ORDER BY created_at ASC
+                LIMIT %s
+                """,
+                (post_id, max(1, min(limit, 500))),
+            ).fetchall()
+        return [
+            EventChatMessage.model_validate(_payload_dict(row["payload"]))
+            for row in rows
+        ]
+
+    def save_event_message(self, message: EventChatMessage) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO social_event_messages
+                    (id, post_id, user_id, payload, created_at)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                (
+                    message.id,
+                    message.post_id,
+                    message.user_id,
+                    self._jsonb(message.model_dump(mode="json")),
+                    _aware_datetime(message.created_at),
+                ),
+            )
     def set_follow(self, follower_user_id: str, followed_user_id: str, following: bool) -> None:
         if follower_user_id == followed_user_id:
             return
@@ -589,6 +660,10 @@ class PostgresSocialRepository:
                 "DELETE FROM social_reports WHERE reporter_user_id = %s",
                 (user_id,),
             )
+            connection.execute(
+                "DELETE FROM social_event_messages WHERE user_id = %s",
+                (user_id,),
+            )
 
     def delete_demo_social_content(self) -> None:
         """Remove the old launch-demo community without touching real accounts."""
@@ -609,6 +684,10 @@ class PostgresSocialRepository:
                     f"DELETE FROM {table} WHERE post_id = %s",
                     (post_id,),
                 )
+            connection.execute(
+                "DELETE FROM social_event_messages WHERE post_id = %s",
+                (post_id,),
+            )
             connection.execute("DELETE FROM social_posts WHERE id = %s", (post_id,))
 
     def _posts_by_user(self, user_id: str) -> list[SocialPost]:
@@ -720,6 +799,24 @@ class PostgresSocialRepository:
             self._create_user_post_table(connection, "social_post_likes")
             self._create_user_post_table(connection, "social_reposts")
             self._create_user_post_table(connection, "social_rsvps")
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS social_event_messages (
+                    id TEXT PRIMARY KEY,
+                    post_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    payload JSONB NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS social_event_messages_post_idx ON social_event_messages (post_id, created_at)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS social_event_messages_user_idx ON social_event_messages (user_id)"
+            )
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS social_comment_likes (
