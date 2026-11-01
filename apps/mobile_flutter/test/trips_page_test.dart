@@ -126,7 +126,7 @@ void main() {
       220,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('Choose your spot'), findsNWidgets(2));
+    expect(find.text('Find event'), findsNWidgets(2));
     expect(find.text('Events in Uluwatu'), findsNothing);
 
     await tester.tap(find.byKey(const Key('travel-location-picker')));
@@ -147,8 +147,26 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     expect(find.text('Events in Uluwatu'), findsOneWidget);
-    expect(find.text('See all Bali'), findsOneWidget);
-    expect(find.text('See all Indonesia'), findsOneWidget);
+    final regionScope = find.byKey(const Key('travel-events-region-scope'));
+    final countryScope = find.byKey(const Key('travel-events-country-scope'));
+    expect(regionScope, findsOneWidget);
+    expect(countryScope, findsOneWidget);
+    expect(
+      find.descendant(of: regionScope, matching: find.text('Bali')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: regionScope, matching: find.text('See all')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: countryScope, matching: find.text('Indonesia')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: countryScope, matching: find.text('See all')),
+      findsOneWidget,
+    );
     expect(find.text('Sunset paddle and dinner after'), findsOneWidget);
     expect(find.textContaining('Maya Surfer'), findsOneWidget);
     expect(find.text('Join now'), findsOneWidget);

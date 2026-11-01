@@ -142,7 +142,7 @@ class _TravelLoadedBody extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                'Choose your spot',
+                'Find event',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
             ),
@@ -866,30 +866,27 @@ class _TravelEventsSection extends ConsumerWidget {
           subtitle: 'Upcoming surf meetups, from local to country-wide',
         ),
         const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            if (scope != _EventScope.area)
-              TextButton.icon(
-                onPressed: () => onScopeChanged(_EventScope.area),
-                icon: const Icon(Icons.near_me_outlined, size: 18),
-                label: const Text('Near this spot'),
-              ),
-            if (scope != _EventScope.region)
-              TextButton.icon(
-                onPressed: () => onScopeChanged(_EventScope.region),
-                icon: const Icon(Icons.view_list_outlined, size: 18),
-                label: Text('See all ${region.name}'),
-              ),
-            if (scope != _EventScope.country)
-              TextButton.icon(
-                onPressed: () => onScopeChanged(_EventScope.country),
-                icon: const Icon(Icons.public_rounded, size: 18),
-                label: Text('See all ${country.name}'),
-              ),
-          ],
+        _EventScopeRow(
+          key: const Key('travel-events-region-scope'),
+          label: region.name,
+          selected: scope == _EventScope.region,
+          onPressed: () => onScopeChanged(_EventScope.region),
         ),
+        const SizedBox(height: 8),
+        _EventScopeRow(
+          key: const Key('travel-events-country-scope'),
+          label: country.name,
+          selected: scope == _EventScope.country,
+          onPressed: () => onScopeChanged(_EventScope.country),
+        ),
+        if (scope != _EventScope.area) ...[
+          const SizedBox(height: 4),
+          TextButton.icon(
+            onPressed: () => onScopeChanged(_EventScope.area),
+            icon: const Icon(Icons.near_me_outlined, size: 18),
+            label: Text('Back to events near ${area.name}'),
+          ),
+        ],
         const SizedBox(height: 10),
         posts.when(
           data: (items) {
@@ -921,6 +918,53 @@ class _TravelEventsSection extends ConsumerWidget {
           error: (_, _) => const _TravelEventsUnavailableCard(),
         ),
       ],
+    );
+  }
+}
+
+class _EventScopeRow extends StatelessWidget {
+  const _EventScopeRow({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onPressed,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? const Color(0xFFD7EFEC) : const Color(0xFFFFFFFF);
+    final borderColor = selected
+        ? const Color(0xFF77CBC4)
+        : const Color(0xFFE0D8CA);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      padding: const EdgeInsets.fromLTRB(14, 5, 8, 5),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        children: [
+          if (selected) ...[
+            const Icon(
+              Icons.check_circle_rounded,
+              size: 18,
+              color: Color(0xFF087E7A),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Expanded(
+            child: Text(label, style: Theme.of(context).textTheme.titleSmall),
+          ),
+          TextButton(onPressed: onPressed, child: const Text('See all')),
+        ],
+      ),
     );
   }
 }
@@ -1310,7 +1354,7 @@ class _TravelLocationButton extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    area?.name ?? 'Choose your spot',
+                    area?.name ?? 'Find event',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 2),
@@ -1399,7 +1443,7 @@ class _TravelLocationSheetState extends State<_TravelLocationSheet> {
                 ),
               ),
               Text(
-                'Choose your spot',
+                'Find event',
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
               const SizedBox(height: 4),
