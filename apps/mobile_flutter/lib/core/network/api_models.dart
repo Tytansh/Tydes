@@ -807,6 +807,7 @@ class SocialMediaAttachmentModel {
     required this.mediaType,
     required this.url,
     required this.thumbnailUrl,
+    required this.fallbackUrl,
     required this.width,
     required this.height,
     required this.altText,
@@ -816,6 +817,7 @@ class SocialMediaAttachmentModel {
   final String mediaType;
   final String url;
   final String thumbnailUrl;
+  final String? fallbackUrl;
   final int? width;
   final int? height;
   final String? altText;
@@ -825,6 +827,7 @@ class SocialMediaAttachmentModel {
     'media_type': mediaType,
     'url': url,
     'thumbnail_url': thumbnailUrl,
+    'fallback_url': fallbackUrl,
     'width': width,
     'height': height,
     'alt_text': altText,
@@ -836,6 +839,7 @@ class SocialMediaAttachmentModel {
         mediaType: json['media_type'] as String? ?? 'photo',
         url: json['url'] as String,
         thumbnailUrl: json['thumbnail_url'] as String,
+        fallbackUrl: json['fallback_url'] as String?,
         width: json['width'] as int?,
         height: json['height'] as int?,
         altText: json['alt_text'] as String?,

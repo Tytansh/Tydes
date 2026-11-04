@@ -31,6 +31,14 @@ services:
         sync: false
       - key: MEDIA_STORAGE_BACKEND
         value: r2
+      - key: BUNNY_STREAM_ENABLED
+        value: "false"
+      - key: BUNNY_STREAM_LIBRARY_ID
+        value: "799139"
+      - key: BUNNY_STREAM_API_KEY
+        sync: false
+      - key: BUNNY_STREAM_CDN_HOSTNAME
+        value: vz-4521d531-edd.b-cdn.net
       - key: CLOUDFLARE_R2_ACCOUNT_ID
         sync: false
       - key: CLOUDFLARE_R2_BUCKET
@@ -46,7 +54,9 @@ services:
       - key: MEDIA_UPLOADS_PER_MINUTE
         value: '4'
       - key: MEDIA_VIDEOS_PER_USER_DAY
-        value: '10'
+        value: '2'
+      - key: MEDIA_PREMIUM_VIDEOS_PER_USER_DAY
+        value: '5'
       - key: MEDIA_UPLOADS_PER_USER_DAY
         value: '40'
       - key: MEDIA_USER_BYTES_PER_DAY

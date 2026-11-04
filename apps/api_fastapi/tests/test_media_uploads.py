@@ -13,6 +13,7 @@ from app.core.media_uploads import (
     UploadReservation,
 )
 from app.core import media_cleanup
+from app.core.bunny_stream import BunnyStreamClient, bunny_upload_signature
 from app.core.media_storage import R2MediaStorage
 from app.core.video_metadata import mp4_duration_from_bytes
 
@@ -194,3 +195,34 @@ def test_direct_upload_signature_binds_exact_content_length():
     assert captured["Params"]["ContentLength"] == 12_345
     assert captured["Params"]["IfNoneMatch"] == "*"
     assert captured["ExpiresIn"] == 300
+
+
+def test_bunny_upload_signature_binds_library_expiry_and_video():
+    signature = bunny_upload_signature(
+        "799139",
+        "secret-key",
+        1_800_000_000,
+        "video-guid",
+    )
+
+    assert signature == (
+        "bfc550084db7e3406164e71e8f6695474c4aa9089e706457b8c700c5bced776a"
+    )
+
+
+def test_bunny_public_urls_do_not_expose_api_key(monkeypatch):
+    monkeypatch.setenv("BUNNY_STREAM_LIBRARY_ID", "799139")
+    monkeypatch.setenv("BUNNY_STREAM_API_KEY", "secret-key")
+    monkeypatch.setenv(
+        "BUNNY_STREAM_CDN_HOSTNAME",
+        "vz-4521d531-edd.b-cdn.net",
+    )
+    client = BunnyStreamClient()
+
+    assert client.playlist_url("video-guid") == (
+        "https://vz-4521d531-edd.b-cdn.net/video-guid/playlist.m3u8"
+    )
+    assert client.fallback_url("video-guid") == (
+        "https://vz-4521d531-edd.b-cdn.net/video-guid/play_720p.mp4"
+    )
+    assert "secret-key" not in client.thumbnail_url("video-guid")

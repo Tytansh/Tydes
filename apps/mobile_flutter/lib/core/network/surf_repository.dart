@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:math' as math;
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1124,6 +1127,7 @@ class SurfRepository {
           'size_bytes': fileBytes,
           'thumbnail_content_type': thumbnailContentType,
           'thumbnail_size_bytes': thumbnailBytes,
+          'file_name': file.name,
         },
       );
       final reservation = reservationResponse.data!;
@@ -1144,14 +1148,7 @@ class SurfRepository {
         );
       }
       uploadedToStorage = true;
-      final completed = await _dio.post<Map<String, dynamic>>(
-        '/social/media/uploads/$reservationId/complete',
-        options: Options(
-          connectTimeout: const Duration(seconds: 30),
-          sendTimeout: const Duration(minutes: 1),
-          receiveTimeout: const Duration(minutes: 3),
-        ),
-      );
+      final completed = await _waitForCompletedUpload(reservationId);
       return SocialMediaAttachmentModel.fromJson(completed.data!);
     } catch (_) {
       // Do not race the server's verification/copy step with a cancellation if
@@ -1181,6 +1178,15 @@ class SurfRepository {
     required int contentLength,
     ProgressCallback? onSendProgress,
   }) async {
+    if (target['protocol'] == 'tus') {
+      await _putTusUpload(
+        file,
+        target,
+        contentLength: contentLength,
+        onSendProgress: onSendProgress,
+      );
+      return;
+    }
     final rawHeaders = target['headers'] as Map<String, dynamic>? ?? const {};
     final headers = <String, dynamic>{
       for (final entry in rawHeaders.entries) entry.key: entry.value,
@@ -1200,6 +1206,108 @@ class SurfRepository {
       ),
       onSendProgress: onSendProgress,
     );
+  }
+
+  Future<Response<Map<String, dynamic>>> _waitForCompletedUpload(
+    String reservationId,
+  ) async {
+    for (var attempt = 0; attempt < 60; attempt += 1) {
+      try {
+        return await _dio.post<Map<String, dynamic>>(
+          '/social/media/uploads/$reservationId/complete',
+          options: Options(
+            connectTimeout: const Duration(seconds: 30),
+            sendTimeout: const Duration(minutes: 1),
+            receiveTimeout: const Duration(minutes: 3),
+          ),
+        );
+      } on DioException catch (error) {
+        if (error.response?.statusCode != 425 || attempt == 59) rethrow;
+        await Future<void>.delayed(const Duration(seconds: 5));
+      }
+    }
+    throw StateError('Video processing timed out. Try again in a moment.');
+  }
+
+  Future<void> _putTusUpload(
+    XFile file,
+    Map<String, dynamic> target, {
+    required int contentLength,
+    ProgressCallback? onSendProgress,
+  }) async {
+    final authHeaders = <String, dynamic>{
+      for (final entry
+          in (target['headers'] as Map<String, dynamic>? ?? const {}).entries)
+        entry.key: entry.value,
+    };
+    final metadata = [
+      'filename ${base64Encode(utf8.encode(file.name))}',
+      'filetype ${base64Encode(utf8.encode(_mediaContentType(file, mediaType: 'video')))}',
+    ].join(',');
+    final created = await _directUploadDio.post<void>(
+      target['url'] as String,
+      options: Options(
+        headers: {
+          ...authHeaders,
+          'Tus-Resumable': '1.0.0',
+          'Upload-Length': contentLength,
+          'Upload-Metadata': metadata,
+        },
+        validateStatus: (status) => status == 201,
+      ),
+    );
+    final rawLocation = created.headers.value('location');
+    if (rawLocation == null || rawLocation.isEmpty) {
+      throw StateError('Video upload could not be started.');
+    }
+    final uploadUrl = Uri.parse(
+      target['url'] as String,
+    ).resolve(rawLocation).toString();
+    const chunkSize = 5 * 1024 * 1024;
+    final webBytes = kIsWeb ? await file.readAsBytes() : null;
+    var offset = 0;
+    var retries = 0;
+    while (offset < contentLength) {
+      final end = math.min(offset + chunkSize, contentLength);
+      final chunkLength = end - offset;
+      try {
+        final data = kIsWeb
+            ? webBytes!.sublist(offset, end)
+            : file.openRead(offset, end);
+        final response = await _directUploadDio.patch<void>(
+          uploadUrl,
+          data: data,
+          options: Options(
+            headers: {
+              ...authHeaders,
+              'Tus-Resumable': '1.0.0',
+              'Upload-Offset': offset,
+              'Content-Type': 'application/offset+octet-stream',
+              Headers.contentLengthHeader: chunkLength,
+            },
+            validateStatus: (status) => status == 204,
+          ),
+          onSendProgress: (sent, _) {
+            onSendProgress?.call(offset + sent, contentLength);
+          },
+        );
+        offset =
+            int.tryParse(response.headers.value('upload-offset') ?? '') ?? end;
+        retries = 0;
+      } on DioException {
+        retries += 1;
+        if (retries > 3) rethrow;
+        final head = await _directUploadDio.head<void>(
+          uploadUrl,
+          options: Options(
+            headers: {...authHeaders, 'Tus-Resumable': '1.0.0'},
+            validateStatus: (status) => status == 200 || status == 204,
+          ),
+        );
+        offset =
+            int.tryParse(head.headers.value('upload-offset') ?? '') ?? offset;
+      }
+    }
   }
 
   bool _directUploadUnavailable(DioException error) {

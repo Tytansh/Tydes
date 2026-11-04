@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Upl
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.auth import optional_authenticated_user, require_authenticated_user
+from app.core.bunny_stream import BunnyStreamClient, bunny_stream_enabled
 from app.core.media_cleanup import queue_post_media_deletion, run_media_cleanup
 from app.core.media_storage import R2MediaStorage, configured_media_storage
 from app.core.media_uploads import (
@@ -42,6 +43,7 @@ MAX_PHOTO_BYTES = 15 * 1024 * 1024
 # Keep feed clips small enough to start quickly on mobile connections. Tydes
 # currently serves progressive MP4 files, not an adaptive HLS/DASH ladder.
 MAX_VIDEO_BYTES = 25 * 1024 * 1024
+MAX_BUNNY_VIDEO_BYTES = 250 * 1024 * 1024
 MAX_THUMBNAIL_BYTES = 2 * 1024 * 1024
 MAX_VIDEO_DURATION_SECONDS = 30.5
 MAX_POST_BODY_CHARS = 1600
@@ -93,11 +95,13 @@ class DirectMediaUploadCreateRequest(BaseModel):
     size_bytes: int = Field(gt=0)
     thumbnail_content_type: str | None = Field(default=None, max_length=80)
     thumbnail_size_bytes: int = Field(default=0, ge=0)
+    file_name: str | None = Field(default=None, max_length=180)
 
 
 class DirectUploadTarget(BaseModel):
     url: str
     headers: dict[str, str]
+    protocol: Literal["put", "tus"] = "put"
 
 
 class DirectMediaUploadReservationResponse(BaseModel):
@@ -383,7 +387,8 @@ def create_direct_media_upload(
     user=Depends(require_authenticated_user),
 ):
     storage = configured_media_storage()
-    if not isinstance(storage, R2MediaStorage):
+    use_bunny = payload.media_type == "video" and bunny_stream_enabled()
+    if not isinstance(storage, R2MediaStorage) and not use_bunny:
         raise HTTPException(
             status_code=409,
             detail="Direct uploads are unavailable in this environment.",
@@ -398,7 +403,13 @@ def create_direct_media_upload(
         payload.media_type,
         payload.content_type,
     )
-    max_bytes = MAX_VIDEO_BYTES if payload.media_type == "video" else MAX_PHOTO_BYTES
+    max_bytes = (
+        MAX_BUNNY_VIDEO_BYTES
+        if use_bunny
+        else MAX_VIDEO_BYTES
+        if payload.media_type == "video"
+        else MAX_PHOTO_BYTES
+    )
     if payload.size_bytes > max_bytes:
         raise HTTPException(
             status_code=413,
@@ -406,7 +417,10 @@ def create_direct_media_upload(
         )
     thumbnail_content_type: str | None = None
     thumbnail_extension: str | None = None
-    if payload.thumbnail_size_bytes > 0 or payload.thumbnail_content_type is not None:
+    if use_bunny:
+        thumbnail_content_type = None
+        thumbnail_extension = None
+    elif payload.thumbnail_size_bytes > 0 or payload.thumbnail_content_type is not None:
         if payload.thumbnail_size_bytes <= 0 or payload.thumbnail_content_type is None:
             raise HTTPException(status_code=400, detail="Thumbnail details are incomplete.")
         thumbnail_content_type, thumbnail_extension = _validated_direct_media_type(
@@ -422,7 +436,11 @@ def create_direct_media_upload(
         raise HTTPException(status_code=400, detail="Photos require a thumbnail.")
 
     now = datetime.now(timezone.utc)
-    ttl_seconds = _direct_upload_ttl_seconds()
+    ttl_seconds = (
+        max(_direct_upload_ttl_seconds(), 6 * 60 * 60)
+        if use_bunny
+        else _direct_upload_ttl_seconds()
+    )
     expires_at = now + timedelta(seconds=ttl_seconds)
     media_id = f"media_{uuid4().hex[:16]}"
     user_path = hashlib.sha256(user.id.encode("utf-8")).hexdigest()[:16]
@@ -438,12 +456,28 @@ def create_direct_media_upload(
         if thumbnail_extension is not None
         else None
     )
-    public_url = storage.public_object_url(final_name)
-    thumbnail_public_url = (
-        storage.public_object_url(final_thumbnail_name)
-        if final_thumbnail_name is not None
-        else public_url
-    )
+    bunny_client: BunnyStreamClient | None = None
+    bunny_upload = None
+    if use_bunny:
+        bunny_client = BunnyStreamClient()
+        bunny_upload = bunny_client.create_upload(
+            payload.file_name or f"Tydes video {media_id}",
+            expires_seconds=ttl_seconds,
+        )
+        expires_at = bunny_upload.expires_at
+        pending_name = bunny_upload.video_id
+        final_name = bunny_upload.video_id
+        pending_thumbnail_name = None
+        final_thumbnail_name = None
+        public_url = bunny_client.playlist_url(bunny_upload.video_id)
+        thumbnail_public_url = bunny_client.thumbnail_url(bunny_upload.video_id)
+    else:
+        public_url = storage.public_object_url(final_name)
+        thumbnail_public_url = (
+            storage.public_object_url(final_thumbnail_name)
+            if final_thumbnail_name is not None
+            else public_url
+        )
     reservation = UploadReservation(
         id=media_id,
         user_id=user.id,
@@ -452,7 +486,7 @@ def create_direct_media_upload(
         content_type=content_type,
         thumbnail_content_type=thumbnail_content_type,
         expected_bytes=payload.size_bytes,
-        expected_thumbnail_bytes=payload.thumbnail_size_bytes,
+        expected_thumbnail_bytes=0 if use_bunny else payload.thumbnail_size_bytes,
         pending_name=pending_name,
         final_name=final_name,
         pending_thumbnail_name=pending_thumbnail_name,
@@ -462,19 +496,33 @@ def create_direct_media_upload(
         status="pending",
         created_at=now,
         expires_at=expires_at,
+        storage_provider="bunny_stream" if use_bunny else "r2",
+        external_id=bunny_upload.video_id if bunny_upload is not None else None,
     )
     try:
-        upload_ledger.reserve(reservation, UploadLimits.from_env())
+        upload_ledger.reserve(
+            reservation,
+            UploadLimits.from_env(premium=user.premium),
+        )
     except UploadQuotaExceeded as error:
+        if bunny_upload is not None:
+            bunny_client.delete_video(bunny_upload.video_id)
         raise HTTPException(status_code=429, detail=str(error)) from error
+    except Exception:
+        if bunny_upload is not None:
+            bunny_client.delete_video(bunny_upload.video_id)
+        raise
 
     try:
-        upload_url = storage.create_direct_upload_url(
-            pending_name,
-            content_type=content_type,
-            content_length=payload.size_bytes,
-            expires_seconds=ttl_seconds,
-        )
+        if bunny_upload is not None:
+            upload_url = bunny_upload.url
+        else:
+            upload_url = storage.create_direct_upload_url(
+                pending_name,
+                content_type=content_type,
+                content_length=payload.size_bytes,
+                expires_seconds=ttl_seconds,
+            )
         thumbnail_upload = None
         if pending_thumbnail_name is not None and thumbnail_content_type is not None:
             thumbnail_url = storage.create_direct_upload_url(
@@ -492,6 +540,8 @@ def create_direct_media_upload(
             )
     except Exception:
         upload_ledger.set_status(media_id, user.id, "failed")
+        if bunny_upload is not None:
+            bunny_client.delete_video(bunny_upload.video_id)
         raise
 
     return DirectMediaUploadReservationResponse(
@@ -499,10 +549,15 @@ def create_direct_media_upload(
         media_type=payload.media_type,
         upload=DirectUploadTarget(
             url=upload_url,
-            headers={
-                "Content-Type": content_type,
-                "If-None-Match": "*",
-            },
+            headers=(
+                bunny_upload.headers
+                if bunny_upload is not None
+                else {
+                    "Content-Type": content_type,
+                    "If-None-Match": "*",
+                }
+            ),
+            protocol="tus" if bunny_upload is not None else "put",
         ),
         thumbnail_upload=thumbnail_upload,
         expires_at=expires_at,
@@ -525,9 +580,41 @@ def complete_direct_media_upload(
     if reservation.status != "pending":
         raise HTTPException(status_code=409, detail="This upload is no longer active.")
     if reservation.expires_at < datetime.now(timezone.utc):
-        _discard_pending_upload(storage, reservation)
+        if reservation.storage_provider == "bunny_stream":
+            BunnyStreamClient().delete_video(reservation.external_id)
+        else:
+            _discard_pending_upload(storage, reservation)
         upload_ledger.set_status(reservation.id, user.id, "expired")
         raise HTTPException(status_code=410, detail="Upload link expired. Try again.")
+
+    if reservation.storage_provider == "bunny_stream":
+        bunny = BunnyStreamClient()
+        try:
+            video = bunny.get_video(reservation.external_id or reservation.final_name)
+        except Exception as error:
+            raise HTTPException(
+                status_code=400,
+                detail="Bunny did not receive the video correctly. Try again.",
+            ) from error
+        if video.failed:
+            bunny.delete_video(video.video_id)
+            upload_ledger.set_status(reservation.id, user.id, "rejected")
+            raise HTTPException(status_code=400, detail="Video processing failed. Try again.")
+        if not video.ready:
+            raise HTTPException(
+                status_code=425,
+                detail="Video is processing. Tydes will retry automatically.",
+                headers={"Retry-After": "5"},
+            )
+        if (
+            video.length_seconds is None
+            or video.length_seconds > MAX_VIDEO_DURATION_SECONDS
+        ):
+            bunny.delete_video(video.video_id)
+            upload_ledger.set_status(reservation.id, user.id, "rejected")
+            raise HTTPException(status_code=400, detail="Videos can be up to 30 seconds long.")
+        completed = upload_ledger.set_status(reservation.id, user.id, "complete")
+        return _reservation_attachment(completed or reservation)
 
     try:
         media_metadata = storage.object_metadata(reservation.pending_name)
@@ -597,8 +684,11 @@ def cancel_direct_media_upload(
     reservation = upload_ledger.get(reservation_id, user.id)
     if reservation is None:
         return {"canceled": True}
-    if isinstance(storage, R2MediaStorage) and reservation.status == "pending":
-        _discard_pending_upload(storage, reservation)
+    if reservation.status == "pending":
+        if reservation.storage_provider == "bunny_stream":
+            BunnyStreamClient().delete_video(reservation.external_id)
+        elif isinstance(storage, R2MediaStorage):
+            _discard_pending_upload(storage, reservation)
     upload_ledger.set_status(reservation.id, user.id, "canceled")
     return {"canceled": True}
 
@@ -780,11 +870,18 @@ def _validate_uploaded_object(
 def _reservation_attachment(
     reservation: UploadReservation,
 ) -> SocialMediaAttachment:
+    fallback_url = None
+    if reservation.storage_provider == "bunny_stream":
+        bunny = BunnyStreamClient()
+        fallback_url = bunny.fallback_url(
+            reservation.external_id or reservation.final_name,
+        )
     return SocialMediaAttachment(
         id=reservation.id,
         media_type=reservation.media_type,
         url=reservation.public_url,
         thumbnail_url=reservation.thumbnail_public_url,
+        fallback_url=fallback_url,
     )
 
 

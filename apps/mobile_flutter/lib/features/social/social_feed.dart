@@ -2467,7 +2467,9 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
                 final item = media[index];
                 if (item.mediaType == 'video') {
                   return AutoplayVideoPlayer(
-                    url: item.url,
+                    url: kIsWeb && item.fallbackUrl != null
+                        ? item.fallbackUrl!
+                        : item.url,
                     thumbnailUrl: item.thumbnailUrl,
                     borderRadius: 0,
                     expand: true,
@@ -2702,6 +2704,9 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
   bool _videoFailed = false;
   bool _posterPrecacheStarted = false;
   bool _visibilityCheckQueued = false;
+  int _completedLoops = 0;
+  Duration _lastVideoPosition = Duration.zero;
+  bool _loopLimitReached = false;
 
   @override
   void initState() {
@@ -2719,6 +2724,9 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
     }
     if (!oldWidget.active || oldWidget.url != widget.url) {
       _userPaused = false;
+      _completedLoops = 0;
+      _lastVideoPosition = Duration.zero;
+      _loopLimitReached = false;
       _scheduleActiveAutoplayCheck();
     }
   }
@@ -2887,6 +2895,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
     try {
       await controller.setLooping(true);
       await controller.initialize();
+      controller.addListener(_handleVideoProgress);
       final soundEnabled = ref.read(videoSoundEnabledProvider);
       await controller.setVolume(soundEnabled ? 1.0 : 0.0);
       if (!mounted) return;
@@ -2912,6 +2921,24 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
     }
   }
 
+  void _handleVideoProgress() {
+    final controller = _controller;
+    if (!mounted || controller == null || !controller.value.isInitialized) {
+      return;
+    }
+    final position = controller.value.position;
+    if (_lastVideoPosition - position > const Duration(milliseconds: 500)) {
+      _completedLoops += 1;
+      if (_completedLoops >= 10 && !_loopLimitReached) {
+        _loopLimitReached = true;
+        _userPaused = true;
+        unawaited(controller.pause());
+        setState(() {});
+      }
+    }
+    _lastVideoPosition = position;
+  }
+
   @override
   Widget build(BuildContext context) {
     final soundEnabled = ref.watch(videoSoundEnabledProvider);
@@ -2934,6 +2961,11 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
           _userPaused = true;
           readyController.pause();
         } else {
+          if (_loopLimitReached) {
+            _completedLoops = 0;
+            _lastVideoPosition = Duration.zero;
+            _loopLimitReached = false;
+          }
           _userPaused = false;
           readyController.play();
         }
@@ -3639,7 +3671,7 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
     if (kIsWeb) return source;
 
     final originalSize = await _pickedVideoSize(source);
-    if (originalSize != null && originalSize <= _minPostVideoCompressionBytes) {
+    if (originalSize != null && originalSize <= _maxPostVideoBytes) {
       return source;
     }
 
@@ -5477,9 +5509,8 @@ class _ComposerPostDraft {
 const _maxPostMediaItems = 3;
 const _maxComposerDrafts = 8;
 const _maxPostPhotoBytes = 15 * 1024 * 1024;
-const _maxPostVideoBytes = 25 * 1024 * 1024;
+const _maxPostVideoBytes = 250 * 1024 * 1024;
 const _maxPostVideoDurationMilliseconds = 30500.0;
-const _minPostVideoCompressionBytes = 1 * 1024 * 1024;
 const _videoPlayVisibilityThreshold = 0.6;
 const _postBodyPreviewMaxLines = 6;
 const _postCaptionMaxLines = 16;

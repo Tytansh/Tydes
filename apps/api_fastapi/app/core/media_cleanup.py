@@ -6,6 +6,7 @@ import logging
 import os
 from typing import Callable
 
+from app.core.bunny_stream import BunnyStreamClient
 from app.core.media_storage import R2MediaStorage, configured_media_storage
 from app.core.media_uploads import UploadReservation, upload_ledger
 
@@ -78,8 +79,11 @@ def _delete_reservations(
     failed = 0
     for reservation in reservations:
         try:
-            for object_name in object_names(reservation):
-                storage.delete_object(object_name)
+            if reservation.storage_provider == "bunny_stream":
+                BunnyStreamClient().delete_video(reservation.external_id)
+            else:
+                for object_name in object_names(reservation):
+                    storage.delete_object(object_name)
             upload_ledger.set_status(
                 reservation.id,
                 reservation.user_id,

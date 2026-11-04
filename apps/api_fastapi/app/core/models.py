@@ -200,6 +200,7 @@ class SocialMediaAttachment(BaseModel):
     media_type: Literal["photo", "video"] = "photo"
     url: str
     thumbnail_url: str
+    fallback_url: str | None = None
     width: int | None = None
     height: int | None = None
     alt_text: str | None = None

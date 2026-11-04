@@ -22,10 +22,14 @@ class UploadLimits:
     global_retained_bytes: int
 
     @classmethod
-    def from_env(cls) -> "UploadLimits":
+    def from_env(cls, *, premium: bool = False) -> "UploadLimits":
         return cls(
             uploads_per_minute=_positive_env("MEDIA_UPLOADS_PER_MINUTE", 4),
-            videos_per_user_day=_positive_env("MEDIA_VIDEOS_PER_USER_DAY", 10),
+            videos_per_user_day=_positive_env(
+                "MEDIA_PREMIUM_VIDEOS_PER_USER_DAY" if premium
+                else "MEDIA_VIDEOS_PER_USER_DAY",
+                5 if premium else 2,
+            ),
             media_per_user_day=_positive_env("MEDIA_UPLOADS_PER_USER_DAY", 40),
             user_bytes_per_day=_positive_env(
                 "MEDIA_USER_BYTES_PER_DAY", 700 * 1024 * 1024
@@ -64,6 +68,8 @@ class UploadReservation:
     status: str
     created_at: datetime
     expires_at: datetime
+    storage_provider: str = "r2"
+    external_id: str | None = None
 
     @property
     def total_bytes(self) -> int:
@@ -455,10 +461,10 @@ class MediaUploadLedger:
                         expected_thumbnail_bytes, total_bytes, pending_name,
                         final_name, pending_thumbnail_name, final_thumbnail_name,
                         public_url, thumbnail_public_url, status, created_at,
-                        expires_at
+                        expires_at, storage_provider, external_id
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s
                     )
                     """,
                     (
@@ -480,6 +486,8 @@ class MediaUploadLedger:
                         reservation.status,
                         reservation.created_at,
                         reservation.expires_at,
+                        reservation.storage_provider,
+                        reservation.external_id,
                     ),
                 )
         return reservation
@@ -517,8 +525,22 @@ class MediaUploadLedger:
                     status TEXT NOT NULL,
                     created_at TIMESTAMPTZ NOT NULL,
                     expires_at TIMESTAMPTZ NOT NULL,
+                    storage_provider TEXT NOT NULL DEFAULT 'r2',
+                    external_id TEXT,
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
+                """
+            )
+            connection.execute(
+                """
+                ALTER TABLE media_upload_reservations
+                ADD COLUMN IF NOT EXISTS storage_provider TEXT NOT NULL DEFAULT 'r2'
+                """
+            )
+            connection.execute(
+                """
+                ALTER TABLE media_upload_reservations
+                ADD COLUMN IF NOT EXISTS external_id TEXT
                 """
             )
             connection.execute(
@@ -608,6 +630,10 @@ def _reservation_from_row(row) -> UploadReservation:
         status=str(row["status"]),
         created_at=_aware(row["created_at"]),
         expires_at=_aware(row["expires_at"]),
+        storage_provider=str(row.get("storage_provider") or "r2"),
+        external_id=(
+            str(row["external_id"]) if row.get("external_id") is not None else None
+        ),
     )
 
 
