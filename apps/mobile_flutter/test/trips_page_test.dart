@@ -137,8 +137,13 @@ void main() {
       ),
       findsOneWidget,
     );
+    expect(find.byKey(const Key('travel-country-see-all')), findsOneWidget);
     await tester.tap(find.text('Bali'));
     await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('travel-region-see-all-Bali')),
+      findsOneWidget,
+    );
     await tester.tap(find.text('Uluwatu'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
@@ -147,26 +152,8 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     expect(find.text('Events in Uluwatu'), findsOneWidget);
-    final regionScope = find.byKey(const Key('travel-events-region-scope'));
-    final countryScope = find.byKey(const Key('travel-events-country-scope'));
-    expect(regionScope, findsOneWidget);
-    expect(countryScope, findsOneWidget);
-    expect(
-      find.descendant(of: regionScope, matching: find.text('Bali')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: regionScope, matching: find.text('See all')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: countryScope, matching: find.text('Indonesia')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: countryScope, matching: find.text('See all')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('travel-events-region-scope')), findsNothing);
+    expect(find.byKey(const Key('travel-events-country-scope')), findsNothing);
     expect(find.text('Sunset paddle and dinner after'), findsOneWidget);
     expect(find.textContaining('Maya Surfer'), findsOneWidget);
     expect(find.text('Join now'), findsOneWidget);
@@ -175,5 +162,29 @@ void main() {
     expect(find.text('Swell outlooks and surf events'), findsNothing);
     expect(find.textContaining('We removed the demo itinerary'), findsNothing);
     expect(find.text('Dry Season Surf Sprint'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('travel-location-picker')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('travel-region-see-all-Bali')));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Events in Bali'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Events in Bali'), findsOneWidget);
+    expect(find.text('All events in Bali, Indonesia'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('travel-location-picker')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('travel-country-see-all')));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Events in Indonesia'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Events in Indonesia'), findsOneWidget);
+    expect(find.text('All events in Indonesia'), findsOneWidget);
   });
 }

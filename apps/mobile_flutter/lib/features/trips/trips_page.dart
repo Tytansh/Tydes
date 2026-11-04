@@ -58,15 +58,12 @@ class _TripsPageState extends ConsumerState<TripsPage> {
               selectedRegionId: _selectedRegionId,
               selectedAreaId: _selectedAreaId,
               eventScope: _eventScope,
-              onEventScopeChanged: (scope) {
-                setState(() => _eventScope = scope);
-              },
               onLocationChanged: (selection) {
                 setState(() {
                   _selectedCountryId = selection.countryId;
                   _selectedRegionId = selection.regionId;
                   _selectedAreaId = selection.areaId;
-                  _eventScope = _EventScope.area;
+                  _eventScope = selection.scope;
                 });
               },
             ),
@@ -86,7 +83,6 @@ class _TravelLoadedBody extends StatelessWidget {
     required this.selectedRegionId,
     required this.selectedAreaId,
     required this.eventScope,
-    required this.onEventScopeChanged,
     required this.onLocationChanged,
   });
 
@@ -97,7 +93,6 @@ class _TravelLoadedBody extends StatelessWidget {
   final String? selectedRegionId;
   final String? selectedAreaId;
   final _EventScope eventScope;
-  final ValueChanged<_EventScope> onEventScopeChanged;
   final ValueChanged<_TravelLocationSelection> onLocationChanged;
 
   @override
@@ -159,24 +154,28 @@ class _TravelLoadedBody extends StatelessWidget {
           area: selectedArea,
           onChanged: onLocationChanged,
         ),
-        if (selectedCountry != null &&
-            selectedRegion != null &&
-            selectedArea != null) ...[
+        if (selectedCountry != null && selectedArea != null) ...[
           const SizedBox(height: 10),
           _TravelAreaOverview(
             country: selectedCountry,
-            region: selectedRegion,
+            region: selectedRegion!,
             area: selectedArea,
           ),
+        ],
+        if (_canShowEvents(
+          scope: eventScope,
+          country: selectedCountry,
+          region: selectedRegion,
+          area: selectedArea,
+        )) ...[
           const SizedBox(height: 20),
           _TravelEventsSection(
             posts: events,
             spots: spots,
-            country: selectedCountry,
+            country: selectedCountry!,
             region: selectedRegion,
             area: selectedArea,
             scope: eventScope,
-            onScopeChanged: onEventScopeChanged,
           ),
         ],
       ],
@@ -836,20 +835,18 @@ class _TravelEventsSection extends ConsumerWidget {
     required this.region,
     required this.area,
     required this.scope,
-    required this.onScopeChanged,
   });
 
   final AsyncValue<List<SocialPostModel>> posts;
   final List<SpotModel> spots;
   final _TravelCountryView country;
-  final _TravelRegionView region;
-  final _TravelAreaView area;
+  final _TravelRegionView? region;
+  final _TravelAreaView? area;
   final _EventScope scope;
-  final ValueChanged<_EventScope> onScopeChanged;
 
   String get _scopeName => switch (scope) {
-    _EventScope.area => area.name,
-    _EventScope.region => region.name,
+    _EventScope.area => area?.name ?? country.name,
+    _EventScope.region => region?.name ?? country.name,
     _EventScope.country => country.name,
   };
 
@@ -866,36 +863,14 @@ class _TravelEventsSection extends ConsumerWidget {
           subtitle: 'Upcoming surf meetups, from local to country-wide',
         ),
         const SizedBox(height: 10),
-        _EventScopeRow(
-          key: const Key('travel-events-region-scope'),
-          label: region.name,
-          selected: scope == _EventScope.region,
-          onPressed: () => onScopeChanged(_EventScope.region),
-        ),
-        const SizedBox(height: 8),
-        _EventScopeRow(
-          key: const Key('travel-events-country-scope'),
-          label: country.name,
-          selected: scope == _EventScope.country,
-          onPressed: () => onScopeChanged(_EventScope.country),
-        ),
-        if (scope != _EventScope.area) ...[
-          const SizedBox(height: 4),
-          TextButton.icon(
-            onPressed: () => onScopeChanged(_EventScope.area),
-            icon: const Icon(Icons.near_me_outlined, size: 18),
-            label: Text('Back to events near ${area.name}'),
-          ),
-        ],
-        const SizedBox(height: 10),
         posts.when(
           data: (items) {
             final events = _eventsForLocation(
               items,
               spots,
               country: country.name,
-              region: region.name,
-              area: area.name,
+              region: region?.name,
+              area: area?.name,
               scope: scope,
             );
             if (events.isEmpty) {
@@ -918,53 +893,6 @@ class _TravelEventsSection extends ConsumerWidget {
           error: (_, _) => const _TravelEventsUnavailableCard(),
         ),
       ],
-    );
-  }
-}
-
-class _EventScopeRow extends StatelessWidget {
-  const _EventScopeRow({
-    super.key,
-    required this.label,
-    required this.selected,
-    required this.onPressed,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = selected ? const Color(0xFFD7EFEC) : const Color(0xFFFFFFFF);
-    final borderColor = selected
-        ? const Color(0xFF77CBC4)
-        : const Color(0xFFE0D8CA);
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      padding: const EdgeInsets.fromLTRB(14, 5, 8, 5),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderColor),
-      ),
-      child: Row(
-        children: [
-          if (selected) ...[
-            const Icon(
-              Icons.check_circle_rounded,
-              size: 18,
-              color: Color(0xFF087E7A),
-            ),
-            const SizedBox(width: 8),
-          ],
-          Expanded(
-            child: Text(label, style: Theme.of(context).textTheme.titleSmall),
-          ),
-          TextButton(onPressed: onPressed, child: const Text('See all')),
-        ],
-      ),
     );
   }
 }
@@ -1354,16 +1282,23 @@ class _TravelLocationButton extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    area?.name ?? 'Find event',
+                    area?.name ?? region?.name ?? country?.name ?? 'Find event',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    area == null || region == null || country == null
-                        ? 'Pick a country, coast, and surf area'
-                        : '${region!.name}, ${country!.name} • ${area!.breakCountLabel}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                  Text(switch ((country, region, area)) {
+                    (null, _, _) => 'Pick a country, coast, and surf area',
+                    (final selectedCountry?, null, _) =>
+                      'All events in ${selectedCountry.name}',
+                    (final selectedCountry?, final selectedRegion?, null) =>
+                      'All events in ${selectedRegion.name}, ${selectedCountry.name}',
+                    (
+                      final selectedCountry?,
+                      final selectedRegion?,
+                      final selectedArea?,
+                    ) =>
+                      '${selectedRegion.name}, ${selectedCountry.name} • ${selectedArea.breakCountLabel}',
+                  }, style: Theme.of(context).textTheme.bodySmall),
                 ],
               ),
             ),
@@ -1458,6 +1393,24 @@ class _TravelLocationSheetState extends State<_TravelLocationSheet> {
                   labelText: 'Country',
                   prefixIcon: Icon(Icons.public_rounded),
                 ),
+                icon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextButton(
+                      key: const Key('travel-country-see-all'),
+                      onPressed: () => Navigator.of(context).pop(
+                        _TravelLocationSelection(
+                          countryId: country.id,
+                          regionId: null,
+                          areaId: null,
+                          scope: _EventScope.country,
+                        ),
+                      ),
+                      child: const Text('See all'),
+                    ),
+                    const Icon(Icons.arrow_drop_down_rounded),
+                  ],
+                ),
                 items: widget.countries
                     .map(
                       (item) => DropdownMenuItem(
@@ -1495,7 +1448,7 @@ class _TravelLocationSheetState extends State<_TravelLocationSheet> {
   }
 }
 
-class _TravelRegionTile extends StatelessWidget {
+class _TravelRegionTile extends StatefulWidget {
   const _TravelRegionTile({
     required this.country,
     required this.region,
@@ -1509,15 +1462,32 @@ class _TravelRegionTile extends StatelessWidget {
   final String? selectedAreaId;
 
   @override
+  State<_TravelRegionTile> createState() => _TravelRegionTileState();
+}
+
+class _TravelRegionTileState extends State<_TravelRegionTile> {
+  late bool _expanded;
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded =
+        widget.selectedRegionId != null &&
+        widget.region.id == widget.selectedRegionId;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final expanded = selectedRegionId != null && region.id == selectedRegionId;
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFFF2EEE6),
         borderRadius: BorderRadius.circular(22),
       ),
       child: ExpansionTile(
-        initiallyExpanded: expanded,
+        initiallyExpanded: _expanded,
+        onExpansionChanged: (expanded) {
+          setState(() => _expanded = expanded);
+        },
         tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
@@ -1525,23 +1495,45 @@ class _TravelRegionTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(22),
         ),
         title: Text(
-          region.name,
+          widget.region.name,
           style: const TextStyle(fontWeight: FontWeight.w800),
         ),
         subtitle: Text(
-          '${region.areas.length} areas • ${region.breakCountLabel}',
+          '${widget.region.areas.length} areas • ${widget.region.breakCountLabel}',
         ),
-        children: region.areas
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextButton(
+              key: ValueKey('travel-region-see-all-${widget.region.name}'),
+              onPressed: () => Navigator.of(context).pop(
+                _TravelLocationSelection(
+                  countryId: widget.country.id,
+                  regionId: widget.region.id,
+                  areaId: null,
+                  scope: _EventScope.region,
+                ),
+              ),
+              child: const Text('See all'),
+            ),
+            AnimatedRotation(
+              turns: _expanded ? 0.5 : 0,
+              duration: const Duration(milliseconds: 200),
+              child: const Icon(Icons.keyboard_arrow_down_rounded),
+            ),
+          ],
+        ),
+        children: widget.region.areas
             .map(
               (area) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: _TravelAreaTile(
-                  country: country,
-                  region: region,
+                  country: widget.country,
+                  region: widget.region,
                   area: area,
                   selected:
-                      region.id == selectedRegionId &&
-                      area.id == selectedAreaId,
+                      widget.region.id == widget.selectedRegionId &&
+                      area.id == widget.selectedAreaId,
                 ),
               ),
             )
@@ -1581,6 +1573,7 @@ class _TravelAreaTile extends StatelessWidget {
             countryId: country.id,
             regionId: region.id,
             areaId: area.id,
+            scope: _EventScope.area,
           ),
         ),
       ),
@@ -1672,11 +1665,13 @@ class _TravelLocationSelection {
     required this.countryId,
     required this.regionId,
     required this.areaId,
+    required this.scope,
   });
 
   final String countryId;
-  final String regionId;
-  final String areaId;
+  final String? regionId;
+  final String? areaId;
+  final _EventScope scope;
 }
 
 class _TravelEventView {
@@ -1695,8 +1690,8 @@ List<_TravelEventView> _eventsForLocation(
   List<SocialPostModel> posts,
   List<SpotModel> spots, {
   required String country,
-  required String region,
-  required String area,
+  required String? region,
+  required String? area,
   required _EventScope scope,
 }) {
   final spotsById = {for (final spot in spots) spot.id: spot};
@@ -1727,6 +1722,19 @@ List<_TravelEventView> _eventsForLocation(
     return a.post.createdAt.compareTo(b.post.createdAt);
   });
   return events;
+}
+
+bool _canShowEvents({
+  required _EventScope scope,
+  required _TravelCountryView? country,
+  required _TravelRegionView? region,
+  required _TravelAreaView? area,
+}) {
+  return switch (scope) {
+    _EventScope.country => country != null,
+    _EventScope.region => country != null && region != null,
+    _EventScope.area => country != null && region != null && area != null,
+  };
 }
 
 String _eventMonth(DateTime date) {
