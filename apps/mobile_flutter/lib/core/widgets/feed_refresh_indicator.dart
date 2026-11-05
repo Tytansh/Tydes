@@ -29,6 +29,12 @@ class _FeedRefreshIndicatorState extends State<FeedRefreshIndicator> {
   RefreshIndicatorStatus? _status;
   bool _spinnerDismissed = false;
 
+  bool get _showSpinner =>
+      !_spinnerDismissed &&
+      (_status == RefreshIndicatorStatus.armed ||
+          _status == RefreshIndicatorStatus.snap ||
+          _status == RefreshIndicatorStatus.refresh);
+
   void _dismissSpinner() {
     if (_status == null || _spinnerDismissed) return;
     setState(() => _spinnerDismissed = true);
@@ -101,6 +107,10 @@ class _FeedRefreshIndicatorState extends State<FeedRefreshIndicator> {
 
   @override
   Widget build(BuildContext context) => Listener(
+    onPointerDown: (_) {
+      _overscroll = 0;
+      _lastWheel = null;
+    },
     onPointerSignal: _wheel,
     child: NotificationListener<ScrollMetricsNotification>(
       onNotification: (notification) {
@@ -122,10 +132,10 @@ class _FeedRefreshIndicatorState extends State<FeedRefreshIndicator> {
           child: Column(
             children: [
               SizedBox(
-                height: _status != null && !_spinnerDismissed ? 44 : 0,
+                height: _showSpinner ? 44 : 0,
                 child: ClipRect(
                   child: Center(
-                    child: _status != null && !_spinnerDismissed
+                    child: _showSpinner
                         ? const SizedBox.square(
                             key: ValueKey('feed-top-refresh-spinner'),
                             dimension: 22,
