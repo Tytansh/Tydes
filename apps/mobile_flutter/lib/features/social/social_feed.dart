@@ -19,6 +19,7 @@ import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import 'direct_messages_page.dart';
 import 'event_chat_page.dart';
+import 'post_media_zoom.dart';
 import 'social_profile.dart';
 
 final travelFeedPostsProvider = FutureProvider((ref) {
@@ -2427,6 +2428,7 @@ bool socialVideoShouldPlay({
 class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
   late final PageController _pageController;
   int _pageIndex = 0;
+  bool _zooming = false;
 
   @override
   void initState() {
@@ -2449,6 +2451,12 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
     );
   }
 
+  void _zoomChanged(bool zooming) {
+    if (mounted && _zooming != zooming) {
+      setState(() => _zooming = zooming);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final media = widget.media;
@@ -2468,13 +2476,16 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
           children: [
             PageView.builder(
               controller: _pageController,
-              physics: socialPostMediaCarouselPhysics(isWeb: kIsWeb),
+              physics: _zooming
+                  ? const NeverScrollableScrollPhysics()
+                  : socialPostMediaCarouselPhysics(isWeb: kIsWeb),
               itemCount: media.length,
               onPageChanged: (index) => setState(() => _pageIndex = index),
               itemBuilder: (context, index) {
                 final item = media[index];
                 if (item.mediaType == 'video') {
                   return AutoplayVideoPlayer(
+                    key: ValueKey(item.id),
                     url: kIsWeb && item.fallbackUrl != null
                         ? item.fallbackUrl!
                         : item.url,
@@ -2482,12 +2493,18 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
                     borderRadius: 0,
                     expand: true,
                     active: index == _pageIndex,
+                    enableZoom: true,
+                    onZoomChanged: _zoomChanged,
                   );
                 }
-                return _PostPhoto(url: item.url);
+                return PostMediaZoom(
+                  key: ValueKey(item.id),
+                  onZoomChanged: _zoomChanged,
+                  child: _PostPhoto(url: item.url),
+                );
               },
             ),
-            if (showWebArrows) ...[
+            if (showWebArrows && !_zooming) ...[
               if (_pageIndex > 0)
                 Positioned(
                   left: 12,
@@ -2515,7 +2532,7 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
                   ),
                 ),
             ],
-            if (media.length > 1)
+            if (media.length > 1 && !_zooming)
               Positioned(
                 left: 0,
                 right: 0,
@@ -2690,6 +2707,8 @@ class AutoplayVideoPlayer extends ConsumerStatefulWidget {
     this.borderRadius = 18,
     this.expand = false,
     this.active = true,
+    this.enableZoom = false,
+    this.onZoomChanged,
   });
 
   final String url;
@@ -2697,6 +2716,8 @@ class AutoplayVideoPlayer extends ConsumerStatefulWidget {
   final double borderRadius;
   final bool expand;
   final bool active;
+  final bool enableZoom;
+  final ValueChanged<bool>? onZoomChanged;
 
   @override
   ConsumerState<AutoplayVideoPlayer> createState() =>
@@ -3068,13 +3089,16 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
       ),
     );
 
+    final mediaBody = widget.enableZoom
+        ? PostMediaZoom(onZoomChanged: widget.onZoomChanged, child: videoBody)
+        : videoBody;
     return ClipRRect(
       borderRadius: BorderRadius.circular(widget.borderRadius),
       child: widget.expand
-          ? SizedBox.expand(child: videoBody)
+          ? SizedBox.expand(child: mediaBody)
           : AspectRatio(
               aspectRatio: readyController?.value.aspectRatio ?? 4 / 5,
-              child: videoBody,
+              child: mediaBody,
             ),
     );
   }
