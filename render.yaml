@@ -103,3 +103,7 @@ services:
         sync: false
       - key: TYDES_ADMIN_EMAILS
         sync: false
+      - key: MODERATION_EMAIL_TO
+        value: security@tydes.io
+      - key: MODERATION_EMAILS_PER_DAY
+        value: '50'

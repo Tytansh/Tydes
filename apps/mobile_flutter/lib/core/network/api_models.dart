@@ -147,6 +147,33 @@ class AdminUserAccount {
       );
 }
 
+class AdminReport {
+  const AdminReport({
+    required this.id,
+    required this.reporterUserId,
+    required this.targetType,
+    required this.targetId,
+    required this.reason,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String reporterUserId;
+  final String targetType;
+  final String targetId;
+  final String reason;
+  final DateTime? createdAt;
+
+  factory AdminReport.fromJson(Map<String, dynamic> json) => AdminReport(
+    id: json['id'] as String? ?? '',
+    reporterUserId: json['reporter_user_id'] as String? ?? '',
+    targetType: json['target_type'] as String? ?? '',
+    targetId: json['target_id'] as String? ?? '',
+    reason: json['reason'] as String? ?? '',
+    createdAt: _parseOptionalDateTime(json['created_at']),
+  );
+}
+
 DateTime? _parseOptionalDateTime(Object? value) {
   if (value is! String || value.isEmpty) return null;
   return DateTime.tryParse(value);

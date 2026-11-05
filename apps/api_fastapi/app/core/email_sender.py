@@ -46,6 +46,76 @@ def send_password_reset_email(email: str, code: str) -> EmailSendResult:
     )
 
 
+def send_moderation_report_email(
+    *,
+    report_id: str,
+    target_type: str,
+    target_id: str,
+    reporter_user_id: str,
+    reason: str,
+) -> EmailSendResult:
+    api_key = _read_env("RESEND_API_KEY")
+    from_email = _read_env("AUTH_EMAIL_FROM")
+    to_email = _read_env("MODERATION_EMAIL_TO") or "security@tydes.io"
+    if not api_key or not from_email:
+        return EmailSendResult(configured=False, sent=False)
+    try:
+        api_rate_limiter.enforce(
+            RateLimitRule(
+                scope="email:moderation:daily",
+                key="moderation-reports",
+                limit=_positive_env("MODERATION_EMAILS_PER_DAY", 50),
+                window_seconds=24 * 60 * 60,
+            )
+        )
+    except HTTPException:
+        return EmailSendResult(
+            configured=True,
+            sent=False,
+            error="Moderation email safety limit reached.",
+        )
+
+    safe_reason = reason.strip() or "No reason supplied"
+    text = (
+        f"A new Tydes {target_type} report was submitted.\n\n"
+        f"Report: {report_id}\nTarget: {target_id}\n"
+        f"Reporter user: {reporter_user_id}\nReason: {safe_reason}\n\n"
+        "Review it in the private Tydes admin dashboard: "
+        "https://tydes.io/#/admin"
+    )
+    payload = {
+        "from": from_email,
+        "to": [to_email],
+        "subject": f"New Tydes {target_type} report",
+        "text": text,
+        "html": (
+            "<div style=\"font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
+            "color:#142127;line-height:1.5\">"
+            "<h1>New Tydes report</h1>"
+            f"<p><strong>Type:</strong> {escape(target_type)}</p>"
+            f"<p><strong>Target:</strong> {escape(target_id)}</p>"
+            f"<p><strong>Reporter:</strong> {escape(reporter_user_id)}</p>"
+            f"<p><strong>Reason:</strong> {escape(safe_reason)}</p>"
+            "<p><a href=\"https://tydes.io/#/admin\">Open admin dashboard</a></p>"
+            "</div>"
+        ),
+    }
+    try:
+        response = httpx.post(
+            _read_env("RESEND_API_URL") or "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=10,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as error:
+        return EmailSendResult(configured=True, sent=False, error=str(error))
+    return EmailSendResult(configured=True, sent=True)
+
+
 def _send_code_email(
     *,
     email: str,

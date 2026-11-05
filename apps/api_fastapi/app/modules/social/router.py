@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.core.auth import optional_authenticated_user, require_authenticated_user
 from app.core.bunny_stream import BunnyStreamClient, bunny_stream_enabled
+from app.core.email_sender import send_moderation_report_email
 from app.core.media_cleanup import queue_post_media_deletion, run_media_cleanup
 from app.core.media_storage import R2MediaStorage, configured_media_storage
 from app.core.media_uploads import (
@@ -204,12 +205,20 @@ def report_social_content(
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
-    return store.create_social_report(
+    report = store.create_social_report(
         report_id=f"report_{uuid4().hex[:10]}",
         target_type=payload.target_type,
         target_id=payload.target_id,
         reason=payload.reason,
     )
+    send_moderation_report_email(
+        report_id=report.id,
+        target_type=report.target_type,
+        target_id=report.target_id,
+        reporter_user_id=report.reporter_user_id,
+        reason=report.reason,
+    )
+    return report
 
 
 @router.post("/posts/{post_id}/likes")

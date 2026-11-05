@@ -8,6 +8,10 @@ final adminUsersProvider = FutureProvider.autoDispose<List<AdminUserAccount>>(
   (ref) => ref.watch(surfRepositoryProvider).fetchAdminUsers(),
 );
 
+final adminReportsProvider = FutureProvider.autoDispose<List<AdminReport>>(
+  (ref) => ref.watch(surfRepositoryProvider).fetchAdminReports(),
+);
+
 class AdminUsersPage extends ConsumerStatefulWidget {
   const AdminUsersPage({super.key});
 
@@ -21,13 +25,17 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
   @override
   Widget build(BuildContext context) {
     final users = ref.watch(adminUsersProvider);
+    final reports = ref.watch(adminReportsProvider);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Tydes accounts'),
+        title: const Text('Tydes admin'),
         actions: [
           IconButton(
             tooltip: 'Refresh accounts',
-            onPressed: () => ref.invalidate(adminUsersProvider),
+            onPressed: () {
+              ref.invalidate(adminUsersProvider);
+              ref.invalidate(adminReportsProvider);
+            },
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -49,7 +57,12 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
           final verified = accounts.where((user) => user.emailVerified).length;
           final premium = accounts.where((user) => user.premium).length;
           return RefreshIndicator.adaptive(
-            onRefresh: () => ref.refresh(adminUsersProvider.future),
+            onRefresh: () async {
+              await Future.wait([
+                ref.refresh(adminUsersProvider.future),
+                ref.refresh(adminReportsProvider.future),
+              ]);
+            },
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
@@ -64,6 +77,63 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
                 const Text(
                   'Private account overview. Passwords are never shown here.',
                 ),
+                const SizedBox(height: 22),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Reports',
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    reports.when(
+                      data: (items) => Badge(
+                        isLabelVisible: items.isNotEmpty,
+                        label: Text('${items.length}'),
+                        child: const Icon(Icons.flag_outlined),
+                      ),
+                      loading: () => const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      error: (_, _) => const Icon(Icons.error_outline),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                const Text('Newest reports appear first.'),
+                const SizedBox(height: 10),
+                reports.when(
+                  loading: () => const LinearProgressIndicator(),
+                  error: (error, _) => Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.error_outline),
+                      title: const Text('Could not load reports'),
+                      subtitle: Text(
+                        error.toString().replaceFirst('Bad state: ', ''),
+                      ),
+                      trailing: IconButton(
+                        tooltip: 'Retry',
+                        onPressed: () => ref.invalidate(adminReportsProvider),
+                        icon: const Icon(Icons.refresh),
+                      ),
+                    ),
+                  ),
+                  data: (items) => items.isEmpty
+                      ? const Card(
+                          child: ListTile(
+                            leading: Icon(Icons.check_circle_outline),
+                            title: Text('No reports yet'),
+                          ),
+                        )
+                      : Column(
+                          children: items
+                              .map((report) => _ReportCard(report: report))
+                              .toList(),
+                        ),
+                ),
+                const SizedBox(height: 26),
                 const SizedBox(height: 18),
                 Wrap(
                   spacing: 10,
@@ -100,6 +170,34 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _ReportCard extends StatelessWidget {
+  const _ReportCard({required this.report});
+
+  final AdminReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    final created = report.createdAt?.toLocal();
+    final dateLabel = created == null
+        ? ''
+        : '${created.year}-${created.month.toString().padLeft(2, '0')}-${created.day.toString().padLeft(2, '0')} '
+              '${created.hour.toString().padLeft(2, '0')}:${created.minute.toString().padLeft(2, '0')}';
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: ListTile(
+        leading: const CircleAvatar(child: Icon(Icons.flag_outlined)),
+        title: Text('${report.targetType} report'),
+        subtitle: Text(
+          '${report.reason.isEmpty ? 'No reason supplied' : report.reason}\n'
+          'Target: ${report.targetId}\nReporter: ${report.reporterUserId}'
+          '${dateLabel.isEmpty ? '' : '\n$dateLabel'}',
+        ),
+        isThreeLine: true,
       ),
     );
   }

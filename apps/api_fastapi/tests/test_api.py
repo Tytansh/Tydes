@@ -1586,6 +1586,47 @@ def test_admin_dashboard_uses_signed_in_allowlisted_account(tmp_path, monkeypatc
     assert all("password_hash" not in user for user in payload["users"])
 
 
+def test_report_emails_moderation_and_appears_in_admin_dashboard(
+    tmp_path,
+    monkeypatch,
+):
+    store.state_file = tmp_path / "demo_state.json"
+    store.verified_emails = set()
+    store.email_verification_codes = {}
+    store.password_reset_codes = {}
+    store.auth_accounts = {}
+    store.session_tokens = {}
+    store.social_reports = []
+    monkeypatch.setenv("TYDES_ADMIN_EMAILS", "owner@tydes.io")
+    sent_reports = []
+    monkeypatch.setattr(
+        "app.modules.social.router.send_moderation_report_email",
+        lambda **payload: sent_reports.append(payload),
+    )
+
+    admin_token = _signup_access_token(monkeypatch, "owner@tydes.io")
+    reporter_token = _signup_access_token(monkeypatch, "reporter@example.com")
+    report_response = client.post(
+        "/api/v1/social/reports",
+        json={
+            "target_type": "post",
+            "target_id": "post_for_review",
+            "reason": "Spam",
+        },
+        headers={"Authorization": f"Bearer {reporter_token}"},
+    )
+    assert report_response.status_code == 200
+    assert sent_reports[0]["target_id"] == "post_for_review"
+
+    response = client.get(
+        "/api/v1/admin/dashboard/reports",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["count"] == 1
+    assert response.json()["reports"][0]["reason"] == "Spam"
+
+
 def test_user_profile_requires_valid_session(tmp_path, monkeypatch):
     store.state_file = tmp_path / "demo_state.json"
     store.auth_accounts = {}

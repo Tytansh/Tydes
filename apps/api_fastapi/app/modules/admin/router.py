@@ -51,6 +51,15 @@ def list_dashboard_users(_admin: User = Depends(require_admin_user)):
     return {"count": len(users), "users": users}
 
 
+@router.get("/dashboard/reports")
+def list_dashboard_reports(_admin: User = Depends(require_admin_user)):
+    reports = [
+        report.model_dump(mode="json")
+        for report in store.list_social_reports()
+    ]
+    return {"count": len(reports), "reports": reports}
+
+
 @router.get("/reports")
 def list_reports(x_tydes_admin_token: str | None = Header(default=None)):
     require_admin_token(x_tydes_admin_token)
