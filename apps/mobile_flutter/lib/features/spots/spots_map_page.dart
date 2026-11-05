@@ -472,7 +472,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                         child: Padding(
                           padding: EdgeInsets.all(20),
                           child: Text(
-                            'No upcoming events here yet. Try another area or create an event from the feed.',
+                            'No upcoming events here yet. Try another area, or create an event with a date and a tagged spot to show it on the map.',
                           ),
                         ),
                       ),

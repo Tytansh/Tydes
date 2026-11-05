@@ -3401,7 +3401,9 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
                       if (widget.spots.isNotEmpty)
                         _ComposerMetaChip(
                           icon: Icons.location_on_outlined,
-                          label: selectedSpot?.name ?? 'Tag spot',
+                          label:
+                              selectedSpot?.name ??
+                              (isSurfInvite ? 'Choose event spot' : 'Tag spot'),
                           selected: selectedSpot != null,
                           onTap: () => _openSpotTagSheet(favoriteSpotIds),
                         ),
@@ -3409,6 +3411,13 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
                   ),
                   if (isSurfInvite) ...[
                     const SizedBox(height: 10),
+                    if (selectedSpot == null) ...[
+                      Text(
+                        'Choose a spot to show your event on the map.',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                     _InviteDateChips(
                       selectedStartDate: _inviteDate,
                       selectedEndDate: _inviteEndDate,
