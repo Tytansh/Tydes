@@ -6,6 +6,7 @@ import '../../app/router.dart';
 import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
+import '../../core/widgets/web_scroll_refresh.dart';
 import 'social_feed.dart';
 import 'social_profile.dart';
 
@@ -73,111 +74,116 @@ class PublicProfilePage extends ConsumerWidget {
             _PublicProfileSafetyMenu(profile: headerProfile),
         ],
       ),
-      body: RefreshIndicator.adaptive(
+      body: WebScrollRefresh(
         onRefresh: () => _refreshProfile(ref),
-        child: bundle.when(
-          data: (data) {
-            final profile = _buildResolvedProfile(userId, seedProfile, data);
-            final blockedUserIds = ref.watch(blockedUserIdsProvider);
-            final profileIsBlocked = blockedUserIds.contains(userId);
-            final userPosts = data.posts
-                .where((post) => post.userId == userId && !profileIsBlocked)
-                .toList();
-            if (initialPostId != null) {
-              userPosts.sort((a, b) {
-                if (a.id == initialPostId) return -1;
-                if (b.id == initialPostId) return 1;
-                return 0;
-              });
-            }
-            final isMe = data.me.id == userId;
-            final followedIds = ref.watch(followedUserIdsProvider);
-            final followerIds = ref.watch(followerUserIdsProvider);
-            final profileReposts = repostedItemsForProfile(
-              posts: data.posts,
-              profileUserId: userId,
-              currentUserId: data.me.id,
-              myRepostedPostIds: ref.watch(visibleRepostedPostIdsProvider),
-              myRepostActivityTimes: ref.watch(
-                visibleRepostActivityTimesProvider,
-              ),
-            );
-            final profileItems = [
-              for (final item in profileReposts)
-                _PublicProfileFeedItem.repost(item),
-              for (final post in userPosts) _PublicProfileFeedItem.post(post),
-            ]..sort((a, b) => b.activityAt.compareTo(a.activityAt));
-            final friends = _profileFriends(profile, data);
-            final followers = _profileFollowers(
-              profile,
-              data,
-              followedIds.contains(profile.userId),
-              isMe ? followerIds : const {},
-            );
+        child: RefreshIndicator.adaptive(
+          onRefresh: () => _refreshProfile(ref),
+          child: bundle.when(
+            data: (data) {
+              final profile = _buildResolvedProfile(userId, seedProfile, data);
+              final blockedUserIds = ref.watch(blockedUserIdsProvider);
+              final profileIsBlocked = blockedUserIds.contains(userId);
+              final userPosts = data.posts
+                  .where((post) => post.userId == userId && !profileIsBlocked)
+                  .toList();
+              if (initialPostId != null) {
+                userPosts.sort((a, b) {
+                  if (a.id == initialPostId) return -1;
+                  if (b.id == initialPostId) return 1;
+                  return 0;
+                });
+              }
+              final isMe = data.me.id == userId;
+              final followedIds = ref.watch(followedUserIdsProvider);
+              final followerIds = ref.watch(followerUserIdsProvider);
+              final profileReposts = repostedItemsForProfile(
+                posts: data.posts,
+                profileUserId: userId,
+                currentUserId: data.me.id,
+                myRepostedPostIds: ref.watch(visibleRepostedPostIdsProvider),
+                myRepostActivityTimes: ref.watch(
+                  visibleRepostActivityTimesProvider,
+                ),
+              );
+              final profileItems = [
+                for (final item in profileReposts)
+                  _PublicProfileFeedItem.repost(item),
+                for (final post in userPosts) _PublicProfileFeedItem.post(post),
+              ]..sort((a, b) => b.activityAt.compareTo(a.activityAt));
+              final friends = _profileFriends(profile, data);
+              final followers = _profileFollowers(
+                profile,
+                data,
+                followedIds.contains(profile.userId),
+                isMe ? followerIds : const {},
+              );
 
-            return ListView(
+              return ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(20),
+                children: [
+                  _PublicProfileHero(
+                    profile: profile,
+                    postsCount: userPosts.length + profileReposts.length,
+                    friends: friends,
+                    followers: followers,
+                    isMe: isMe,
+                    onPersonTap: (person) => _openProfileFromPublicPage(
+                      context,
+                      ref,
+                      person,
+                      data.me.id,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  if (profileIsBlocked)
+                    const _BlockedProfileNotice()
+                  else if (!isMe)
+                    FollowButton(userId: profile.userId, expanded: true),
+                  const SizedBox(height: 22),
+                  Text('Posts', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 12),
+                  if (userPosts.isEmpty && profileReposts.isEmpty)
+                    const _EmptyProfilePosts()
+                  else ...[
+                    for (final item in profileItems) ...[
+                      KeyedSubtree(
+                        key: ValueKey(item.key),
+                        child: _PublicProfilePostCard(
+                          profile: item.repostHeader == null
+                              ? profile
+                              : _profileFromPost(item.post),
+                          post: item.post,
+                          spot: _spotForId(data.spots, item.post.spotId),
+                          isMe: item.repostHeader == null
+                              ? isMe
+                              : data.me.id == item.post.userId,
+                          repostHeader: item.repostHeader,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                  ],
+                ],
+              );
+            },
+            loading: () => ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(20),
+              children: const [
+                SizedBox(
+                  height: 280,
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              ],
+            ),
+            error: (error, _) => ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(20),
               children: [
-                _PublicProfileHero(
-                  profile: profile,
-                  postsCount: userPosts.length + profileReposts.length,
-                  friends: friends,
-                  followers: followers,
-                  isMe: isMe,
-                  onPersonTap: (person) => _openProfileFromPublicPage(
-                    context,
-                    ref,
-                    person,
-                    data.me.id,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                if (profileIsBlocked)
-                  const _BlockedProfileNotice()
-                else if (!isMe)
-                  FollowButton(userId: profile.userId, expanded: true),
-                const SizedBox(height: 22),
-                Text('Posts', style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 12),
-                if (userPosts.isEmpty && profileReposts.isEmpty)
-                  const _EmptyProfilePosts()
-                else ...[
-                  for (final item in profileItems) ...[
-                    KeyedSubtree(
-                      key: ValueKey(item.key),
-                      child: _PublicProfilePostCard(
-                        profile: item.repostHeader == null
-                            ? profile
-                            : _profileFromPost(item.post),
-                        post: item.post,
-                        spot: _spotForId(data.spots, item.post.spotId),
-                        isMe: item.repostHeader == null
-                            ? isMe
-                            : data.me.id == item.post.userId,
-                        repostHeader: item.repostHeader,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                ],
+                Text(friendlyLoadErrorMessage(error, label: 'profile')),
               ],
-            );
-          },
-          loading: () => ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(20),
-            children: const [
-              SizedBox(
-                height: 280,
-                child: Center(child: CircularProgressIndicator()),
-              ),
-            ],
-          ),
-          error: (error, _) => ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(20),
-            children: [Text(friendlyLoadErrorMessage(error, label: 'profile'))],
+            ),
           ),
         ),
       ),

@@ -13,6 +13,7 @@ import '../../core/legal/legal_links.dart';
 import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
+import '../../core/widgets/web_scroll_refresh.dart';
 import '../home/home_page.dart';
 import '../social/direct_messages_page.dart';
 import '../social/notifications_page.dart';
@@ -216,110 +217,115 @@ class SettingsPage extends ConsumerWidget {
     );
 
     return Scaffold(
-      body: RefreshIndicator.adaptive(
+      body: WebScrollRefresh(
         onRefresh: () => _refreshProfile(ref),
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-          children: [
-            me.when(
-              data: (profile) => _ProfileHero(
-                profile: profile,
-                friends: followingPeople,
-                followers: followerPeople,
-                postsCount: _profileVisiblePostCount(
-                  profile,
-                  posts.valueOrNull ?? const [],
-                  visibleRepostedPostIds,
-                  visibleRepostActivityTimes,
-                ),
-                onSettingsPressed: () => _openProfileSettings(context, ref, me),
-                onMessagesPressed: () => context.push('/messages'),
-                onNotificationsPressed: () {
-                  ref.invalidate(socialNotificationsProvider);
-                  ref.read(unreadSocialNotificationsProvider.notifier).state =
-                      0;
-                  context.push('/notifications');
-                },
-                unreadMessageThreads: unreadMessageThreads,
-                unreadNotifications: unreadNotifications,
-              ),
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => _SignedOutProfileCard(
-                message: _profileErrorMessage(error),
-                onSignIn: () => context.go('/login'),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Suggested for you',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 10),
-            if (suggestions.isEmpty)
-              const _NoSuggestionsCard()
-            else
-              SizedBox(
-                height: 134,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: suggestions.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 12),
-                  itemBuilder: (context, index) => _SuggestedPersonCard(
-                    person: suggestions[index],
-                    onTap: () {
-                      final person = suggestions[index];
-                      context.push(
-                        '/profile/${person.userId}',
-                        extra: person.profile,
-                      );
-                    },
-                  ),
-                ),
-              ),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Your posts',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                ),
-                FilledButton.icon(
-                  style: tydesPostButtonStyle(),
-                  onPressed: me.hasError
-                      ? () => context.go('/login')
-                      : () => showCreatePostSheet(
-                          context,
-                          spots.valueOrNull ?? const [],
-                        ),
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Post'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            me.when(
-              data: (profile) => posts.when(
-                data: (items) => _ProfilePostFeed(
+        child: RefreshIndicator.adaptive(
+          onRefresh: () => _refreshProfile(ref),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            children: [
+              me.when(
+                data: (profile) => _ProfileHero(
                   profile: profile,
-                  allPosts: items,
-                  posts: items
-                      .where((post) => post.userId == profile.id)
-                      .toList(),
-                  spots: spots.valueOrNull ?? const [],
-                  repostedPostIds: visibleRepostedPostIds,
-                  repostActivityTimes: visibleRepostActivityTimes,
+                  friends: followingPeople,
+                  followers: followerPeople,
+                  postsCount: _profileVisiblePostCount(
+                    profile,
+                    posts.valueOrNull ?? const [],
+                    visibleRepostedPostIds,
+                    visibleRepostActivityTimes,
+                  ),
+                  onSettingsPressed: () =>
+                      _openProfileSettings(context, ref, me),
+                  onMessagesPressed: () => context.push('/messages'),
+                  onNotificationsPressed: () {
+                    ref.invalidate(socialNotificationsProvider);
+                    ref.read(unreadSocialNotificationsProvider.notifier).state =
+                        0;
+                    context.push('/notifications');
+                  },
+                  unreadMessageThreads: unreadMessageThreads,
+                  unreadNotifications: unreadNotifications,
                 ),
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (error, _) =>
-                    Text(friendlyLoadErrorMessage(error, label: 'posts')),
+                error: (error, _) => _SignedOutProfileCard(
+                  message: _profileErrorMessage(error),
+                  onSignIn: () => context.go('/login'),
+                ),
               ),
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (_, _) => const _SignedOutPostsCard(),
-            ),
-          ],
+              const SizedBox(height: 24),
+              Text(
+                'Suggested for you',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 10),
+              if (suggestions.isEmpty)
+                const _NoSuggestionsCard()
+              else
+                SizedBox(
+                  height: 134,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: suggestions.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 12),
+                    itemBuilder: (context, index) => _SuggestedPersonCard(
+                      person: suggestions[index],
+                      onTap: () {
+                        final person = suggestions[index];
+                        context.push(
+                          '/profile/${person.userId}',
+                          extra: person.profile,
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Your posts',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                  FilledButton.icon(
+                    style: tydesPostButtonStyle(),
+                    onPressed: me.hasError
+                        ? () => context.go('/login')
+                        : () => showCreatePostSheet(
+                            context,
+                            spots.valueOrNull ?? const [],
+                          ),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Post'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              me.when(
+                data: (profile) => posts.when(
+                  data: (items) => _ProfilePostFeed(
+                    profile: profile,
+                    allPosts: items,
+                    posts: items
+                        .where((post) => post.userId == profile.id)
+                        .toList(),
+                    spots: spots.valueOrNull ?? const [],
+                    repostedPostIds: visibleRepostedPostIds,
+                    repostActivityTimes: visibleRepostActivityTimes,
+                  ),
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (error, _) =>
+                      Text(friendlyLoadErrorMessage(error, label: 'posts')),
+                ),
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (_, _) => const _SignedOutPostsCard(),
+              ),
+            ],
+          ),
         ),
       ),
     );

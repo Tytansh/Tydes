@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/router.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
+import '../../core/widgets/web_scroll_refresh.dart';
 import '../social/social_feed.dart';
 import '../social/social_profile.dart';
 
@@ -92,12 +93,15 @@ class HomePage extends ConsumerWidget {
           ),
         ],
       ),
-      body: RefreshIndicator.adaptive(
+      body: WebScrollRefresh(
         onRefresh: () => _refreshFeed(ref),
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(20),
-          children: [const TravelFeedSection(showHeader: false)],
+        child: RefreshIndicator.adaptive(
+          onRefresh: () => _refreshFeed(ref),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(20),
+            children: [const TravelFeedSection(showHeader: false)],
+          ),
         ),
       ),
     );
