@@ -119,6 +119,34 @@ class UserProfile {
   );
 }
 
+class AdminUserAccount {
+  const AdminUserAccount({
+    required this.email,
+    required this.userId,
+    required this.handle,
+    required this.displayName,
+    required this.emailVerified,
+    required this.premium,
+  });
+
+  final String email;
+  final String userId;
+  final String handle;
+  final String displayName;
+  final bool emailVerified;
+  final bool premium;
+
+  factory AdminUserAccount.fromJson(Map<String, dynamic> json) =>
+      AdminUserAccount(
+        email: json['email'] as String? ?? '',
+        userId: json['user_id'] as String? ?? '',
+        handle: json['handle'] as String? ?? '',
+        displayName: json['display_name'] as String? ?? '',
+        emailVerified: json['email_verified'] as bool? ?? false,
+        premium: json['premium'] as bool? ?? false,
+      );
+}
+
 DateTime? _parseOptionalDateTime(Object? value) {
   if (value is! String || value.isEmpty) return null;
   return DateTime.tryParse(value);

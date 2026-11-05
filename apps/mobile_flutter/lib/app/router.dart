@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/alerts/alerts_page.dart';
+import '../features/admin/admin_users_page.dart';
 import '../features/auth/auth_page.dart';
 import '../features/home/home_page.dart';
 import '../features/paywall/paywall_page.dart';
@@ -46,6 +47,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'paywall',
             builder: (context, state) => const PaywallPage(),
+          ),
+          GoRoute(
+            path: 'admin',
+            builder: (context, state) => const AdminUsersPage(),
           ),
           GoRoute(
             path: 'messages',

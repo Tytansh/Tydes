@@ -86,6 +86,13 @@ class SettingsPage extends ConsumerWidget {
           Navigator.of(context).pop();
           _openBlockedUsers(context, ref);
         },
+        onAdminDashboard:
+            me.valueOrNull?.email.toLowerCase().endsWith('@tydes.io') == true
+            ? () {
+                Navigator.of(context).pop();
+                context.push('/admin');
+              }
+            : null,
         onLegalSupport: () {
           Navigator.of(context).pop();
           _openLegalSupport(context);
@@ -737,6 +744,7 @@ class _ProfileSettingsSheet extends StatelessWidget {
     required this.onEditProfile,
     required this.onManagePremium,
     required this.onBlockedUsers,
+    required this.onAdminDashboard,
     required this.onLegalSupport,
     required this.onLogout,
     required this.onDeleteAccount,
@@ -747,6 +755,7 @@ class _ProfileSettingsSheet extends StatelessWidget {
   final VoidCallback? onEditProfile;
   final VoidCallback onManagePremium;
   final VoidCallback onBlockedUsers;
+  final VoidCallback? onAdminDashboard;
   final VoidCallback onLegalSupport;
   final VoidCallback onLogout;
   final VoidCallback onDeleteAccount;
@@ -807,6 +816,17 @@ class _ProfileSettingsSheet extends StatelessWidget {
               onTap: onBlockedUsers,
             ),
             const Divider(),
+            if (onAdminDashboard != null) ...[
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.admin_panel_settings_outlined),
+                title: const Text('Admin dashboard'),
+                subtitle: const Text('View registered Tydes accounts'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: onAdminDashboard,
+              ),
+              const Divider(),
+            ],
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.policy_outlined),

@@ -101,3 +101,5 @@ services:
         sync: false
       - key: TYDES_ADMIN_TOKEN
         sync: false
+      - key: TYDES_ADMIN_EMAILS
+        sync: false

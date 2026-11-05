@@ -1553,6 +1553,39 @@ def test_admin_users_requires_token_and_lists_accounts(tmp_path, monkeypatch):
     assert "password_hash" not in payload["users"][0]
 
 
+def test_admin_dashboard_uses_signed_in_allowlisted_account(tmp_path, monkeypatch):
+    store.state_file = tmp_path / "demo_state.json"
+    store.verified_emails = set()
+    store.email_verification_codes = {}
+    store.password_reset_codes = {}
+    store.auth_accounts = {}
+    store.session_tokens = {}
+    monkeypatch.setenv("TYDES_ADMIN_EMAILS", "owner@tydes.io")
+
+    admin_token = _signup_access_token(monkeypatch, "owner@tydes.io")
+    user_token = _signup_access_token(monkeypatch, "surfer@example.com")
+
+    assert client.get("/api/v1/admin/dashboard/users").status_code == 401
+    blocked = client.get(
+        "/api/v1/admin/dashboard/users",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert blocked.status_code == 403
+
+    response = client.get(
+        "/api/v1/admin/dashboard/users",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] == 2
+    assert {user["email"] for user in payload["users"]} == {
+        "owner@tydes.io",
+        "surfer@example.com",
+    }
+    assert all("password_hash" not in user for user in payload["users"])
+
+
 def test_user_profile_requires_valid_session(tmp_path, monkeypatch):
     store.state_file = tmp_path / "demo_state.json"
     store.auth_accounts = {}

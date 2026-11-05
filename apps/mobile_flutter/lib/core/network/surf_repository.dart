@@ -853,6 +853,25 @@ class SurfRepository {
         .toList();
   }
 
+  Future<List<AdminUserAccount>> fetchAdminUsers() async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/admin/dashboard/users',
+      );
+      return (response.data?['users'] as List<dynamic>? ?? const [])
+          .map(
+            (item) => AdminUserAccount.fromJson(item as Map<String, dynamic>),
+          )
+          .toList();
+    } on DioException catch (error) {
+      final detail = error.response?.data;
+      if (detail is Map<String, dynamic> && detail['detail'] is String) {
+        throw StateError(detail['detail'] as String);
+      }
+      throw StateError('Could not load accounts right now.');
+    }
+  }
+
   Future<List<SocialNotificationModel>> fetchSocialNotifications() async {
     final response = await _dio.get<List<dynamic>>('/social/notifications');
     return response.data!
