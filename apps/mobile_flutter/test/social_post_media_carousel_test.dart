@@ -31,4 +31,31 @@ void main() {
       isFalse,
     );
   });
+
+  test('video only plays when its slide is active and visible', () {
+    expect(
+      socialVideoShouldPlay(
+        active: true,
+        userPaused: false,
+        mostlyVisible: true,
+      ),
+      isTrue,
+    );
+    expect(
+      socialVideoShouldPlay(
+        active: false,
+        userPaused: false,
+        mostlyVisible: true,
+      ),
+      isFalse,
+    );
+    expect(
+      socialVideoShouldPlay(
+        active: true,
+        userPaused: false,
+        mostlyVisible: false,
+      ),
+      isFalse,
+    );
+  });
 }

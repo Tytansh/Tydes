@@ -2416,6 +2416,13 @@ bool socialPostMediaCarouselShowsArrows({
   required int mediaCount,
 }) => isWeb && mediaCount > 1;
 
+@visibleForTesting
+bool socialVideoShouldPlay({
+  required bool active,
+  required bool userPaused,
+  required bool mostlyVisible,
+}) => active && !userPaused && mostlyVisible;
+
 class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
   late final PageController _pageController;
   int _pageIndex = 0;
@@ -2719,6 +2726,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
   void didUpdateWidget(covariant AutoplayVideoPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!widget.active) {
+      _controller?.setVolume(0);
       _controller?.pause();
       return;
     }
@@ -2758,11 +2766,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
     if (!widget.active) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !widget.active) return;
-      if (widget.expand) {
-        unawaited(_loadVideo(playWhenReady: true));
-      } else {
-        _syncPlaybackToVisibility();
-      }
+      _syncPlaybackToVisibility();
     });
   }
 
@@ -2831,8 +2835,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
 
   void _syncPlaybackToVisibility() {
     final mostlyVisible = _isMostlyVisible();
-    final shouldPreload =
-        widget.active && (widget.expand || mostlyVisible || _isNearViewport());
+    final shouldPreload = widget.active && (mostlyVisible || _isNearViewport());
     final controller = _controller;
 
     if (shouldPreload &&
@@ -2840,7 +2843,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
         !_loadRequested &&
         !_initializing &&
         !_videoFailed) {
-      unawaited(_loadVideo(playWhenReady: widget.expand));
+      unawaited(_loadVideo());
       return;
     }
 
@@ -2848,8 +2851,16 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
       return;
     }
 
-    final shouldPlay =
-        widget.active && !_userPaused && (widget.expand || mostlyVisible);
+    final shouldPlay = socialVideoShouldPlay(
+      active: widget.active,
+      userPaused: _userPaused,
+      mostlyVisible: mostlyVisible,
+    );
+    final soundEnabled = ref.read(videoSoundEnabledProvider);
+    final targetVolume = soundEnabled && shouldPlay ? 1.0 : 0.0;
+    if (controller.value.volume != targetVolume) {
+      unawaited(controller.setVolume(targetVolume));
+    }
 
     if (shouldPlay && !controller.value.isPlaying) {
       controller.play();
@@ -2879,7 +2890,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
     );
   }
 
-  Future<void> _loadVideo({bool playWhenReady = false}) async {
+  Future<void> _loadVideo() async {
     if (_loadRequested || _initializing) return;
     setState(() {
       _loadRequested = true;
@@ -2897,12 +2908,15 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
       await controller.initialize();
       controller.addListener(_handleVideoProgress);
       final soundEnabled = ref.read(videoSoundEnabledProvider);
-      await controller.setVolume(soundEnabled ? 1.0 : 0.0);
+      final shouldPlay = socialVideoShouldPlay(
+        active: widget.active,
+        userPaused: _userPaused,
+        mostlyVisible: _isMostlyVisible(),
+      );
+      await controller.setVolume(soundEnabled && shouldPlay ? 1.0 : 0.0);
       if (!mounted) return;
       setState(() => _initializing = false);
-      if (widget.active &&
-          !_userPaused &&
-          (playWhenReady || widget.expand || _isMostlyVisible())) {
+      if (shouldPlay) {
         await controller.play();
         if (mounted) setState(() {});
       }
@@ -2946,7 +2960,15 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
     final ready = controller?.value.isInitialized ?? false;
     final readyController = ready ? controller : null;
     final isPlaying = readyController?.value.isPlaying ?? false;
-    final targetVolume = soundEnabled ? 1.0 : 0.0;
+    final targetVolume =
+        soundEnabled &&
+            socialVideoShouldPlay(
+              active: widget.active,
+              userPaused: _userPaused,
+              mostlyVisible: _isMostlyVisible(),
+            )
+        ? 1.0
+        : 0.0;
     if (readyController != null &&
         readyController.value.volume != targetVolume) {
       readyController.setVolume(targetVolume);
@@ -2967,7 +2989,10 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
             _loopLimitReached = false;
           }
           _userPaused = false;
-          readyController.play();
+          if (widget.active && _isMostlyVisible()) {
+            readyController.setVolume(soundEnabled ? 1.0 : 0.0);
+            readyController.play();
+          }
         }
         setState(() {});
       },
