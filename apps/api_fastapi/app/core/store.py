@@ -285,6 +285,8 @@ class DemoStore:
                 "locale": locale,
                 "email_verified": False,
                 "premium": self._email_has_premium_override(normalized_email),
+                "admin_premium": False,
+                "banned": False,
                 "display_name": "",
                 "handle": "",
                 "bio": "",
@@ -353,6 +355,8 @@ class DemoStore:
         self.user.avatar_url = None
         self.user.locale = "en"
         self.user.premium = False
+        self.user.admin_premium = False
+        self.user.banned = False
         self.user.email_verified = True
         self.user.ads_enabled = True
         self.user.free_live_spot_id = None
@@ -500,7 +504,11 @@ class DemoStore:
         )
 
     def _apply_email_access_overrides(self, email: str) -> bool:
-        premium_active = self.user.premium or self._email_has_premium_override(email)
+        premium_active = (
+            self.user.premium
+            or self.user.admin_premium
+            or self._email_has_premium_override(email)
+        )
         ads_enabled = not premium_active
         changed = (
             self.user.premium != premium_active
@@ -1039,7 +1047,11 @@ class DemoStore:
         return self.plans
 
     def set_premium_status(self, active: bool) -> User:
-        premium_active = active or self._email_has_premium_override(self.user.email)
+        premium_active = (
+            active
+            or self.user.admin_premium
+            or self._email_has_premium_override(self.user.email)
+        )
         self.user.premium = premium_active
         self.user.ads_enabled = not premium_active
         for post in self.posts:
@@ -1168,8 +1180,9 @@ class DemoStore:
                 continue
             user = User.model_validate(payload)
             if premium is not None:
-                user.premium = premium
-                user.ads_enabled = not premium
+                user.admin_premium = premium
+                user.premium = premium or self._email_has_premium_override(email)
+                user.ads_enabled = not user.premium
             if banned is not None:
                 user.banned = banned
             self._save_auth_account_user(email, user)
