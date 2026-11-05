@@ -48,10 +48,17 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(milliseconds: 300));
     expect(refreshes, 1);
-    expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('feed-top-refresh-spinner')),
+      findsOneWidget,
+    );
     expect(tester.element(find.text('Existing post')), same(original));
     pending.complete();
     await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('feed-top-refresh-spinner')),
+      findsNothing,
+    );
     expect(tester.element(find.text('Existing post')), same(original));
   });
 
@@ -91,10 +98,24 @@ void main() {
       await wheel(const Offset(0, -100));
       await tester.pump(const Duration(seconds: 1));
       expect(refreshes, 1);
-      expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('feed-top-refresh-spinner')),
+        findsOneWidget,
+      );
       expect(find.text('Existing video'), findsOneWidget);
       await wheel(const Offset(0, -300));
       expect(refreshes, 1);
+      final spinner = tester.getRect(
+        find.byKey(const ValueKey('feed-top-refresh-spinner')),
+      );
+      final content = tester.getRect(find.byType(ListView));
+      expect(spinner.bottom, lessThanOrEqualTo(content.top));
+      await wheel(const Offset(0, 80));
+      expect(
+        find.byKey(const ValueKey('feed-top-refresh-spinner')),
+        findsNothing,
+      );
+      expect(find.text('Existing video'), findsOneWidget);
       pending.complete();
       await tester.pumpAndSettle();
       await wheel(const Offset(0, -300));

@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
-/// Keeps the scrollable mounted while the same refresh indicator handles both
-/// touch pulls and desktop overscroll at the top of the page.
+/// Reserves a small area above the content for refreshing. The spinner never
+/// floats over a post and disappears when the user scrolls into the content.
 class FeedRefreshIndicator extends StatefulWidget {
   const FeedRefreshIndicator({
     super.key,
@@ -26,11 +26,33 @@ class _FeedRefreshIndicatorState extends State<FeedRefreshIndicator> {
   double _overscroll = 0;
   DateTime? _lastWheel;
   DateTime? _completedAt;
+  RefreshIndicatorStatus? _status;
+  bool _spinnerDismissed = false;
+
+  void _dismissSpinner() {
+    if (_status == null || _spinnerDismissed) return;
+    setState(() => _spinnerDismissed = true);
+  }
+
+  void _statusChanged(RefreshIndicatorStatus? status) {
+    if (!mounted) return;
+    setState(() {
+      if (_status == null && status != null) _spinnerDismissed = false;
+      _status =
+          status == RefreshIndicatorStatus.done ||
+              status == RefreshIndicatorStatus.canceled
+          ? null
+          : status;
+    });
+  }
 
   void _trackMetrics(ScrollMetrics metrics, int depth) {
     if (depth != 0 || metrics.axis != Axis.vertical) return;
     _atTop = metrics.pixels <= metrics.minScrollExtent + 0.5;
-    if (!_atTop) _overscroll = 0;
+    if (!_atTop) {
+      _overscroll = 0;
+      _dismissSpinner();
+    }
   }
 
   void _wheel(PointerSignalEvent event) {
@@ -39,6 +61,7 @@ class _FeedRefreshIndicatorState extends State<FeedRefreshIndicator> {
       return;
     }
     final now = DateTime.now();
+    if (event.scrollDelta.dy > 0) _dismissSpinner();
     if (event.scrollDelta.dy >= 0 || !_atTop || _refreshing) {
       _overscroll = 0;
       return;
@@ -55,8 +78,6 @@ class _FeedRefreshIndicatorState extends State<FeedRefreshIndicator> {
     _overscroll -= event.scrollDelta.dy;
     if (_overscroll >= 120) {
       _overscroll = 0;
-      // show() owns the visible spinner and calls onRefresh once. It does not
-      // navigate, invalidate the session, or replace the child scrollable.
       unawaited(_indicator.currentState?.show());
     }
   }
@@ -98,10 +119,33 @@ class _FeedRefreshIndicatorState extends State<FeedRefreshIndicator> {
               PointerDeviceKind.mouse,
             },
           ),
-          child: RefreshIndicator.adaptive(
-            key: _indicator,
-            onRefresh: _refresh,
-            child: widget.child,
+          child: Column(
+            children: [
+              SizedBox(
+                height: _status != null && !_spinnerDismissed ? 44 : 0,
+                child: ClipRect(
+                  child: Center(
+                    child: _status != null && !_spinnerDismissed
+                        ? const SizedBox.square(
+                            key: ValueKey('feed-top-refresh-spinner'),
+                            dimension: 22,
+                            child: CircularProgressIndicator.adaptive(
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : null,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: RefreshIndicator.noSpinner(
+                  key: _indicator,
+                  onRefresh: _refresh,
+                  onStatusChange: _statusChanged,
+                  child: widget.child,
+                ),
+              ),
+            ],
           ),
         ),
       ),
