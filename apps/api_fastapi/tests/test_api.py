@@ -1627,6 +1627,53 @@ def test_report_emails_moderation_and_appears_in_admin_dashboard(
     assert response.json()["reports"][0]["reason"] == "Spam"
 
 
+def test_admin_can_grant_premium_and_ban_accounts(tmp_path, monkeypatch):
+    store.state_file = tmp_path / "demo_state.json"
+    store.verified_emails = set()
+    store.email_verification_codes = {}
+    store.password_reset_codes = {}
+    store.auth_accounts = {}
+    store.session_tokens = {}
+    monkeypatch.setenv("TYDES_ADMIN_EMAILS", "owner@tydes.io")
+
+    admin_token = _signup_access_token(monkeypatch, "owner@tydes.io")
+    user_token = _signup_access_token(monkeypatch, "member@example.com")
+    user = client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {user_token}"},
+    ).json()
+
+    premium_response = client.patch(
+        f"/api/v1/admin/dashboard/users/{user['id']}",
+        json={"premium": True},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert premium_response.status_code == 200
+    assert premium_response.json()["premium"] is True
+
+    ban_response = client.patch(
+        f"/api/v1/admin/dashboard/users/{user['id']}",
+        json={"banned": True},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert ban_response.status_code == 200
+    assert ban_response.json()["banned"] is True
+    assert client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {user_token}"},
+    ).status_code == 401
+    blocked_login = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "member@example.com",
+            "password": "longboard123",
+            "locale": "en",
+        },
+    )
+    assert blocked_login.status_code == 400
+    assert "suspended" in blocked_login.json()["detail"].lower()
+
+
 def test_user_profile_requires_valid_session(tmp_path, monkeypatch):
     store.state_file = tmp_path / "demo_state.json"
     store.auth_accounts = {}

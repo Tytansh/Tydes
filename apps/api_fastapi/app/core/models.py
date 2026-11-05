@@ -41,6 +41,7 @@ class User(BaseModel):
     home_region: str
     locale: str
     premium: bool = False
+    banned: bool = False
     email_verified: bool = False
     free_live_spot_id: str | None = None
     free_live_spot_changed_at: datetime | None = None

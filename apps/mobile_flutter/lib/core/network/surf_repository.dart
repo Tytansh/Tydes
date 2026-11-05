@@ -889,6 +889,29 @@ class SurfRepository {
     }
   }
 
+  Future<AdminUserAccount> updateAdminUserAccess({
+    required String userId,
+    bool? premium,
+    bool? banned,
+  }) async {
+    try {
+      final payload = <String, dynamic>{};
+      if (premium != null) payload['premium'] = premium;
+      if (banned != null) payload['banned'] = banned;
+      final response = await _dio.patch<Map<String, dynamic>>(
+        '/admin/dashboard/users/$userId',
+        data: payload,
+      );
+      return AdminUserAccount.fromJson(response.data!);
+    } on DioException catch (error) {
+      final detail = error.response?.data;
+      if (detail is Map<String, dynamic> && detail['detail'] is String) {
+        throw StateError(detail['detail'] as String);
+      }
+      throw StateError('Could not update this account right now.');
+    }
+  }
+
   Future<List<SocialNotificationModel>> fetchSocialNotifications() async {
     final response = await _dio.get<List<dynamic>>('/social/notifications');
     return response.data!

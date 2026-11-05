@@ -127,6 +127,7 @@ class AdminUserAccount {
     required this.displayName,
     required this.emailVerified,
     required this.premium,
+    required this.banned,
   });
 
   final String email;
@@ -135,6 +136,7 @@ class AdminUserAccount {
   final String displayName;
   final bool emailVerified;
   final bool premium;
+  final bool banned;
 
   factory AdminUserAccount.fromJson(Map<String, dynamic> json) =>
       AdminUserAccount(
@@ -144,6 +146,7 @@ class AdminUserAccount {
         displayName: json['display_name'] as String? ?? '',
         emailVerified: json['email_verified'] as bool? ?? false,
         premium: json['premium'] as bool? ?? false,
+        banned: json['banned'] as bool? ?? false,
       );
 }
 
@@ -155,6 +158,12 @@ class AdminReport {
     required this.targetId,
     required this.reason,
     required this.createdAt,
+    required this.reporterHandle,
+    required this.reporterDisplayName,
+    required this.reportedUserId,
+    required this.reportedHandle,
+    required this.reportedDisplayName,
+    required this.targetAvailable,
   });
 
   final String id;
@@ -163,6 +172,12 @@ class AdminReport {
   final String targetId;
   final String reason;
   final DateTime? createdAt;
+  final String reporterHandle;
+  final String reporterDisplayName;
+  final String? reportedUserId;
+  final String reportedHandle;
+  final String reportedDisplayName;
+  final bool targetAvailable;
 
   factory AdminReport.fromJson(Map<String, dynamic> json) => AdminReport(
     id: json['id'] as String? ?? '',
@@ -171,6 +186,12 @@ class AdminReport {
     targetId: json['target_id'] as String? ?? '',
     reason: json['reason'] as String? ?? '',
     createdAt: _parseOptionalDateTime(json['created_at']),
+    reporterHandle: json['reporter_handle'] as String? ?? '',
+    reporterDisplayName: json['reporter_display_name'] as String? ?? '',
+    reportedUserId: json['reported_user_id'] as String?,
+    reportedHandle: json['reported_handle'] as String? ?? '',
+    reportedDisplayName: json['reported_display_name'] as String? ?? '',
+    targetAvailable: json['target_available'] as bool? ?? false,
   );
 }
 

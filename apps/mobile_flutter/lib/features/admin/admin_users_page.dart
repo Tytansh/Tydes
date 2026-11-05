@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
@@ -21,6 +22,67 @@ class AdminUsersPage extends ConsumerStatefulWidget {
 
 class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
   String _query = '';
+
+  Future<void> _updateUser(String userId, {bool? premium, bool? banned}) async {
+    try {
+      await ref
+          .read(surfRepositoryProvider)
+          .updateAdminUserAccess(
+            userId: userId,
+            premium: premium,
+            banned: banned,
+          );
+      ref.invalidate(adminUsersProvider);
+      ref.invalidate(adminReportsProvider);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            banned == true
+                ? 'Account banned.'
+                : banned == false
+                ? 'Account ban removed.'
+                : premium == true
+                ? 'Premium granted.'
+                : 'Premium removed.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Bad state: ', '')),
+        ),
+      );
+    }
+  }
+
+  Future<void> _confirmBan(String userId, String label) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Ban $label?'),
+        content: const Text(
+          'This immediately signs the account out and prevents it from signing in. You can reverse the ban later.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFB3261E),
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Ban account'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await _updateUser(userId, banned: true);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -68,14 +130,14 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
               children: [
                 Text(
-                  'User directory',
+                  'Moderation',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.w800,
                   ),
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                  'Private account overview. Passwords are never shown here.',
+                  'Review reports and take action without exposing passwords.',
                 ),
                 const SizedBox(height: 22),
                 Row(
@@ -129,12 +191,43 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
                         )
                       : Column(
                           children: items
-                              .map((report) => _ReportCard(report: report))
+                              .map(
+                                (report) => _ReportCard(
+                                  report: report,
+                                  onOpenTarget:
+                                      report.targetType == 'post' &&
+                                          report.targetAvailable
+                                      ? () => context.push(
+                                          '/post/${report.targetId}',
+                                        )
+                                      : null,
+                                  onBanReporter: () => _confirmBan(
+                                    report.reporterUserId,
+                                    report.reporterHandle.isEmpty
+                                        ? 'reporter'
+                                        : '@${report.reporterHandle}',
+                                  ),
+                                  onBanReported: report.reportedUserId == null
+                                      ? null
+                                      : () => _confirmBan(
+                                          report.reportedUserId!,
+                                          report.reportedHandle.isEmpty
+                                              ? 'reported account'
+                                              : '@${report.reportedHandle}',
+                                        ),
+                                ),
+                              )
                               .toList(),
                         ),
                 ),
                 const SizedBox(height: 26),
-                const SizedBox(height: 18),
+                Text(
+                  'User accounts',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 12),
                 Wrap(
                   spacing: 10,
                   runSpacing: 10,
@@ -165,7 +258,23 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
                     child: Center(child: Text('No matching accounts.')),
                   )
                 else
-                  ...filtered.map((account) => _AccountCard(account: account)),
+                  ...filtered.map(
+                    (account) => _AccountCard(
+                      account: account,
+                      onTogglePremium: () => _updateUser(
+                        account.userId,
+                        premium: !account.premium,
+                      ),
+                      onToggleBan: account.banned
+                          ? () => _updateUser(account.userId, banned: false)
+                          : () => _confirmBan(
+                              account.userId,
+                              account.handle.isEmpty
+                                  ? account.email
+                                  : '@${account.handle}',
+                            ),
+                    ),
+                  ),
               ],
             ),
           );
@@ -176,9 +285,17 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
 }
 
 class _ReportCard extends StatelessWidget {
-  const _ReportCard({required this.report});
+  const _ReportCard({
+    required this.report,
+    required this.onOpenTarget,
+    required this.onBanReporter,
+    required this.onBanReported,
+  });
 
   final AdminReport report;
+  final VoidCallback? onOpenTarget;
+  final VoidCallback onBanReporter;
+  final VoidCallback? onBanReported;
 
   @override
   Widget build(BuildContext context) {
@@ -187,17 +304,72 @@ class _ReportCard extends StatelessWidget {
         ? ''
         : '${created.year}-${created.month.toString().padLeft(2, '0')}-${created.day.toString().padLeft(2, '0')} '
               '${created.hour.toString().padLeft(2, '0')}:${created.minute.toString().padLeft(2, '0')}';
+    final reporter = report.reporterHandle.isEmpty
+        ? (report.reporterDisplayName.isEmpty
+              ? 'Unknown account'
+              : report.reporterDisplayName)
+        : '@${report.reporterHandle}';
+    final reported = report.reportedHandle.isEmpty
+        ? report.reportedDisplayName
+        : '@${report.reportedHandle}';
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
-        leading: const CircleAvatar(child: Icon(Icons.flag_outlined)),
-        title: Text('${report.targetType} report'),
-        subtitle: Text(
-          '${report.reason.isEmpty ? 'No reason supplied' : report.reason}\n'
-          'Target: ${report.targetId}\nReporter: ${report.reporterUserId}'
-          '${dateLabel.isEmpty ? '' : '\n$dateLabel'}',
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const CircleAvatar(child: Icon(Icons.flag_outlined)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        report.reason.isEmpty
+                            ? '${report.targetType} report'
+                            : report.reason,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      Text(
+                        'Reported by $reporter${reported.isEmpty ? '' : ' • Against $reported'}',
+                      ),
+                      if (dateLabel.isNotEmpty) Text(dateLabel),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (onOpenTarget != null)
+                  FilledButton.tonalIcon(
+                    onPressed: onOpenTarget,
+                    icon: const Icon(Icons.open_in_new),
+                    label: const Text('View post'),
+                  ),
+                OutlinedButton.icon(
+                  onPressed: onBanReporter,
+                  icon: const Icon(Icons.gavel_outlined),
+                  label: Text('Ban $reporter'),
+                ),
+                if (onBanReported != null)
+                  OutlinedButton.icon(
+                    onPressed: onBanReported,
+                    icon: const Icon(Icons.block_outlined),
+                    label: Text(
+                      reported.isEmpty ? 'Ban reported user' : 'Ban $reported',
+                    ),
+                  ),
+              ],
+            ),
+          ],
         ),
-        isThreeLine: true,
       ),
     );
   }
@@ -228,9 +400,15 @@ class _Metric extends StatelessWidget {
 }
 
 class _AccountCard extends StatelessWidget {
-  const _AccountCard({required this.account});
+  const _AccountCard({
+    required this.account,
+    required this.onTogglePremium,
+    required this.onToggleBan,
+  });
 
   final AdminUserAccount account;
+  final VoidCallback onTogglePremium;
+  final VoidCallback onToggleBan;
 
   @override
   Widget build(BuildContext context) {
@@ -241,35 +419,77 @@ class _AccountCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
+        child: Column(
           children: [
-            CircleAvatar(
-              child: Text(title.isEmpty ? '?' : title[0].toUpperCase()),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: Theme.of(context).textTheme.titleMedium),
-                  Text(account.email),
-                  if (account.handle.isNotEmpty) Text('@${account.handle}'),
-                ],
-              ),
-            ),
-            Wrap(
-              spacing: 6,
+            Row(
               children: [
-                if (account.emailVerified)
-                  const Tooltip(
-                    message: 'Email verified',
-                    child: Icon(Icons.mark_email_read_outlined),
+                CircleAvatar(
+                  child: Text(title.isEmpty ? '?' : title[0].toUpperCase()),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      Text(account.email),
+                      if (account.handle.isNotEmpty) Text('@${account.handle}'),
+                    ],
                   ),
-                if (account.premium)
-                  const Tooltip(
-                    message: 'Premium',
-                    child: Icon(Icons.verified, color: Color(0xFF009FA5)),
+                ),
+                Wrap(
+                  spacing: 6,
+                  children: [
+                    if (account.emailVerified)
+                      const Tooltip(
+                        message: 'Email verified',
+                        child: Icon(Icons.mark_email_read_outlined),
+                      ),
+                    if (account.premium)
+                      const Tooltip(
+                        message: 'Premium',
+                        child: Icon(Icons.verified, color: Color(0xFF009FA5)),
+                      ),
+                    if (account.banned)
+                      const Tooltip(
+                        message: 'Banned',
+                        child: Icon(Icons.block, color: Color(0xFFB3261E)),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.tonalIcon(
+                    onPressed: onTogglePremium,
+                    icon: Icon(
+                      account.premium
+                          ? Icons.remove_moderator_outlined
+                          : Icons.workspace_premium_outlined,
+                    ),
+                    label: Text(
+                      account.premium ? 'Remove premium' : 'Give premium',
+                    ),
                   ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onToggleBan,
+                    icon: Icon(
+                      account.banned
+                          ? Icons.lock_open_outlined
+                          : Icons.block_outlined,
+                    ),
+                    label: Text(account.banned ? 'Unban' : 'Ban'),
+                  ),
+                ),
               ],
             ),
           ],

@@ -242,6 +242,8 @@ class DemoStore:
             if not isinstance(user_payload, dict):
                 raise ValueError("Account profile is unavailable.")
             self.user = User.model_validate(user_payload)
+            if self.user.banned:
+                raise ValueError("This account has been suspended.")
             self.user.locale = locale
             self._apply_email_access_overrides(normalized_email)
             self._save_current_account_user()
@@ -542,6 +544,8 @@ class DemoStore:
         if not isinstance(user_payload, dict):
             return None
         resolved_user = User.model_validate(user_payload)
+        if resolved_user.banned:
+            return None
         with self.request_user_context(resolved_user):
             access_changed = self._apply_email_access_overrides(email)
             if access_changed:
@@ -1134,9 +1138,54 @@ class DemoStore:
                     "display_name": user.get("display_name") or "",
                     "email_verified": bool(user.get("email_verified")),
                     "premium": bool(user.get("premium")),
+                    "banned": bool(user.get("banned")),
                 }
             )
         return users
+
+    def get_auth_user_by_id(self, user_id: str) -> User | None:
+        if self.postgres_auth is not None:
+            self._sync_auth_from_postgres()
+        for account in self.auth_accounts.values():
+            payload = account.get("user")
+            if not isinstance(payload, dict) or payload.get("id") != user_id:
+                continue
+            return User.model_validate(payload)
+        return None
+
+    def set_admin_user_access(
+        self,
+        user_id: str,
+        *,
+        premium: bool | None = None,
+        banned: bool | None = None,
+    ) -> User | None:
+        if self.postgres_auth is not None:
+            self._sync_auth_from_postgres()
+        for email, account in self.auth_accounts.items():
+            payload = account.get("user")
+            if not isinstance(payload, dict) or payload.get("id") != user_id:
+                continue
+            user = User.model_validate(payload)
+            if premium is not None:
+                user.premium = premium
+                user.ads_enabled = not premium
+            if banned is not None:
+                user.banned = banned
+            self._save_auth_account_user(email, user)
+            if banned:
+                self.session_tokens = {
+                    token_hash: session_email
+                    for token_hash, session_email in self.session_tokens.items()
+                    if session_email != email
+                }
+                if self.postgres_auth is not None:
+                    self.postgres_auth.delete_sessions_for_email(email)
+            if self.postgres_social is not None:
+                self.postgres_social.update_author_snapshots(user)
+            self._save_state()
+            return user
+        return None
 
     def list_social_profiles(
         self,
