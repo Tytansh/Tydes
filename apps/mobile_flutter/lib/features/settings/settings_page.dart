@@ -486,9 +486,10 @@ class _ProfileHero extends StatelessWidget {
                 const SizedBox(height: 16),
                 Padding(
                   padding: const EdgeInsets.only(right: 64),
-                  child: ProfileNamePremiumRow(
-                    displayName: profile.displayName,
-                    premium: profile.premium,
+                  child: Text(
+                    profile.displayName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: Theme.of(
                       context,
                     ).textTheme.headlineMedium?.copyWith(color: Colors.white),
@@ -497,11 +498,45 @@ class _ProfileHero extends StatelessWidget {
                 const SizedBox(height: 6),
                 Padding(
                   padding: const EdgeInsets.only(right: 64),
-                  child: Text(
-                    '@${profile.handle} • ${profile.homeRegion} • ${_skillLabel(profile.surfSkill)}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.white70),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        '@${profile.handle} • ${profile.homeRegion} • ${_skillLabel(profile.surfSkill)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      if (profile.premium)
+                        TextButton.icon(
+                          onPressed: () => context.push('/paywall'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            backgroundColor: Colors.white.withValues(
+                              alpha: 0.18,
+                            ),
+                            side: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.24),
+                            ),
+                            shape: const StadiumBorder(),
+                            minimumSize: const Size(0, 28),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
+                            textStyle: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          icon: const Icon(Icons.verified_rounded, size: 14),
+                          label: const Text('Premium'),
+                        ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 12),
