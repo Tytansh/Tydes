@@ -22,11 +22,14 @@ class AppScaffold extends ConsumerWidget {
     final me = ref.watch(meProvider);
     final profile = me.valueOrNull;
 
-    if (me.isLoading) {
+    if (me.isLoading && !me.hasValue) {
       return const _AppAuthGate(message: 'Loading your account...');
     }
 
-    if (me.hasError || profile == null) {
+    final sessionExpired =
+        me.hasError &&
+        me.error.toString().toLowerCase().contains('session expired');
+    if (sessionExpired || profile == null) {
       _sendToLogin(context, ref);
       return const _AppAuthGate(message: 'Taking you to sign in...');
     }

@@ -6,6 +6,7 @@ import '../../app/router.dart';
 import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
+import '../../core/widgets/feed_refresh_indicator.dart';
 import 'social_feed.dart';
 import 'social_profile.dart';
 
@@ -73,9 +74,10 @@ class PublicProfilePage extends ConsumerWidget {
             _PublicProfileSafetyMenu(profile: headerProfile),
         ],
       ),
-      body: RefreshIndicator.adaptive(
+      body: FeedRefreshIndicator(
         onRefresh: () => _refreshProfile(ref),
         child: bundle.when(
+          skipLoadingOnReload: true,
           data: (data) {
             final profile = _buildResolvedProfile(userId, seedProfile, data);
             final blockedUserIds = ref.watch(blockedUserIdsProvider);

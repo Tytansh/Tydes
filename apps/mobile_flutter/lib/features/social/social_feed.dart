@@ -296,6 +296,7 @@ class TravelFeedSection extends ConsumerWidget {
           const SizedBox(height: 14),
         ],
         posts.when(
+          skipLoadingOnReload: true,
           data: (items) {
             final visiblePosts = items
                 .where((post) => !blockedUserIds.contains(post.userId))

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/router.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
+import '../../core/widgets/feed_refresh_indicator.dart';
 import '../social/social_feed.dart';
 import '../social/social_profile.dart';
 
@@ -53,7 +54,7 @@ class HomePage extends ConsumerWidget {
       });
     });
 
-    if (user.isLoading || sessionExpired) {
+    if ((user.isLoading && !user.hasValue) || sessionExpired) {
       return _AuthGateLoadingPage(
         message: sessionExpired
             ? 'Taking you to sign in...'
@@ -92,7 +93,7 @@ class HomePage extends ConsumerWidget {
           ),
         ],
       ),
-      body: RefreshIndicator.adaptive(
+      body: FeedRefreshIndicator(
         onRefresh: () => _refreshFeed(ref),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),

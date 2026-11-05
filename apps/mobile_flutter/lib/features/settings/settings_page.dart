@@ -13,6 +13,7 @@ import '../../core/legal/legal_links.dart';
 import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
+import '../../core/widgets/feed_refresh_indicator.dart';
 import '../home/home_page.dart';
 import '../social/direct_messages_page.dart';
 import '../social/notifications_page.dart';
@@ -216,13 +217,14 @@ class SettingsPage extends ConsumerWidget {
     );
 
     return Scaffold(
-      body: RefreshIndicator.adaptive(
+      body: FeedRefreshIndicator(
         onRefresh: () => _refreshProfile(ref),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
           children: [
             me.when(
+              skipLoadingOnReload: true,
               data: (profile) => _ProfileHero(
                 profile: profile,
                 friends: followingPeople,
@@ -301,7 +303,9 @@ class SettingsPage extends ConsumerWidget {
             ),
             const SizedBox(height: 12),
             me.when(
+              skipLoadingOnReload: true,
               data: (profile) => posts.when(
+                skipLoadingOnReload: true,
                 data: (items) => _ProfilePostFeed(
                   profile: profile,
                   allPosts: items,
