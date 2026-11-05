@@ -1446,6 +1446,26 @@ class DemoStore:
             for post in posts
         ]
 
+    def list_upcoming_events(self, *, limit: int = 300) -> list[SocialPost]:
+        today = datetime.now(timezone.utc).date()
+        if self.postgres_social is not None:
+            return self.postgres_social.list_posts(
+                limit=limit,
+                viewer_user_id=self.user.id,
+                upcoming_events_since=today,
+            )
+        followed = set(self.social_relationship_state()["followed_user_ids"])
+        blocked = self._blocked_user_ids_for(self.user.id)
+        events = [
+            post for post in self.posts
+            if post.post_type in {"surf_plan", "looking_for_buddy"}
+            and post.meetup_date is not None
+            and (post.meetup_end_date or post.meetup_date) >= today
+            and post.user_id not in blocked
+            and (post.visibility == "public" or post.user_id == self.user.id or post.user_id in followed)
+        ]
+        return sorted(events, key=lambda post: post.meetup_date)[:limit]
+
     def count_user_posts_since(self, user_id: str, since: datetime) -> int:
         if self.postgres_social is not None:
             return self.postgres_social.count_user_posts_since(user_id, since)

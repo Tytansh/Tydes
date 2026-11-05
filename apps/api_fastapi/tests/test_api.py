@@ -19,7 +19,7 @@ os.environ.setdefault(
 
 from app.main import app
 from app.core import email_sender
-from app.core.models import Alert, SurfWindowForecast, SurfWindowHour, TideForecast, Trip
+from app.core.models import Alert, SocialPost, SurfWindowForecast, SurfWindowHour, TideForecast, Trip
 from app.core.media_uploads import MediaUploadLedger, UploadLimits, UploadReservation
 from app.core.persistent_cache import CachedJson
 from app.core.rate_limit import api_rate_limiter
@@ -68,6 +68,49 @@ def _signup_access_token(monkeypatch, email: str) -> str:
     )
     assert response.status_code == 200, response.text
     return response.json()["session"]["access_token"]
+
+
+def test_event_map_feed_filters_before_limit_and_respects_visibility(tmp_path, monkeypatch):
+    monkeypatch.setattr(store, "state_file", tmp_path / "events-state.json")
+    monkeypatch.setattr(store, "auth_accounts", {})
+    monkeypatch.setattr(store, "session_tokens", {})
+    token = _signup_access_token(monkeypatch, "events-viewer@example.com")
+    viewer = store.resolve_session_user(token)
+    monkeypatch.setattr(store, "followed_user_ids", {"event_friend"})
+    monkeypatch.setattr(store, "blocked_user_ids", {"event_blocked"})
+    today = datetime.now(timezone.utc).date()
+
+    def event(post_id, owner="event_host", visibility="public", **changes):
+        return SocialPost(
+            id=post_id, user_id=owner, author_name="Event host",
+            post_type=changes.pop("post_type", "surf_plan"), visibility=visibility,
+            body="Test meetup", spot_id="spot_balangan",
+            meetup_date=changes.pop("meetup_date", today + timedelta(days=2)),
+            created_at=datetime.now(timezone.utc) - timedelta(days=10),
+            **changes,
+        )
+
+    events = [
+        event("public_event"),
+        event("own_event", viewer.id, "followers"),
+        event("friend_event", "event_friend", "followers"),
+        event("private_event", "event_stranger", "followers"),
+        event("blocked_event", "event_blocked"),
+        event("expired", meetup_date=today - timedelta(days=1)),
+        event("ongoing", meetup_date=today - timedelta(days=1), meetup_end_date=today + timedelta(days=1)),
+        event("undated", meetup_date=None),
+    ]
+    # General posts created more recently must not crowd older events off the map.
+    recent = [event(f"general_{i}", post_type="general", meetup_date=None) for i in range(80)]
+    monkeypatch.setattr(store, "posts", recent + events)
+    assert client.get("/api/v1/social/events").status_code == 401
+    response = client.get("/api/v1/social/events", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    assert {item["id"] for item in response.json()} == {
+        "public_event", "own_event", "friend_event", "ongoing",
+    }
+    limited = client.get("/api/v1/social/events?limit=1", headers={"Authorization": f"Bearer {token}"})
+    assert [item["id"] for item in limited.json()] == ["ongoing"]
 
 
 def test_profile_picture_and_cover_uploads_are_retained(monkeypatch):

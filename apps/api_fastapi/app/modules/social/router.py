@@ -134,6 +134,16 @@ def get_engagement(_user=Depends(require_authenticated_user)):
     return store.social_engagement_state()
 
 
+@router.get("/events")
+def list_upcoming_events(
+    request: Request,
+    limit: int = Query(default=300, ge=1, le=500),
+    _user=Depends(require_authenticated_user),
+):
+    _limit_public_read(request, "events", limit=120)
+    return store.list_upcoming_events(limit=limit)
+
+
 @router.get("/relationships")
 def get_relationships(_user=Depends(require_authenticated_user)):
     return store.social_relationship_state()

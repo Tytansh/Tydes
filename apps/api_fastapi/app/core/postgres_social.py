@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import os
 from typing import Any
 
@@ -71,6 +71,7 @@ class PostgresSocialRepository:
         self,
         limit: int | None = None,
         viewer_user_id: str | None = None,
+        upcoming_events_since: date | None = None,
     ) -> list[SocialPost]:
         viewer_id = (viewer_user_id or "").strip()
         query = """
@@ -97,9 +98,31 @@ class PostgresSocialRepository:
                 FROM social_rsvps
                 GROUP BY post_id
             ) AS rsvps ON rsvps.post_id = posts.id
-            ORDER BY posts.created_at DESC
         """
         parameters: tuple[Any, ...] = (viewer_id, viewer_id)
+        if upcoming_events_since is not None:
+            query += """
+                WHERE posts.payload->>'post_type' IN ('surf_plan', 'looking_for_buddy')
+                  AND posts.payload->>'meetup_date' IS NOT NULL
+                  AND COALESCE(posts.payload->>'meetup_end_date', posts.payload->>'meetup_date') >= %s
+                  AND (
+                    posts.payload->>'visibility' = 'public'
+                    OR posts.user_id = %s
+                    OR EXISTS (
+                      SELECT 1 FROM social_follows
+                      WHERE follower_user_id = %s AND followed_user_id = posts.user_id
+                    )
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM social_blocks
+                    WHERE (user_id = %s AND blocked_user_id = posts.user_id)
+                       OR (blocked_user_id = %s AND user_id = posts.user_id)
+                  )
+                ORDER BY posts.payload->>'meetup_date', posts.created_at DESC
+            """
+            parameters += (upcoming_events_since.isoformat(), viewer_id, viewer_id, viewer_id, viewer_id)
+        else:
+            query += " ORDER BY posts.created_at DESC"
         if limit is not None:
             query += " LIMIT %s"
             parameters += (max(1, limit),)

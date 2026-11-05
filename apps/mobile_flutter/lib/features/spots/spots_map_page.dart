@@ -10,6 +10,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
+import '../home/home_page.dart';
+import '../social/social_profile.dart';
+import 'map_events.dart';
 import 'spots_page.dart';
 
 const _difficultyBeginnerColor = Color(0xFF4BAF74);
@@ -98,12 +101,14 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
   double _zoom = 3.2;
   bool _savedOnly = false;
   bool _didApplyInitialSpot = false;
+  bool _showEvents = false;
 
   String get _searchQuery => _searchController.text.trim();
 
   @override
   void dispose() {
     _searchController.dispose();
+    _mapController.dispose();
     super.dispose();
   }
 
@@ -111,12 +116,26 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
   Widget build(BuildContext context) {
     final spots = ref.watch(spotsProvider);
     final favoriteSpotIds = ref.watch(favoriteSpotIdsProvider);
+    final eventPosts = _showEvents ? ref.watch(mapEventPostsProvider) : null;
+    final viewer = ref.watch(meProvider).valueOrNull;
+    final blocked = ref.watch(blockedUserIdsProvider);
+    final followed = ref.watch(followedUserIdsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Spot map')),
+      appBar: AppBar(
+        title: Text(_showEvents ? 'Event map' : 'Surf map'),
+        actions: [
+          if (_showEvents)
+            IconButton(
+              tooltip: 'Refresh events',
+              onPressed: () => ref.invalidate(mapEventPostsProvider),
+              icon: const Icon(Icons.refresh),
+            ),
+        ],
+      ),
       body: spots.when(
         data: (items) {
-          final sourceItems = _savedOnly
+          final sourceItems = _savedOnly && !_showEvents
               ? items
                     .where((spot) => favoriteSpotIds.contains(spot.id))
                     .toList()
@@ -140,7 +159,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
             }
           }
 
-          if (sourceItems.isEmpty) {
+          if (items.isEmpty) {
             return Center(
               child: Text(
                 _savedOnly
@@ -154,12 +173,24 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
           final visibleSpots = _visibleSpotsFor(
             sourceItems,
             profileForecastBySpotId,
+            applySearch: !_showEvents,
           );
+          final eventGroups = _showEvents
+              ? buildMapEventGroups(
+                  posts: eventPosts?.valueOrNull ?? const [],
+                  spots: visibleSpots,
+                  now: DateTime.now(),
+                  viewerId: viewer?.id,
+                  followedUserIds: followed,
+                  blockedUserIds: blocked,
+                ).where((group) => group.matches(_searchQuery)).toList()
+              : <MapEventGroup>[];
           final displayedVisibleSpots = visibleSpots;
-          final selectedSpot =
-              displayedVisibleSpots
-                  .where((spot) => spot.id == _selectedSpotId)
-                  .isEmpty
+          final selectedSpot = _showEvents
+              ? null
+              : displayedVisibleSpots
+                    .where((spot) => spot.id == _selectedSpotId)
+                    .isEmpty
               ? null
               : displayedVisibleSpots.firstWhere(
                   (spot) => spot.id == _selectedSpotId,
@@ -177,52 +208,79 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
                 child: Column(
                   children: [
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.favorite_outline),
-                            const SizedBox(width: 12),
-                            const Expanded(
-                              child: Text('Show saved spots only'),
-                            ),
-                            Switch(
-                              value: _savedOnly,
-                              onChanged: (value) {
-                                setState(() {
-                                  _savedOnly = value;
-                                  _selectedCountry = _allCountriesLabel;
-                                  _selectedRegion = _allRegionsLabel;
-                                  _selectedArea = _allAreasLabel;
-                                  _selectedSpotId = null;
-                                });
-                                WidgetsBinding.instance.addPostFrameCallback((
-                                  _,
-                                ) {
-                                  _showSpots(
-                                    _visibleSpotsFor(
-                                      value
-                                          ? items
-                                                .where(
-                                                  (spot) => favoriteSpotIds
-                                                      .contains(spot.id),
-                                                )
-                                                .toList()
-                                          : items,
-                                      profileForecastBySpotId,
-                                    ),
-                                  );
-                                });
-                              },
-                            ),
-                          ],
-                        ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: SegmentedButton<bool>(
+                        segments: const [
+                          ButtonSegment(
+                            value: false,
+                            label: Text('Surf'),
+                            icon: Icon(Icons.waves_rounded),
+                          ),
+                          ButtonSegment(
+                            value: true,
+                            label: Text('Events'),
+                            icon: Icon(Icons.event_rounded),
+                          ),
+                        ],
+                        selected: {_showEvents},
+                        onSelectionChanged: (selection) {
+                          setState(() {
+                            _showEvents = selection.single;
+                            _selectedSpotId = null;
+                            _searchController.clear();
+                          });
+                        },
                       ),
                     ),
+                    const SizedBox(height: 10),
+                    if (!_showEvents)
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.favorite_outline),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Text('Show saved spots only'),
+                              ),
+                              Switch(
+                                value: _savedOnly,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _savedOnly = value;
+                                    _selectedCountry = _allCountriesLabel;
+                                    _selectedRegion = _allRegionsLabel;
+                                    _selectedArea = _allAreasLabel;
+                                    _selectedSpotId = null;
+                                  });
+                                  WidgetsBinding.instance.addPostFrameCallback((
+                                    _,
+                                  ) {
+                                    _showSpots(
+                                      _visibleSpotsFor(
+                                        value
+                                            ? items
+                                                  .where(
+                                                    (spot) => favoriteSpotIds
+                                                        .contains(spot.id),
+                                                  )
+                                                  .toList()
+                                            : items,
+                                        profileForecastBySpotId,
+                                      ),
+                                    );
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 10),
                     TextField(
                       controller: _searchController,
@@ -231,7 +289,9 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                       }),
                       textInputAction: TextInputAction.search,
                       decoration: InputDecoration(
-                        hintText: 'Search spots on the map',
+                        hintText: _showEvents
+                            ? 'Search events, hosts, or places'
+                            : 'Search spots on the map',
                         prefixIcon: const Icon(Icons.search),
                         suffixIcon: _searchQuery.isEmpty
                             ? null
@@ -272,6 +332,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                           final nextVisible = _visibleSpotsFor(
                             sourceItems,
                             profileForecastBySpotId,
+                            applySearch: !_showEvents,
                           );
                           if (selection.spotId != null &&
                               nextVisible.any(
@@ -314,6 +375,24 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                   ],
                 ),
               ),
+              if (_showEvents && eventPosts?.isLoading == true)
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                  child: LinearProgressIndicator(),
+                ),
+              if (_showEvents && eventPosts?.hasError == true)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Card(
+                    child: ListTile(
+                      title: const Text('Could not load events'),
+                      trailing: TextButton(
+                        onPressed: () => ref.invalidate(mapEventPostsProvider),
+                        child: const Text('Retry'),
+                      ),
+                    ),
+                  ),
+                ),
               if (displayedVisibleSpots.isEmpty)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
@@ -350,6 +429,9 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                       selectedSpotId: _selectedSpotId,
                       selectedForecast: selectedForecast,
                       onSpotTap: _focusSpot,
+                      showEvents: _showEvents,
+                      eventGroups: eventGroups,
+                      onEventTap: (group) => showMapEventPopup(context, group),
                       onPositionChanged: (camera, _) {
                         if (_zoom != camera.zoom) {
                           setState(() => _zoom = camera.zoom);
@@ -358,37 +440,104 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                     ),
                   ),
                 ),
-                if (selectedSpot != null)
+                if (_showEvents) ...[
                   Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: _SelectedMapSpotCard(
-                      spot: selectedSpot,
-                      isFavorite: favoriteSpotIds.contains(selectedSpot.id),
-                      onFavoritePressed: () => ref
-                          .read(favoriteSpotIdsProvider.notifier)
-                          .toggle(selectedSpot.id),
-                      onOpenPressed: () =>
-                          context.push('/spot/${selectedSpot.id}'),
+                    padding: const EdgeInsets.fromLTRB(18, 18, 18, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${eventGroups.fold<int>(0, (count, group) => count + group.events.length)} upcoming events',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                        if (eventGroups.isNotEmpty)
+                          TextButton.icon(
+                            onPressed: () => _showSpots(
+                              eventGroups.map((group) => group.spot).toList(),
+                            ),
+                            icon: const Icon(Icons.zoom_out_map, size: 18),
+                            label: const Text('Show all'),
+                          ),
+                      ],
                     ),
-                  )
-                else
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
-                    child: Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(18),
-                        child: Text(
-                          'Tap a dot on the map or choose a break from Location to open one.',
+                  ),
+                  if (eventGroups.isEmpty &&
+                      eventPosts?.isLoading != true &&
+                      eventPosts?.hasError != true)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Card(
+                        child: Padding(
+                          padding: EdgeInsets.all(20),
+                          child: Text(
+                            'No upcoming events here yet. Try another area or create an event from the feed.',
+                          ),
                         ),
                       ),
                     ),
+                  for (final group in eventGroups)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
+                      child: Card(
+                        child: ListTile(
+                          leading: TydesProfileAvatar(
+                            displayName: group.events.first.post.authorName,
+                            imageUrl: group.events.first.post.authorAvatarUrl,
+                            size: 42,
+                          ),
+                          title: Text(
+                            group.events.first.post.body.isEmpty
+                                ? 'Surf meetup at ${group.spot.name}'
+                                : group.events.first.post.body,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text(
+                            '${group.spot.name} · ${mapEventDateLabel(group.events.first)}${group.events.length > 1 ? ' · ${group.events.length} events' : ''}',
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => showMapEventPopup(context, group),
+                        ),
+                      ),
+                    ),
+                ] else ...[
+                  if (selectedSpot != null)
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: _SelectedMapSpotCard(
+                        spot: selectedSpot,
+                        isFavorite: favoriteSpotIds.contains(selectedSpot.id),
+                        onFavoritePressed: () => ref
+                            .read(favoriteSpotIdsProvider.notifier)
+                            .toggle(selectedSpot.id),
+                        onOpenPressed: () =>
+                            context.push('/spot/${selectedSpot.id}'),
+                      ),
+                    )
+                  else
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
+                      child: Card(
+                        child: Padding(
+                          padding: EdgeInsets.all(18),
+                          child: Text(
+                            'Tap a dot on the map or choose a break from Location to open one.',
+                          ),
+                        ),
+                      ),
+                    ),
+                  ..._buildResultList(
+                    context: context,
+                    visibleSpots: displayedVisibleSpots,
+                    favoriteSpotIds: favoriteSpotIds,
+                    selectedSpot: selectedSpot,
                   ),
-                ..._buildResultList(
-                  context: context,
-                  visibleSpots: displayedVisibleSpots,
-                  favoriteSpotIds: favoriteSpotIds,
-                  selectedSpot: selectedSpot,
-                ),
+                ],
               ],
             ],
           );
@@ -441,12 +590,29 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _showSpots(_visibleSpotsFor(sourceItems, forecastBySpotId));
+      _showSpots(
+        _visibleSpotsFor(
+          sourceItems,
+          forecastBySpotId,
+          applySearch: !_showEvents,
+        ),
+      );
     });
   }
 
   void _showSpots(List<SpotModel> spots) {
     if (spots.isEmpty) return;
+    if (spots.length == 1) {
+      _mapController.move(
+        LatLng(spots.single.latitude, spots.single.longitude),
+        10,
+      );
+      setState(() {
+        _selectedSpotId = null;
+        _zoom = _mapController.camera.zoom;
+      });
+      return;
+    }
     final bounds = LatLngBounds.fromPoints(
       spots.map((spot) => LatLng(spot.latitude, spot.longitude)).toList(),
     );
@@ -464,12 +630,13 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
 
   List<SpotModel> _visibleSpotsFor(
     List<SpotModel> items,
-    Map<String, ForecastModel?> forecastBySpotId,
-  ) {
+    Map<String, ForecastModel?> forecastBySpotId, {
+    bool applySearch = true,
+  }) {
     final countrySpots = filteredForCountry(items, _selectedCountry);
     final regionSpots = filteredForRegion(countrySpots, _selectedRegion);
     final areaSpots = filteredForArea(regionSpots, _selectedArea);
-    if (_searchQuery.isEmpty) return areaSpots;
+    if (!applySearch || _searchQuery.isEmpty) return areaSpots;
     return areaSpots
         .where((spot) => _matchesSpot(spot, _searchQuery, forecastBySpotId))
         .toList();
@@ -971,6 +1138,9 @@ class _MapCanvas extends StatelessWidget {
     required this.selectedForecast,
     required this.onSpotTap,
     required this.onPositionChanged,
+    required this.showEvents,
+    required this.eventGroups,
+    required this.onEventTap,
   });
 
   final MapController mapController;
@@ -981,6 +1151,9 @@ class _MapCanvas extends StatelessWidget {
   final ForecastModel? selectedForecast;
   final ValueChanged<SpotModel> onSpotTap;
   final void Function(MapCamera, bool) onPositionChanged;
+  final bool showEvents;
+  final List<MapEventGroup> eventGroups;
+  final ValueChanged<MapEventGroup> onEventTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1002,25 +1175,42 @@ class _MapCanvas extends StatelessWidget {
           userAgentPackageName: _mapTileUserAgent,
         ),
         MarkerLayer(
-          markers: spots
-              .map(
-                (spot) => Marker(
-                  point: LatLng(spot.latitude, spot.longitude),
-                  width: selectedSpotId == spot.id ? 120 : 22,
-                  height: selectedSpotId == spot.id ? 112 : 22,
-                  child: GestureDetector(
-                    onTap: () => onSpotTap(spot),
-                    child: _SpotMarker(
-                      spot: spot,
-                      isSelected: selectedSpotId == spot.id,
-                      forecast: selectedSpotId == spot.id
-                          ? selectedForecast
-                          : null,
-                    ),
-                  ),
-                ),
-              )
-              .toList(),
+          markers: showEvents
+              ? eventGroups
+                    .map(
+                      (group) => Marker(
+                        point: LatLng(
+                          group.spot.latitude,
+                          group.spot.longitude,
+                        ),
+                        width: 62,
+                        height: 62,
+                        child: MapEventMarker(
+                          group: group,
+                          onTap: () => onEventTap(group),
+                        ),
+                      ),
+                    )
+                    .toList()
+              : spots
+                    .map(
+                      (spot) => Marker(
+                        point: LatLng(spot.latitude, spot.longitude),
+                        width: selectedSpotId == spot.id ? 120 : 22,
+                        height: selectedSpotId == spot.id ? 112 : 22,
+                        child: GestureDetector(
+                          onTap: () => onSpotTap(spot),
+                          child: _SpotMarker(
+                            spot: spot,
+                            isSelected: selectedSpotId == spot.id,
+                            forecast: selectedSpotId == spot.id
+                                ? selectedForecast
+                                : null,
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
         ),
         const _MapAttributionPill(),
       ],
