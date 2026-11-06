@@ -42,6 +42,10 @@ class User(BaseModel):
     locale: str
     premium: bool = False
     admin_premium: bool = False
+    subscription_active: bool | None = None
+    subscription_expires_at: datetime | None = None
+    subscription_checked_at: datetime | None = None
+    subscription_management_url: str | None = None
     banned: bool = False
     email_verified: bool = False
     free_live_spot_id: str | None = None

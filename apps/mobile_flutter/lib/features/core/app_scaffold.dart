@@ -14,11 +14,44 @@ import '../settings/settings_page.dart';
 import '../spots/spots_map_page.dart';
 import '../trips/trips_page.dart';
 
-class AppScaffold extends ConsumerWidget {
+class AppScaffold extends ConsumerStatefulWidget {
   const AppScaffold({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AppScaffold> createState() => _AppScaffoldState();
+}
+
+class _AppScaffoldState extends ConsumerState<AppScaffold>
+    with WidgetsBindingObserver {
+  DateTime? _lastAccountRefresh;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final now = DateTime.now();
+    if (state != AppLifecycleState.resumed ||
+        (_lastAccountRefresh != null &&
+            now.difference(_lastAccountRefresh!) <
+                const Duration(minutes: 1))) {
+      return;
+    }
+    _lastAccountRefresh = now;
+    ref.invalidate(meProvider);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final me = ref.watch(meProvider);
     final profile = me.valueOrNull;
 

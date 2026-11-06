@@ -286,6 +286,10 @@ class DemoStore:
                 "email_verified": False,
                 "premium": self._email_has_premium_override(normalized_email),
                 "admin_premium": False,
+                "subscription_active": None,
+                "subscription_expires_at": None,
+                "subscription_checked_at": None,
+                "subscription_management_url": None,
                 "banned": False,
                 "display_name": "",
                 "handle": "",
@@ -497,15 +501,19 @@ class DemoStore:
             for item in os.getenv("TYDES_PREMIUM_EMAILS", "").split(",")
             if item.strip()
         }
-        return (
-            "+premium" in normalized_email
-            or normalized_email.startswith("premium@")
-            or normalized_email in configured_emails
-        )
+        return normalized_email in configured_emails
 
     def _apply_email_access_overrides(self, email: str) -> bool:
+        subscription_active = self.user.subscription_active
+        expires_at = self.user.subscription_expires_at
+        if subscription_active is not None:
+            if expires_at is not None and expires_at <= datetime.now(timezone.utc):
+                subscription_active = False
+            paid_access = subscription_active
+        else:
+            paid_access = self.user.premium
         premium_active = (
-            self.user.premium
+            paid_access
             or self.user.admin_premium
             or self._email_has_premium_override(email)
         )
@@ -1066,6 +1074,13 @@ class DemoStore:
         self._save_state()
         return self.user
 
+    def set_subscription_status(self, subscription) -> User:
+        self.user.subscription_active = subscription.active
+        self.user.subscription_expires_at = subscription.expires_at
+        self.user.subscription_checked_at = datetime.now(timezone.utc)
+        self.user.subscription_management_url = subscription.management_url
+        return self.set_premium_status(subscription.active)
+
     def list_ads(self, placement: str | None = None) -> Iterable[AdCard]:
         if not self.user.ads_enabled:
             return []
@@ -1181,7 +1196,11 @@ class DemoStore:
             user = User.model_validate(payload)
             if premium is not None:
                 user.admin_premium = premium
-                user.premium = premium or self._email_has_premium_override(email)
+                paid = user.subscription_active is True and (
+                    user.subscription_expires_at is None
+                    or user.subscription_expires_at > datetime.now(timezone.utc)
+                )
+                user.premium = premium or paid or self._email_has_premium_override(email)
                 user.ads_enabled = not user.premium
             if banned is not None:
                 user.banned = banned

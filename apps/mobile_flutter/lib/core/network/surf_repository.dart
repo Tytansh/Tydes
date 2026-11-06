@@ -1418,6 +1418,19 @@ class SurfRepository {
     }
   }
 
+  Future<Map<String, dynamic>> fetchBillingConfig() async {
+    final response = await _dio.get<Map<String, dynamic>>('/billing/config');
+    return response.data ?? const {};
+  }
+
+  Future<Uri?> fetchSubscriptionManagementUrl() async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/billing/management',
+    );
+    final url = Uri.tryParse(response.data?['url'] as String? ?? '');
+    return url?.scheme == 'https' && url!.host.isNotEmpty ? url : null;
+  }
+
   Future<UserProfile> syncRevenueCatPremium() async {
     try {
       final response = await _dio.post<Map<String, dynamic>>(

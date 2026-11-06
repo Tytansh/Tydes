@@ -1,28 +1,64 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:purchases_flutter/purchases_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/billing/revenuecat_service.dart';
 import '../../core/legal/legal_links.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../home/home_page.dart';
+import '../spots/spot_detail_page.dart';
 
 final plansProvider = FutureProvider(
   (ref) => ref.watch(surfRepositoryProvider).fetchPlans(),
 );
 
-final premiumOfferProvider = FutureProvider<RevenueCatPremiumOffer?>((ref) {
+final premiumOfferProvider = FutureProvider<RevenueCatPremiumOffer?>((
+  ref,
+) async {
   final service = ref.watch(revenueCatServiceProvider);
+  final profile = await ref.watch(meProvider.future);
   if (!service.isAvailable) {
-    return Future.value();
+    return null;
   }
-  return service.loadPremiumOffer();
+  return service.loadPremiumOffer(profile);
 });
 
 final premiumPurchaseBusyProvider = StateProvider<bool>((ref) => false);
+final premiumPurchasePendingProvider = StateProvider.family<bool, String>(
+  (ref, userId) => false,
+);
 
-class PaywallPage extends ConsumerWidget {
+class PaywallPage extends ConsumerStatefulWidget {
   const PaywallPage({super.key});
+
+  @override
+  ConsumerState<PaywallPage> createState() => _PaywallPageState();
+}
+
+class _PaywallPageState extends ConsumerState<PaywallPage>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.invalidate(meProvider);
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) ref.invalidate(meProvider);
+  }
 
   Future<void> _buyPremium(BuildContext context, WidgetRef ref) async {
     final profile = ref.read(meProvider).valueOrNull;
@@ -35,7 +71,7 @@ class PaywallPage extends ConsumerWidget {
     if (!service.isAvailable) {
       _showMessage(
         context,
-        'RevenueCat keys are not in this build yet. Add the iOS/Android SDK keys before testing purchases.',
+        'Subscriptions are not available on this platform yet. You have not been charged.',
       );
       return;
     }
@@ -49,9 +85,27 @@ class PaywallPage extends ConsumerWidget {
         );
       }
       await service.purchasePremium(profile: profile, package: offer.package);
-      final syncedProfile = await ref
-          .read(surfRepositoryProvider)
-          .syncRevenueCatPremium();
+      ref.read(premiumPurchasePendingProvider(profile.id).notifier).state =
+          true;
+      // Once the store succeeds, a verification outage must never encourage a second purchase.
+      UserProfile syncedProfile;
+      try {
+        syncedProfile = await ref
+            .read(surfRepositoryProvider)
+            .syncRevenueCatPremium();
+      } catch (_) {
+        if (context.mounted) {
+          _showMessage(
+            context,
+            'Your purchase was received, but Premium could not be confirmed yet. Tap Check subscription or Restore purchases; do not buy again.',
+          );
+        }
+        return;
+      }
+      if (syncedProfile.premium) {
+        ref.read(premiumPurchasePendingProvider(profile.id).notifier).state =
+            false;
+      }
       _refreshPremiumState(ref);
       if (!context.mounted) {
         return;
@@ -67,6 +121,12 @@ class PaywallPage extends ConsumerWidget {
         _showMessage(context, 'Purchase canceled.');
       }
     } catch (error) {
+      if (error is PlatformException &&
+          PurchasesErrorHelper.getErrorCode(error) ==
+              PurchasesErrorCode.paymentPendingError) {
+        ref.read(premiumPurchasePendingProvider(profile.id).notifier).state =
+            true;
+      }
       if (context.mounted) {
         _showMessage(context, _friendlyError(error));
       }
@@ -83,20 +143,17 @@ class PaywallPage extends ConsumerWidget {
     }
 
     final service = ref.read(revenueCatServiceProvider);
-    if (!service.isAvailable) {
-      _showMessage(
-        context,
-        'RevenueCat keys are not in this build yet. Add the iOS/Android SDK keys before restoring.',
-      );
-      return;
-    }
-
     ref.read(premiumPurchaseBusyProvider.notifier).state = true;
     try {
-      await service.restorePurchases(profile);
+      // A signed-in web user can check purchases from Apple even before web checkout is enabled.
+      if (service.isAvailable) await service.restorePurchases(profile);
       final syncedProfile = await ref
           .read(surfRepositoryProvider)
           .syncRevenueCatPremium();
+      if (syncedProfile.premium) {
+        ref.read(premiumPurchasePendingProvider(profile.id).notifier).state =
+            false;
+      }
       _refreshPremiumState(ref);
       if (!context.mounted) {
         return;
@@ -116,10 +173,49 @@ class PaywallPage extends ConsumerWidget {
     }
   }
 
+  Future<void> _manageSubscription(BuildContext context, WidgetRef ref) async {
+    final profile = ref.read(meProvider).valueOrNull;
+    if (profile == null) return;
+    ref.read(premiumPurchaseBusyProvider.notifier).state = true;
+    try {
+      final service = ref.read(revenueCatServiceProvider);
+      final url = service.isAvailable
+          ? await service.managementUrl(profile)
+          : await ref
+                .read(surfRepositoryProvider)
+                .fetchSubscriptionManagementUrl();
+      if (url == null) {
+        if (context.mounted) {
+          _showMessage(
+            context,
+            'Manage your subscription with the store where you purchased it. Complimentary Premium does not renew or charge you.',
+          );
+        }
+        return;
+      }
+      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+        throw StateError('Could not open subscription management.');
+      }
+    } catch (_) {
+      if (context.mounted) {
+        _showMessage(
+          context,
+          'Could not open subscription management. Please use the store where you subscribed.',
+        );
+      }
+    } finally {
+      ref.read(premiumPurchaseBusyProvider.notifier).state = false;
+    }
+  }
+
   void _refreshPremiumState(WidgetRef ref) {
     ref.invalidate(meProvider);
     ref.invalidate(homeAdsProvider);
     ref.invalidate(dashboardProvider);
+    ref.invalidate(spotForecastProvider);
+    ref.invalidate(spotTideProvider);
+    ref.invalidate(spotSurfWindowProvider);
+    ref.invalidate(spotDetailBundleProvider);
   }
 
   void _showMessage(BuildContext context, String message) {
@@ -129,21 +225,37 @@ class PaywallPage extends ConsumerWidget {
   }
 
   String _friendlyError(Object error) {
-    final message = error.toString().replaceFirst('Bad state: ', '');
-    if (message.contains('RevenueCat server API key')) {
-      return 'Backend RevenueCat secret key is missing. Add it in Render before testing live purchases.';
+    if (error is PlatformException) {
+      final code = PurchasesErrorHelper.getErrorCode(error);
+      if (code == PurchasesErrorCode.paymentPendingError) {
+        return 'Your payment is awaiting approval. Premium will activate after it is confirmed; do not buy again.';
+      }
+      if (code == PurchasesErrorCode.productAlreadyPurchasedError) {
+        return 'You already have this subscription. Use Restore purchases or Check subscription.';
+      }
     }
-    return message;
+    return 'Could not confirm your subscription right now. Please try again or contact support.';
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final plans = ref.watch(plansProvider);
     final me = ref.watch(meProvider);
     final offer = ref.watch(premiumOfferProvider);
     final isBusy = ref.watch(premiumPurchaseBusyProvider);
     final profile = me.valueOrNull;
     final isPremium = profile?.premium ?? false;
+    final awaitingConfirmation = ref.watch(
+      premiumPurchasePendingProvider(profile?.id ?? ''),
+    );
+    final service = ref.watch(revenueCatServiceProvider);
+    final config = ref.watch(billingConfigProvider);
+    final checkoutReady =
+        service.isAvailable &&
+        !me.isLoading &&
+        config.valueOrNull?['verification_ready'] == true &&
+        offer.valueOrNull != null &&
+        !offer.isLoading;
     final premiumPlan = plans.valueOrNull?.firstWhere(
       (plan) => plan.id == 'premium',
       orElse: () => BillingPlanModel(
@@ -159,7 +271,9 @@ class PaywallPage extends ConsumerWidget {
       ),
     );
     final price =
-        offer.valueOrNull?.price ??
+        (offer.valueOrNull != null
+            ? '${offer.valueOrNull!.price} / month'
+            : null) ??
         (premiumPlan == null
             ? '\$3.99 / month'
             : '\$${premiumPlan.priceUsdMonthly.toStringAsFixed(2)} / month');
@@ -181,24 +295,53 @@ class PaywallPage extends ConsumerWidget {
             isPremium: isPremium,
             price: price,
             loadingOffer: offer.isLoading,
-            offerUnavailable: !ref.read(revenueCatServiceProvider).isAvailable,
+            offerUnavailable: !service.isAvailable && !config.isLoading,
           ),
           const SizedBox(height: 16),
           _PremiumCard(
             features: features,
             isPremium: isPremium,
             isBusy: isBusy,
+            checkoutReady: checkoutReady && !awaitingConfirmation,
+            isWeb: service.isWeb,
             onBuy: () => _buyPremium(context, ref),
             onRestore: () => _restorePurchases(context, ref),
+            onManage: () => _manageSubscription(context, ref),
           ),
+          if (awaitingConfirmation && !isPremium) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'Waiting for payment confirmation. Use Check subscription or Restore purchases below; do not subscribe again.',
+            ),
+          ],
+          if (!isPremium &&
+              !awaitingConfirmation &&
+              service.isAvailable &&
+              (offer.hasError ||
+                  config.hasError ||
+                  (!config.isLoading &&
+                      config.valueOrNull?['verification_ready'] != true) ||
+                  (!offer.isLoading && offer.valueOrNull == null))) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'The monthly subscription could not be loaded. You have not been charged.',
+            ),
+            TextButton(
+              onPressed: () {
+                ref.invalidate(billingConfigProvider);
+                ref.invalidate(premiumOfferProvider);
+              },
+              child: const Text('Retry loading subscription'),
+            ),
+          ],
           const SizedBox(height: 16),
-          const _PremiumLegalCard(),
+          _PremiumLegalCard(isWeb: service.isWeb),
           const SizedBox(height: 16),
           _FreeCard(isCurrent: !isPremium),
           if (plans.hasError) ...[
             const SizedBox(height: 16),
             Text(
-              'Could not load backend plans: ${plans.error}',
+              'Could not load subscription details right now.',
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ],
@@ -213,7 +356,8 @@ class PaywallPage extends ConsumerWidget {
 }
 
 class _PremiumLegalCard extends StatelessWidget {
-  const _PremiumLegalCard();
+  const _PremiumLegalCard({required this.isWeb});
+  final bool isWeb;
 
   @override
   Widget build(BuildContext context) {
@@ -242,8 +386,10 @@ class _PremiumLegalCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 10),
-            const Text(
-              'Premium renews monthly through your app-store account unless canceled. Restore Purchases checks for an active subscription.',
+            Text(
+              isWeb
+                  ? 'Premium renews monthly unless canceled. The checkout shows your price and billing terms before you pay. Manage or cancel with the provider where you subscribed. Your subscription follows your Tydes account across devices.'
+                  : 'Premium renews monthly through your app-store account unless canceled. Payment is charged to your store account at confirmation. Manage or cancel in your store subscription settings. Restore purchases checks for an active subscription.',
             ),
             const SizedBox(height: 10),
             const Text(
@@ -312,7 +458,9 @@ class _HeroCard extends StatelessWidget {
           if (offerUnavailable) ...[
             const SizedBox(height: 10),
             Text(
-              'Store purchases are disabled until RevenueCat SDK keys are added to this build.',
+              isPremium
+                  ? 'Your Premium access works on this device.'
+                  : 'Purchases are not available on this platform yet. If you already subscribed, sign in to the same Tydes account and check your subscription below.',
               style: TextStyle(color: scheme.onPrimaryContainer),
             ),
           ],
@@ -327,15 +475,21 @@ class _PremiumCard extends StatelessWidget {
     required this.features,
     required this.isPremium,
     required this.isBusy,
+    required this.checkoutReady,
+    required this.isWeb,
     required this.onBuy,
     required this.onRestore,
+    required this.onManage,
   });
 
   final List<String> features;
   final bool isPremium;
   final bool isBusy;
+  final bool checkoutReady;
+  final bool isWeb;
   final VoidCallback onBuy;
   final VoidCallback onRestore;
+  final VoidCallback onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -355,19 +509,25 @@ class _PremiumCard extends StatelessWidget {
             ...features.map((feature) => _FeatureBullet(text: feature)),
             const SizedBox(height: 18),
             FilledButton(
-              onPressed: isPremium || isBusy ? null : onBuy,
+              onPressed: isPremium || isBusy || !checkoutReady ? null : onBuy,
               child: isBusy
                   ? const SizedBox.square(
                       dimension: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : Text(isPremium ? 'Current plan' : 'Upgrade to Premium'),
+                  : Text(isPremium ? 'Current plan' : 'Subscribe monthly'),
             ),
             const SizedBox(height: 8),
             TextButton(
               onPressed: isBusy ? null : onRestore,
-              child: const Text('Restore purchases'),
+              child: Text(isWeb ? 'Check subscription' : 'Restore purchases'),
             ),
+            if (isPremium)
+              TextButton.icon(
+                onPressed: isBusy ? null : onManage,
+                icon: const Icon(Icons.manage_accounts_outlined),
+                label: const Text('Manage subscription'),
+              ),
           ],
         ),
       ),

@@ -7,6 +7,7 @@ from app.core.media_cleanup import queue_post_media_deletion
 from app.core.media_uploads import upload_ledger
 from app.core.moderation import ensure_allowed_content
 from app.core.store import store
+from app.integrations.revenuecat import refresh_subscription_if_stale
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -32,8 +33,8 @@ class UpdateProfileRequest(BaseModel):
 
 
 @router.get("/me")
-def me(user=Depends(require_authenticated_user)):
-    return user
+async def me(user=Depends(require_authenticated_user)):
+    return await refresh_subscription_if_stale(user)
 
 
 @router.put("/me")

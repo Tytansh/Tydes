@@ -31,7 +31,9 @@ client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
-def reset_api_rate_limits():
+def reset_api_rate_limits(monkeypatch):
+    # Test accounts receive explicit grants, never special access from email patterns.
+    monkeypatch.setenv("TYDES_PREMIUM_EMAILS", "demo+premium@surftravel.app")
     api_rate_limiter.clear()
     yield
     api_rate_limiter.clear()
@@ -68,6 +70,95 @@ def _signup_access_token(monkeypatch, email: str) -> str:
     )
     assert response.status_code == 200, response.text
     return response.json()["session"]["access_token"]
+
+
+def test_subscription_sync_is_verified_and_scoped_to_signed_in_account(tmp_path, monkeypatch):
+    from app.integrations.revenuecat import RevenueCatSubscription
+    from app.modules.billing import router as billing
+
+    monkeypatch.setattr(store, "state_file", tmp_path / "billing.json")
+    monkeypatch.setattr(store, "auth_accounts", {})
+    monkeypatch.setattr(store, "session_tokens", {})
+    alice_token = _signup_access_token(monkeypatch, "billing-alice@example.com")
+    bob_token = _signup_access_token(monkeypatch, "billing-bob@example.com")
+    alice = store.resolve_session_user(alice_token)
+    bob = store.resolve_session_user(bob_token)
+    future = datetime.now(timezone.utc) + timedelta(days=30)
+    verified_ids = []
+
+    async def verify(user_id):
+        verified_ids.append(user_id)
+        return RevenueCatSubscription(user_id == alice.id, expires_at=future)
+
+    monkeypatch.setattr(billing, "fetch_revenuecat_subscription", verify)
+    assert client.post("/api/v1/billing/sync-revenuecat").status_code == 401
+    response = client.post("/api/v1/billing/sync-revenuecat", headers={"Authorization": f"Bearer {alice_token}"}, json={"user_id": bob.id, "premium": True})
+    assert response.status_code == 200
+    assert response.json()["premium"] is True
+    assert verified_ids == [alice.id]
+    assert store.resolve_session_user(alice_token).premium is True
+    assert store.resolve_session_user(bob_token).premium is False
+    assert store.resolve_session_user(alice_token).subscription_expires_at == future
+
+
+def test_expired_subscription_is_revoked_but_admin_grants_survive(tmp_path, monkeypatch):
+    from app.integrations.revenuecat import RevenueCatSubscription
+    monkeypatch.setattr(store, "state_file", tmp_path / "expiration.json")
+    token = _signup_access_token(monkeypatch, "billing-expired@example.com")
+    user = store.resolve_session_user(token)
+    yesterday = datetime.now(timezone.utc) - timedelta(days=1)
+    with store.request_user_context(user):
+        store.set_subscription_status(RevenueCatSubscription(True, expires_at=yesterday))
+    assert store.resolve_session_user(token).premium is False
+    store.set_admin_user_access(user.id, premium=True)
+    assert store.resolve_session_user(token).premium is True
+    with store.request_user_context(store.resolve_session_user(token)):
+        store.set_subscription_status(RevenueCatSubscription(False))
+    assert store.resolve_session_user(token).premium is True
+
+
+def test_billing_config_only_returns_public_web_key(monkeypatch):
+    token = _signup_access_token(monkeypatch, "billing-config@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    monkeypatch.setenv("REVENUECAT_SECRET_API_KEY", "server-must-not-leak")
+    monkeypatch.setenv("REVENUECAT_WEB_API_KEY", "sk_accidentally-used-secret")
+    assert client.get("/api/v1/billing/config").status_code == 401
+    response = client.get("/api/v1/billing/config", headers=headers)
+    assert response.json() == {"web_api_key": "", "web_enabled": False, "verification_ready": True}
+    monkeypatch.setenv("REVENUECAT_WEB_API_KEY", "rcb_public_web_identifier")
+    assert client.get("/api/v1/billing/config", headers=headers).json() == {
+        "web_api_key": "rcb_public_web_identifier", "web_enabled": True, "verification_ready": True,
+    }
+    monkeypatch.delenv("REVENUECAT_SECRET_API_KEY")
+    monkeypatch.delenv("REVENUECAT_REST_API_KEY", raising=False)
+    assert client.get("/api/v1/billing/config", headers=headers).json()["web_enabled"] is False
+
+
+def test_email_name_cannot_grant_paid_access(monkeypatch):
+    token = _signup_access_token(monkeypatch, "premium@not-an-admin.example.com")
+    assert store.resolve_session_user(token).premium is False
+    token2 = _signup_access_token(monkeypatch, "free+premium@not-an-admin.example.com")
+    assert store.resolve_session_user(token2).premium is False
+    token3 = _signup_access_token(monkeypatch, "arbitrary+premium@surftravel.app")
+    assert store.resolve_session_user(token3).premium is False
+
+
+def test_account_read_refreshes_subscription_once_per_hour(tmp_path, monkeypatch):
+    from app.integrations import revenuecat
+    monkeypatch.setattr(store, "state_file", tmp_path / "refresh.json")
+    token = _signup_access_token(monkeypatch, "billing-refresh@example.com")
+    monkeypatch.setenv("REVENUECAT_SECRET_API_KEY", "test-server-secret")
+    calls = []
+
+    async def verify(user_id):
+        calls.append(user_id)
+        return revenuecat.RevenueCatSubscription(True, expires_at=datetime.now(timezone.utc) + timedelta(days=10))
+
+    monkeypatch.setattr(revenuecat, "fetch_revenuecat_subscription", verify)
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.get("/api/v1/users/me", headers=headers).json()["premium"] is True
+    assert client.get("/api/v1/users/me", headers=headers).json()["premium"] is True
+    assert len(calls) == 1
 
 
 def test_event_map_feed_filters_before_limit_and_respects_visibility(tmp_path, monkeypatch):
@@ -2059,6 +2150,7 @@ def test_direct_r2_video_upload_is_verified_before_posting(monkeypatch):
                 self.objects.pop(object_name, None)
 
     email = "premium@protected-upload.example.com"
+    monkeypatch.setenv("TYDES_PREMIUM_EMAILS", email)
     access_token = _signup_access_token(monkeypatch, email)
     signed_in_user = store.resolve_session_user(access_token)
     assert signed_in_user is not None

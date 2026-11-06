@@ -4,9 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 
 import '../network/api_models.dart';
+import '../network/surf_repository.dart';
+
+final billingConfigProvider = FutureProvider<Map<String, dynamic>>((ref) {
+  return ref.watch(surfRepositoryProvider).fetchBillingConfig();
+});
 
 final revenueCatServiceProvider = Provider<RevenueCatService>((ref) {
-  return RevenueCatService();
+  final config = ref.watch(billingConfigProvider).valueOrNull;
+  return RevenueCatService(webApiKey: config?['web_api_key'] as String? ?? '');
 });
 
 class RevenueCatUnavailableException implements Exception {
@@ -35,6 +41,10 @@ class RevenueCatPremiumOffer {
 }
 
 class RevenueCatService {
+  RevenueCatService({String webApiKey = ''}) : _webApiKey = webApiKey;
+
+  final String _webApiKey;
+  bool get isWeb => kIsWeb;
   // RevenueCat SDK keys are public client identifiers intended to ship in the
   // app. The environment value remains available for alternate build targets.
   static const iosApiKey = String.fromEnvironment(
@@ -62,7 +72,7 @@ class RevenueCatService {
 
   bool get isAvailable => _platformApiKey.isNotEmpty;
 
-  Future<void> configure() async {
+  Future<void> configure({String? appUserId}) async {
     if (_configured) {
       return;
     }
@@ -74,12 +84,15 @@ class RevenueCatService {
       );
     }
 
-    await Purchases.configure(PurchasesConfiguration(apiKey));
+    await Purchases.configure(
+      PurchasesConfiguration(apiKey)..appUserID = appUserId,
+    );
+    _loggedInUserId = appUserId;
     _configured = true;
   }
 
   Future<void> logIn(UserProfile profile) async {
-    await configure();
+    await configure(appUserId: profile.id);
     if (_loggedInUserId != profile.id) {
       await Purchases.logIn(profile.id);
       _loggedInUserId = profile.id;
@@ -90,21 +103,17 @@ class RevenueCatService {
     }
   }
 
-  Future<RevenueCatPremiumOffer?> loadPremiumOffer() async {
-    await configure();
+  Future<RevenueCatPremiumOffer?> loadPremiumOffer(UserProfile profile) async {
+    // Offerings and checkout must use the authenticated Tydes account on every platform.
+    await logIn(profile);
     final offerings = await Purchases.getOfferings();
     final offering = offeringId.isNotEmpty
         ? offerings.getOffering(offeringId)
         : offerings.current;
     final packages = offering?.availablePackages ?? const <Package>[];
     final configuredPackage = _packageWithIdentifier(packages, packageId);
-    final package =
-        configuredPackage ??
-        offering?.monthly ??
-        (offering?.availablePackages.isNotEmpty == true
-            ? offering!.availablePackages.first
-            : null);
-    if (package == null) {
+    final package = configuredPackage;
+    if (package == null || package.packageType != PackageType.monthly) {
       return null;
     }
 
@@ -122,6 +131,10 @@ class RevenueCatService {
   }) async {
     await logIn(profile);
     try {
+      final current = await Purchases.getCustomerInfo();
+      if (current.entitlements.active.containsKey(entitlementId)) {
+        return current;
+      }
       final result = await Purchases.purchase(
         PurchaseParams.package(package, customerEmail: profile.email),
       );
@@ -137,7 +150,14 @@ class RevenueCatService {
 
   Future<CustomerInfo> restorePurchases(UserProfile profile) async {
     await logIn(profile);
-    return Purchases.restorePurchases();
+    return isWeb ? Purchases.getCustomerInfo() : Purchases.restorePurchases();
+  }
+
+  Future<Uri?> managementUrl(UserProfile profile) async {
+    await logIn(profile);
+    final info = await Purchases.getCustomerInfo();
+    final url = Uri.tryParse(info.managementURL ?? '');
+    return url?.scheme == 'https' && url!.host.isNotEmpty ? url : null;
   }
 
   Future<void> logOut() async {
@@ -155,7 +175,7 @@ class RevenueCatService {
 
   String get _platformApiKey {
     if (kIsWeb) {
-      return '';
+      return _webApiKey;
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.iOS:

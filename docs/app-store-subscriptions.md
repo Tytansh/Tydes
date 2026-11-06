@@ -33,6 +33,61 @@ Keep these identifiers stable across App Store Connect, RevenueCat, backend, and
    `RevenueCatService`; use a Dart define only when overriding it.
 8. Copy the RevenueCat secret API key into Render as `REVENUECAT_SECRET_API_KEY`.
 
+## Website subscriptions (RevenueCat Billing + Stripe)
+
+Website checkout is a separate product configuration from Apple purchases. Keep
+both products attached to the same `premium` entitlement and use the signed-in
+Tydes user ID on both platforms. Do not use email addresses as subscription IDs.
+
+1. The account owner connects their Stripe account to RevenueCat through the
+   official RevenueCat app in the Stripe marketplace. The owner must complete
+   any business/bank verification, account activation, permission grants, and
+   agreements. Do not create a sandbox account as a substitute for live billing.
+2. In RevenueCat -> Web, create a RevenueCat Billing configuration using that
+   connected Stripe account. Use Tydes branding and the existing support email.
+3. Create a web product, e.g. `tydes_premium_monthly_web`, renewing every month
+   at USD 3.99. Review checkout, cancellation, billing email, and applicable tax
+   settings before enabling live sales.
+4. Attach that product to entitlement `premium` and to package `$rc_monthly` in
+   offering `premium`, alongside the existing Apple product.
+5. Store the web configuration's **public** `rcb_` SDK key in Render as
+   `REVENUECAT_WEB_API_KEY`. Never put a secret/REST/Stripe key in this variable.
+6. Redeploy the API. The website reads public configuration from authenticated
+   `/billing/config`; no new Flutter build is needed merely to activate the key.
+7. Test in the provider sandbox with a dedicated test account, then verify live
+   configuration separately. Never point public checkout at a sandbox provider.
+
+Until a public web SDK key is configured, web Subscribe is disabled and the
+page explains that purchases are unavailable on that platform. Existing
+subscribers can still use Check subscription with their signed-in account.
+
+### Verification and lifecycle
+
+- Purchases and restores are verified using the backend RevenueCat secret, not
+  a client-supplied Premium flag, user ID, or receipt status.
+- Authenticated account reads refresh RevenueCat at most hourly after a
+  successful verification, with a bounded retry rate during outages.
+- Persisted expiration/grace-period dates remove expired access during session
+  resolution. A verified renewal extends access on the next account refresh.
+- Reopening/resuming the app refreshes account access without blanking the feed.
+- Complimentary admin/reviewer access survives subscription expiration.
+- Customer subscription-management links come from RevenueCat, not user input.
+- After store success with delayed verification, checkout stays disabled in that
+  session and the user is directed to Check/Restore rather than buying twice.
+- No billing webhook has been configured by this code change. For immediate
+  server-to-server cancellation/refund updates, add an authenticated webhook
+  integration before a wider paid launch; hourly verification is the current
+  recovery path, not a claim of real-time webhook delivery.
+
+### Last dashboard inspection (2026-11-06)
+
+The Apple product `tydes_premium_monthly` was attached to the expected offering,
+monthly package, and entitlement. The Apple in-app purchase key was marked
+valid. The separate App Store Connect API key was absent, so RevenueCat could
+not pull/check product store status. There were no web providers and no Stripe
+accounts connected. No live charge or paid subscription was created during
+implementation. Recheck these dashboard states before launch.
+
 ## Render backend environment
 
 Required:
