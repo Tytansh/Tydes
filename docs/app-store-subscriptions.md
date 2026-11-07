@@ -33,7 +33,7 @@ Keep these identifiers stable across App Store Connect, RevenueCat, backend, and
    `RevenueCatService`; use a Dart define only when overriding it.
 8. Copy the RevenueCat secret API key into Render as `REVENUECAT_SECRET_API_KEY`.
 
-## Website subscriptions (RevenueCat Billing + Stripe)
+## Website subscriptions (Stripe Billing + RevenueCat)
 
 Website checkout is a separate product configuration from Apple purchases. Keep
 both products attached to the same `premium` entitlement and use the signed-in
@@ -43,11 +43,14 @@ Tydes user ID on both platforms. Do not use email addresses as subscription IDs.
    official RevenueCat app in the Stripe marketplace. The owner must complete
    any business/bank verification, account activation, permission grants, and
    agreements. Do not create a sandbox account as a substitute for live billing.
-2. In RevenueCat -> Web, create a RevenueCat Billing configuration using that
-   connected Stripe account. Use Tydes branding and the existing support email.
-3. Create a web product, e.g. `tydes_premium_monthly_web`, renewing every month
-   at USD 3.99. Review checkout, cancellation, billing email, and applicable tax
-   settings before enabling live sales.
+2. In RevenueCat -> Web, choose **Stripe Billing**, using the connected Stripe
+   account. Request Managed Payments when available. Managed Payments is not
+   supported by the separate RevenueCat Billing engine. Use Tydes branding.
+3. Create the monthly USD 3.99 product and price in **Stripe**, then import the
+   price into the matching RevenueCat Stripe configuration. Review checkout,
+   cancellation, billing email, and applicable tax settings before live sales.
+   Managed Payments must be enabled in Stripe and the product must be eligible;
+   the RevenueCat toggle alone does not guarantee merchant-of-record handling.
 4. Attach that product to entitlement `premium` and to package `$rc_monthly` in
    offering `premium`, alongside the existing Apple product.
 5. Store the web configuration's **public** `rcb_` SDK key in Render as
@@ -87,6 +90,41 @@ valid. The separate App Store Connect API key was absent, so RevenueCat could
 not pull/check product store status. There were no web providers and no Stripe
 accounts connected. No live charge or paid subscription was created during
 implementation. Recheck these dashboard states before launch.
+
+### Sandbox setup (2026-11-07)
+
+The owner approved installing the official RevenueCat Stripe app and linking
+the Tydes sandbox to the RevenueCat account `tytan@tydes.io`. RevenueCat's
+account connection table confirms Sandbox mode and app version 0.3.2.
+
+- Stripe sandbox: `acct_1UYSgr2OJTZx2LP3`
+- RevenueCat web configuration: `Tydes Web — Sandbox`, `appa40b206756`
+- Engine: Stripe Billing, not RevenueCat Billing
+- Managed Payments requested in the RevenueCat configuration
+- Customer-facing name: `Tydes`
+- Stripe product: `prod_VaDu6F9vhRX18Z` / Tydes Premium Monthly
+- Stripe price: `price_1UZ3SS2OJTZx2LP3YHENkGNd`, USD 3.99 recurring monthly,
+  no free trial, tax-exclusive
+- Imported RevenueCat product: `prod2839bdf097`
+- Attached entitlement: `premium`
+- Added to offering `premium`, package `$rc_monthly`, alongside (not replacing)
+  the Apple and existing Test Store products
+- Sandbox candidate product category: Website Information Services - Personal
+  Use (`txcd_10701401`); Stripe marked this category eligible for Managed
+  Payments. This is a test configuration, not a final legal tax determination.
+
+Stripe's sandbox setup guide marked both "Get started with Managed Payments"
+and "Tell us what you're selling" complete. The sandbox default category was
+set to the same candidate category as the Premium test product.
+
+No live payments, production checkout key, or real purchase were enabled by
+this sandbox setup. The account verification guide showed email verified but
+"Activate Payments" not started and Stripe profile creation blocked. Before
+going live, the owner must complete activation and any business/bank/identity
+verification privately, verify the final product classification and Managed
+Payments approval, connect the live Stripe account separately, and perform
+end-to-end purchase/cancellation tests. No sandbox SDK key should be exposed
+through the production website's billing configuration.
 
 ## Render backend environment
 
