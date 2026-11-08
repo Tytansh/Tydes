@@ -138,6 +138,61 @@ class PostgresAuthRepository:
             "user": dict(row["user_payload"]),
         }
 
+    def get_user_by_id(self, user_id: str) -> User | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT user_payload FROM auth_accounts WHERE user_payload->>'id' = %s",
+                (user_id,),
+            ).fetchone()
+        return User.model_validate(dict(row["user_payload"])) if row else None
+
+    def update_subscription_fields(
+        self, user_id: str, subscription, *, email_override: bool
+    ) -> User | None:
+        now = datetime.now(timezone.utc)
+        fields = {
+            "subscription_active": subscription.active,
+            "subscription_expires_at": subscription.expires_at.isoformat() if subscription.expires_at else None,
+            "subscription_checked_at": now.isoformat(),
+            "subscription_management_url": subscription.management_url,
+        }
+        # Patch billing fields atomically: a callback must not overwrite a
+        # concurrent profile edit, ban, or complimentary Premium grant.
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                UPDATE auth_accounts
+                SET user_payload = user_payload || %s || jsonb_build_object(
+                    'premium', (%s OR %s OR coalesce((user_payload->>'admin_premium')::boolean, FALSE)),
+                    'ads_enabled', NOT (%s OR %s OR coalesce((user_payload->>'admin_premium')::boolean, FALSE))
+                ), updated_at = NOW()
+                WHERE user_payload->>'id' = %s
+                RETURNING user_payload
+                """,
+                (self._jsonb(fields), subscription.active, email_override,
+                 subscription.active, email_override, user_id),
+            ).fetchone()
+        return User.model_validate(dict(row["user_payload"])) if row else None
+
+    def billing_event_completed(self, event_id: str) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT 1 FROM billing_webhook_receipts WHERE event_id = %s",
+                (event_id,),
+            ).fetchone()
+        return row is not None
+
+    def complete_billing_event(self, event_id: str) -> None:
+        # Store only the event identity, never the raw customer/payment payload.
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO billing_webhook_receipts (event_id) VALUES (%s) ON CONFLICT DO NOTHING",
+                (event_id,),
+            )
+            connection.execute(
+                "DELETE FROM billing_webhook_receipts WHERE completed_at < NOW() - INTERVAL '90 days'"
+            )
+
     def create_account(
         self,
         email: str,
@@ -400,6 +455,14 @@ class PostgresAuthRepository:
 
     def _ensure_schema(self) -> None:
         with self._connect() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS billing_webhook_receipts (
+                    event_id TEXT PRIMARY KEY,
+                    completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS auth_accounts (

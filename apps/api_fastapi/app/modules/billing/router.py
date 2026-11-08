@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.core.auth import require_authenticated_user
 from app.core.rate_limit import RateLimitRule, api_rate_limiter
 from app.core.store import store
+from app.modules.billing.webhook import revenuecat_webhook
 from app.integrations.revenuecat import (
     RevenueCatNotConfigured,
     RevenueCatVerificationError,
@@ -15,6 +16,7 @@ from app.integrations.revenuecat import (
 )
 
 router = APIRouter(prefix="/billing", tags=["billing"])
+router.add_api_route("/webhooks/revenuecat", revenuecat_webhook, methods=["POST"])
 
 
 @router.get("/plans")
@@ -26,7 +28,15 @@ def list_plans():
 def billing_config(user=Depends(require_authenticated_user)):
     # This endpoint returns public SDK identifiers only, never a REST/secret key.
     web_key = os.getenv("REVENUECAT_WEB_API_KEY", "").strip()
-    if not web_key.startswith("rcb_"):
+    enabled = os.getenv("REVENUECAT_WEB_CHECKOUT_ENABLED", "").lower() == "true"
+    test_users = {
+        item.strip() for item in os.getenv("REVENUECAT_WEB_CHECKOUT_USER_IDS", "").split(",")
+        if item.strip()
+    }
+    # Installing a key must never silently open purchases to everyone.
+    enabled = enabled or user.id in test_users
+    # Stripe Billing configurations use strp_; RevenueCat Billing uses rcb_.
+    if not web_key.startswith(("rcb_", "strp_")) or not enabled:
         web_key = ""
     return {
         "web_api_key": web_key,
@@ -58,7 +68,9 @@ async def sync_revenuecat_entitlement(user=Depends(require_authenticated_user)):
     except RevenueCatVerificationError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
 
-    user = store.set_subscription_status(subscription)
+    user = store.set_user_subscription_status(user.id, subscription)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Account is no longer available.")
     return {
         "entitlement_id": revenuecat_entitlement_id(),
         "premium": user.premium,

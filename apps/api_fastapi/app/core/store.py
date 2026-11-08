@@ -193,6 +193,7 @@ class DemoStore:
         self.email_verification_codes: dict[str, str] = {}
         self.password_reset_codes: dict[str, str] = {}
         self.auth_accounts: dict[str, dict[str, object]] = {}
+        self.billing_webhook_receipts: dict[str, str] = {}
         self.session_tokens: dict[str, str] = {}
         self.state_file = state_file_path()
         self.postgres_auth: PostgresAuthRepository | None = None
@@ -1081,6 +1082,49 @@ class DemoStore:
         self.user.subscription_management_url = subscription.management_url
         return self.set_premium_status(subscription.active)
 
+    def set_user_subscription_status(self, user_id: str, subscription) -> User | None:
+        """Re-read the explicit target after verification; never update the webhook caller."""
+        with self._state_lock:
+            user = self.get_auth_user_by_id(user_id)
+            if user is None:
+                return None
+            if self.postgres_auth is not None:
+                updated = self.postgres_auth.update_subscription_fields(
+                    user_id, subscription,
+                    email_override=self._email_has_premium_override(user.email),
+                )
+                if updated is not None:
+                    if self.postgres_social is not None:
+                        self.postgres_social.update_author_snapshots(updated)
+                        self._sync_social_from_postgres()
+                    # Postgres is authoritative; avoid writing a full stale
+                    # account snapshot after the atomic billing-only patch.
+                    account = self.auth_accounts.get(updated.email.strip().lower())
+                    if account is not None:
+                        account["user"] = updated.model_dump(mode="json")
+                return updated
+            with self.request_user_context(user):
+                return self.set_subscription_status(subscription)
+
+    def billing_event_completed(self, event_id: str) -> bool:
+        if self.postgres_auth is not None:
+            return self.postgres_auth.billing_event_completed(event_id)
+        return event_id in self.billing_webhook_receipts
+
+    def complete_billing_event(self, event_id: str) -> None:
+        if self.postgres_auth is not None:
+            self.postgres_auth.complete_billing_event(event_id)
+            return
+        with self._state_lock:
+            now = datetime.now(timezone.utc)
+            cutoff = (now - timedelta(days=90)).isoformat()
+            self.billing_webhook_receipts = {
+                key: value for key, value in self.billing_webhook_receipts.items()
+                if value >= cutoff
+            }
+            self.billing_webhook_receipts[event_id] = now.isoformat()
+            self._save_state()
+
     def list_ads(self, placement: str | None = None) -> Iterable[AdCard]:
         if not self.user.ads_enabled:
             return []
@@ -1172,7 +1216,7 @@ class DemoStore:
 
     def get_auth_user_by_id(self, user_id: str) -> User | None:
         if self.postgres_auth is not None:
-            self._sync_auth_from_postgres()
+            return self.postgres_auth.get_user_by_id(user_id)
         for account in self.auth_accounts.values():
             payload = account.get("user")
             if not isinstance(payload, dict) or payload.get("id") != user_id:
@@ -1929,6 +1973,13 @@ class DemoStore:
         except (OSError, json.JSONDecodeError):
             return
 
+        receipts = data.get("billing_webhook_receipts")
+        if isinstance(receipts, dict):
+            self.billing_webhook_receipts = {
+                key: value for key, value in receipts.items()
+                if isinstance(key, str) and isinstance(value, str)
+            }
+
         user_data = data.get("user")
         if isinstance(user_data, dict):
             merged = self.user.model_dump(mode="json")
@@ -2143,6 +2194,7 @@ class DemoStore:
             "verified_emails": sorted(self.verified_emails),
             "password_reset_codes": self.password_reset_codes,
             "auth_accounts": self.auth_accounts,
+            "billing_webhook_receipts": self.billing_webhook_receipts,
             "session_tokens": self.session_tokens,
         }
         self.state_file.parent.mkdir(parents=True, exist_ok=True)

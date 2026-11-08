@@ -132,8 +132,14 @@ async def refresh_subscription_if_stale(user: User) -> User:
     if not revenuecat_is_configured():
         return user
     checked_at = user.subscription_checked_at
+    expired_since_check = (
+        user.subscription_active is True
+        and user.subscription_expires_at is not None
+        and user.subscription_expires_at <= datetime.now(timezone.utc)
+    )
     if (
-        checked_at is not None
+        not expired_since_check
+        and checked_at is not None
         and datetime.now(timezone.utc) - checked_at < timedelta(hours=1)
     ):
         return user
@@ -150,4 +156,4 @@ async def refresh_subscription_if_stale(user: User) -> User:
         subscription = await fetch_revenuecat_subscription(user.id)
     except (RevenueCatNotConfigured, RevenueCatVerificationError):
         return user
-    return store.set_subscription_status(subscription)
+    return store.set_user_subscription_status(user.id, subscription) or user

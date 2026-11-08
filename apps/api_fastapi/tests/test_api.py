@@ -126,12 +126,131 @@ def test_billing_config_only_returns_public_web_key(monkeypatch):
     response = client.get("/api/v1/billing/config", headers=headers)
     assert response.json() == {"web_api_key": "", "web_enabled": False, "verification_ready": True}
     monkeypatch.setenv("REVENUECAT_WEB_API_KEY", "rcb_public_web_identifier")
+    # A saved SDK key alone must not open public purchases.
+    assert client.get("/api/v1/billing/config", headers=headers).json()["web_enabled"] is False
+    monkeypatch.setenv("REVENUECAT_WEB_CHECKOUT_ENABLED", "true")
     assert client.get("/api/v1/billing/config", headers=headers).json() == {
         "web_api_key": "rcb_public_web_identifier", "web_enabled": True, "verification_ready": True,
     }
+    monkeypatch.setenv("REVENUECAT_WEB_API_KEY", "strp_public_stripe_web_identifier")
+    assert client.get("/api/v1/billing/config", headers=headers).json()["web_enabled"] is True
     monkeypatch.delenv("REVENUECAT_SECRET_API_KEY")
     monkeypatch.delenv("REVENUECAT_REST_API_KEY", raising=False)
     assert client.get("/api/v1/billing/config", headers=headers).json()["web_enabled"] is False
+
+
+def test_web_checkout_can_be_restricted_to_explicit_test_accounts(monkeypatch):
+    token = _signup_access_token(monkeypatch, "billing-allowed@example.com")
+    other = _signup_access_token(monkeypatch, "billing-not-allowed@example.com")
+    monkeypatch.setenv("REVENUECAT_SECRET_API_KEY", "test-server-secret")
+    monkeypatch.setenv("REVENUECAT_WEB_API_KEY", "rcb_public_web_identifier")
+    monkeypatch.setenv("REVENUECAT_WEB_CHECKOUT_ENABLED", "false")
+    monkeypatch.setenv("REVENUECAT_WEB_CHECKOUT_USER_IDS", store.resolve_session_user(token).id)
+    assert client.get("/api/v1/billing/config", headers={"Authorization": f"Bearer {token}"}).json()["web_enabled"] is True
+    result = client.get("/api/v1/billing/config", headers={"Authorization": f"Bearer {other}"}).json()
+    assert result["web_enabled"] is False and result["web_api_key"] == ""
+
+
+def test_billing_webhook_auth_scope_retries_and_current_state(tmp_path, monkeypatch):
+    from app.integrations.revenuecat import RevenueCatSubscription, RevenueCatVerificationError
+    from app.modules.billing import webhook
+
+    monkeypatch.setattr(store, "state_file", tmp_path / "webhooks.json")
+    monkeypatch.setattr(store, "auth_accounts", {})
+    monkeypatch.setattr(store, "session_tokens", {})
+    monkeypatch.setattr(store, "billing_webhook_receipts", {})
+    monkeypatch.setenv("REVENUECAT_WEBHOOK_AUTHORIZATION", "Bearer unit-test-webhook-secret")
+    monkeypatch.delenv("REVENUECAT_WEBHOOK_SIGNING_SECRET", raising=False)
+    alice_token = _signup_access_token(monkeypatch, "webhook-alice@example.com")
+    bob_token = _signup_access_token(monkeypatch, "webhook-bob@example.com")
+    alice = store.resolve_session_user(alice_token)
+    bob = store.resolve_session_user(bob_token)
+    path = "/api/v1/billing/webhooks/revenuecat"
+    headers = {"Authorization": "Bearer unit-test-webhook-secret"}
+    event = {"event": {"id": "purchase-1", "type": "INITIAL_PURCHASE", "environment": "PRODUCTION", "app_user_id": alice.id}}
+    calls = []
+    active = True
+    unavailable = False
+
+    async def verify(user_id):
+        calls.append(user_id)
+        if unavailable:
+            raise RevenueCatVerificationError("Unavailable")
+        return RevenueCatSubscription(active, expires_at=datetime.now(timezone.utc) + timedelta(days=20))
+
+    monkeypatch.setattr(webhook, "fetch_revenuecat_subscription", verify)
+    assert client.post(path, json=event).status_code == 401
+    assert calls == []
+    assert client.post(path, headers=headers, json=event).json()["status"] == "processed"
+    assert calls == [alice.id]
+    assert store.resolve_session_user(alice_token).premium is True
+    assert store.resolve_session_user(bob_token).premium is False
+    assert client.post(path, headers=headers, json=event).json()["status"] == "already_processed"
+    assert calls == [alice.id]
+    # A normal cancellation retains access while RevenueCat still reports paid time.
+    event["event"].update(id="cancel-1", type="CANCELLATION")
+    assert client.post(path, headers=headers, json=event).status_code == 200
+    assert store.resolve_session_user(alice_token).premium is True
+    # Failed verification must be retried, not acknowledged or treated as expiry.
+    unavailable = True
+    event["event"].update(id="expiry-1", type="EXPIRATION")
+    assert client.post(path, headers=headers, json=event).status_code == 503
+    assert not store.billing_event_completed("expiry-1")
+    assert store.resolve_session_user(alice_token).premium is True
+    unavailable = False
+    active = False
+    assert client.post(path, headers=headers, json=event).status_code == 200
+    assert store.resolve_session_user(alice_token).premium is False
+    # An old renewal event cannot restore refunded/expired access.
+    event["event"].update(id="late-renewal", type="RENEWAL")
+    assert client.post(path, headers=headers, json=event).status_code == 200
+    assert store.resolve_session_user(alice_token).premium is False
+    # Transfers refresh both sides, and an authenticated session is not a webhook credential.
+    event["event"] = {"id": "transfer-1", "type": "TRANSFER", "environment": "PRODUCTION", "transferred_from": [alice.id], "transferred_to": [bob.id]}
+    assert client.post(path, headers={"Authorization": f"Bearer {bob_token}"}, json=event).status_code == 401
+    assert client.post(path, headers=headers, json=event).status_code == 200
+    assert calls[-2:] == sorted([alice.id, bob.id])
+    assert json.loads(store.state_file.read_text())["billing_webhook_receipts"]["transfer-1"]
+
+
+def test_billing_webhook_signature_and_environment(monkeypatch):
+    import hashlib
+    import hmac
+    import time
+    from app.modules.billing import webhook
+
+    monkeypatch.delenv("REVENUECAT_WEBHOOK_AUTHORIZATION", raising=False)
+    monkeypatch.setenv("REVENUECAT_WEBHOOK_SIGNING_SECRET", "unit-test-signing-secret")
+    path = "/api/v1/billing/webhooks/revenuecat"
+    body = json.dumps({"event": {"id": "test-signature", "type": "TEST"}}).encode()
+
+    def sign(timestamp, data=body):
+        signature = hmac.new(b"unit-test-signing-secret", str(timestamp).encode() + b"." + data, hashlib.sha256).hexdigest()
+        return {"X-RevenueCat-Webhook-Signature": f"t={timestamp},v1={signature}"}
+
+    now = int(time.time())
+    assert client.post(path, content=body, headers=sign(now)).json()["status"] == "test_received"
+    assert client.post(path, content=body + b" ", headers=sign(now)).status_code == 401
+    assert client.post(path, content=body, headers=sign(now - 301)).status_code == 401
+    assert client.post(path, content=b"x" * (64 * 1024 + 1)).status_code == 413
+    body = json.dumps({"event": {"id": "sandbox-notification", "type": "INITIAL_PURCHASE", "environment": "SANDBOX", "app_user_id": "usr_unknown"}}).encode()
+    assert client.post(path, content=body, headers=sign(now, body)).json()["status"] == "ignored_environment"
+
+
+def test_subscription_refreshes_when_cached_period_ends(tmp_path, monkeypatch):
+    from app.integrations import revenuecat
+    monkeypatch.setattr(store, "state_file", tmp_path / "renewal.json")
+    token = _signup_access_token(monkeypatch, "billing-renewal@example.com")
+    user = store.resolve_session_user(token)
+    with store.request_user_context(user):
+        store.set_subscription_status(revenuecat.RevenueCatSubscription(True, datetime.now(timezone.utc) - timedelta(seconds=1)))
+    monkeypatch.setenv("REVENUECAT_SECRET_API_KEY", "test-server-secret")
+
+    async def verify(user_id):
+        return revenuecat.RevenueCatSubscription(True, datetime.now(timezone.utc) + timedelta(days=30))
+
+    monkeypatch.setattr(revenuecat, "fetch_revenuecat_subscription", verify)
+    assert client.get("/api/v1/users/me", headers={"Authorization": f"Bearer {token}"}).json()["premium"] is True
 
 
 def test_email_name_cannot_grant_paid_access(monkeypatch):

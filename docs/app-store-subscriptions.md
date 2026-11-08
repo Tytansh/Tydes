@@ -53,14 +53,18 @@ Tydes user ID on both platforms. Do not use email addresses as subscription IDs.
    the RevenueCat toggle alone does not guarantee merchant-of-record handling.
 4. Attach that product to entitlement `premium` and to package `$rc_monthly` in
    offering `premium`, alongside the existing Apple product.
-5. Store the web configuration's **public** `rcb_` SDK key in Render as
-   `REVENUECAT_WEB_API_KEY`. Never put a secret/REST/Stripe key in this variable.
-6. Redeploy the API. The website reads public configuration from authenticated
+5. Store the web configuration's **public** `strp_` (Stripe Billing) or `rcb_`
+   (RevenueCat Billing) SDK key in Render as `REVENUECAT_WEB_API_KEY`. Never put
+   a secret/REST/Stripe secret key in this variable.
+6. Keep `REVENUECAT_WEB_CHECKOUT_ENABLED=false` during preparation. An optional
+   comma-separated `REVENUECAT_WEB_CHECKOUT_USER_IDS` permits only explicitly
+   selected pilot accounts. Disabled accounts receive no public SDK key.
+   Redeploy the API. The website reads public configuration from authenticated
    `/billing/config`; no new Flutter build is needed merely to activate the key.
 7. Test in the provider sandbox with a dedicated test account, then verify live
    configuration separately. Never point public checkout at a sandbox provider.
 
-Until a public web SDK key is configured, web Subscribe is disabled and the
+Until a public web SDK key is configured and checkout is enabled, Subscribe is disabled and the
 page explains that purchases are unavailable on that platform. Existing
 subscribers can still use Check subscription with their signed-in account.
 
@@ -74,6 +78,42 @@ subscribers can still use Check subscription with their signed-in account.
   resolution. A verified renewal extends access on the next account refresh.
 - Reopening/resuming the app refreshes account access without blanking the feed.
 - Complimentary admin/reviewer access survives subscription expiration.
+
+### Authenticated subscription notifications
+
+- RevenueCat callback: `POST https://api.tydes.io/api/v1/billing/webhooks/revenuecat`.
+- Set a strong, unique `REVENUECAT_WEBHOOK_AUTHORIZATION` value in Render and
+  the identical Authorization header value in RevenueCat. This secret must
+  never appear in Flutter, browser config, documentation, or request logs.
+- Optional `REVENUECAT_WEBHOOK_SIGNING_SECRET` verifies RevenueCat's raw-body
+  HMAC SHA-256 signature and rejects timestamps outside five minutes. If both
+  credentials are configured, both must pass.
+- The endpoint fails closed with 503 until at least one credential is set;
+  missing/invalid credentials return 401. Bodies are capped at 64 KiB.
+- `REVENUECAT_WEBHOOK_ENVIRONMENTS=PRODUCTION` by default. Sandbox callbacks
+  must be deliberately routed to the corresponding test environment.
+- Each callback re-fetches the current RevenueCat subscriber for existing
+  Tydes IDs, including both sides of transfers. Event payloads never grant
+  Premium directly, and unknown/anonymous IDs cannot create accounts.
+- Only successful events receive a durable receipt (Postgres in production,
+  state file locally). Failed verification returns 503 for provider retry.
+  Replayed events are acknowledged without repeating verification; receipt
+  IDs are retained for 90 days, not raw payment/customer payloads.
+- Postgres billing updates patch only subscription fields, preserving profile
+  edits, bans, and admin Premium grants. Cached period expiration triggers a
+  fresh verification even if the ordinary hourly check is not yet due.
+
+### Cancellation setup (2026-11-08)
+
+- Live Stripe portal `bpc_1UZXKuRypzI92JMkqB5Km0Ut` activated and connected to
+  the live RevenueCat web configuration's Subscription management tab.
+- Cancellation at the end of the billing period is enabled. Invoice history
+  and payment-method management are available; plan switching and quantity
+  changes are disabled. Redirect returns to `https://tydes.io/#/profile`.
+- Public web purchases remain gated off pending secure environment wiring,
+  sandbox end-to-end testing, and live checkout/merchant-of-record checks.
+- Callback credential configuration requires user security approval; the
+  RevenueCat form is prepared but was not submitted without that approval.
 - Customer subscription-management links come from RevenueCat, not user input.
 - After store success with delayed verification, checkout stays disabled in that
   session and the user is directed to Check/Restore rather than buying twice.
@@ -125,6 +165,63 @@ verification privately, verify the final product classification and Managed
 Payments approval, connect the live Stripe account separately, and perform
 end-to-end purchase/cancellation tests. No sandbox SDK key should be exposed
 through the production website's billing configuration.
+
+### Live account preparation (2026-11-08)
+
+The owner completed Stripe onboarding and entered the live Tydes account.
+Only the Premium product was copied from the sandbox; the copy options for
+Managed Payments settings and the RevenueCat app were explicitly unchecked.
+
+- Live Stripe account: `acct_1UYiHvRypzI92JMk`
+- Copied product: `prod_VaDu6F9vhRX18Z` / Tydes Premium Monthly
+- Live price: `price_1UZTAuRypzI92JMkiyHblAWP`, USD 3.99 recurring monthly
+- No trial; zero active subscriptions at inspection
+- Product category remained Website Information Services - Personal Use
+  (`txcd_10701401`); the product page marked it eligible for Managed Payments
+- The live setup guide marked both Managed Payments steps complete and
+  "Activate products" complete. This does not prove any specific checkout
+  transaction will use Managed Payments; verify that before live sales.
+- After explicit owner approval, the official RevenueCat app version 0.3.2
+  was installed in the live account and linked to `tytan@tydes.io`.
+- RevenueCat Account settings confirmed both the existing sandbox connection
+  and the Tydes account above in **Live** mode, with a green app-version status.
+- The separate live Stripe Billing web configuration and product mapping were
+  subsequently completed as recorded below. The sandbox web configuration
+  must not be substituted for the live configuration.
+
+The owner approved the app terms and live permissions, including management of
+customers, subscriptions, checkout, payments/refunds, and products/prices, with
+data shared with RevenueCat. The authorized installation and link were then
+completed and verified. No API keys or production checkout configuration were
+changed, and no real charges, payouts, customers, or subscriptions were created
+by these steps.
+
+### Live web product mapping (2026-11-08)
+
+- Project collaborator settings confirmed `tytan@tydes.io` as Owner.
+- Created **Tydes Web — Live**, `app8dce4f6854`, using Stripe Billing and the
+  live account `acct_1UYiHvRypzI92JMk`.
+- Enabled **Use Managed Payments in RevenueCat purchases when available**.
+  This still allows standard-Billing fallback; verify actual checkout handling
+  before enabling public purchases.
+- Saved customer-facing name **Tydes**. The Appearance attention marker cleared.
+- Imported live price `price_1UZTAuRypzI92JMkiyHblAWP` (USD 3.99 monthly,
+  no free trial) as RevenueCat product `proda37a7136f6`; status **Published**.
+- Attached the product to existing entitlement `premium`.
+- Added it to offering `premium`, package `$rc_monthly`, alongside the Apple,
+  sandbox, and Test Store products. All prior product selections were retained.
+- The live provider's **Customer Portal URL** is empty. Stripe portal setup
+  and the RevenueCat management URL must be completed before live sales.
+- Render sign-in was restored through the existing GitHub login. Its Deploys
+  page confirms backend commit `90d3b90` (verified checkout preparation) was
+  deployed. No environment variables, deploys, or hosting plans were changed.
+
+Public website checkout was not enabled by this work: no web SDK key was
+revealed/copied or installed on Render. Remaining launch checks include a
+secure live-key configuration, sandbox end-to-end purchase/cancellation and
+cross-platform entitlement tests, actual Managed Payments behavior, payout
+readiness, and authenticated server-to-server lifecycle updates. No real
+payment or subscription was created to verify these settings.
 
 ## Render backend environment
 
