@@ -112,8 +112,20 @@ subscribers can still use Check subscription with their signed-in account.
   changes are disabled. Redirect returns to `https://tydes.io/#/profile`.
 - Public web purchases remain gated off pending secure environment wiring,
   sandbox end-to-end testing, and live checkout/merchant-of-record checks.
-- Callback credential configuration requires user security approval; the
-  RevenueCat form is prepared but was not submitted without that approval.
+- User explicitly approved the private callback credential connection. The
+  random credential was saved only in RevenueCat and Render, never in source,
+  chat output, or a local credentials file.
+- Production webhook `whintgra91206fd972c42469937f250ceaf7212` is configured for
+  production-only events, all apps. A RevenueCat dashboard TEST delivery
+  returned HTTP 200 with `{"status":"test_received"}` on 2026-11-08.
+- Render release `c56fb9a` is live (deployment `dep-dbo94e6c6qcc73d08n90`), with
+  the live public `strp_` SDK key and `REVENUECAT_WEB_CHECKOUT_ENABLED=false`.
+  No pilot-user allowlist is enabled. Existing unrelated environment variables
+  and hosting plans were preserved.
+- Post-deployment API readiness returned 200. Unauthenticated webhook and
+  `/billing/config` requests each returned 401. All 83 backend tests passed.
+- No real charge was made. The successful TEST callback proves authenticated
+  delivery, not a completed purchase, renewal, refund, or portal cancellation.
 - Customer subscription-management links come from RevenueCat, not user input.
 - After store success with delayed verification, checkout stays disabled in that
   session and the user is directed to Check/Restore rather than buying twice.
@@ -210,17 +222,19 @@ by these steps.
 - Attached the product to existing entitlement `premium`.
 - Added it to offering `premium`, package `$rc_monthly`, alongside the Apple,
   sandbox, and Test Store products. All prior product selections were retained.
-- The live provider's **Customer Portal URL** is empty. Stripe portal setup
-  and the RevenueCat management URL must be completed before live sales.
+- The live provider's **Customer Portal URL** was initially empty; it is now
+  connected to the activated Stripe portal (see Cancellation setup above).
 - Render sign-in was restored through the existing GitHub login. Its Deploys
   page confirms backend commit `90d3b90` (verified checkout preparation) was
-  deployed. No environment variables, deploys, or hosting plans were changed.
+  deployed. Subsequent callback deployment/configuration is recorded above;
+  no hosting plans were changed.
 
-Public website checkout was not enabled by this work: no web SDK key was
-revealed/copied or installed on Render. Remaining launch checks include a
-secure live-key configuration, sandbox end-to-end purchase/cancellation and
-cross-platform entitlement tests, actual Managed Payments behavior, payout
-readiness, and authenticated server-to-server lifecycle updates. No real
+Public website checkout remains explicitly disabled, although the live public
+SDK key and private callback authentication are now installed securely.
+Remaining launch checks include sandbox end-to-end purchase/cancellation and
+cross-platform entitlement tests, actual Managed Payments behavior, and payout
+readiness. The installed Flutter SDK's vendor web bundle contains Stripe
+Billing support; full checkout behavior is still unverified. No real
 payment or subscription was created to verify these settings.
 
 ## Render backend environment
