@@ -9,6 +9,10 @@ from app.core.rate_limit import (
     client_rate_limit_key,
 )
 from app.core.store import store
+from app.integrations.google_identity import (
+    GoogleIdentityError, GoogleIdentityUnavailable, create_google_challenge,
+    google_auth_origins, google_web_client_id, verify_google_login,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -42,6 +46,63 @@ class PasswordResetConfirmRequest(BaseModel):
 
 class WaitlistRequest(BaseModel):
     email: EmailStr
+
+
+class GoogleChallengeRequest(BaseModel):
+    verifier_hash: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$")
+
+
+class GoogleLoginRequest(BaseModel):
+    credential: str = Field(min_length=20, max_length=16_384)
+    challenge_id: str = Field(min_length=43, max_length=128)
+    verifier: str = Field(min_length=43, max_length=128)
+    locale: str = Field(default="en", max_length=10)
+
+
+def _require_google_origin(request: Request) -> None:
+    if request.headers.get("origin", "").rstrip("/") not in google_auth_origins():
+        raise HTTPException(status_code=403, detail="Open Google sign-in from the Tydes website.")
+
+
+@router.get("/google/config")
+def google_config():
+    client_id = google_web_client_id()
+    return {"enabled": bool(client_id), "client_id": client_id}
+
+
+@router.post("/google/challenge")
+def google_challenge(payload: GoogleChallengeRequest, request: Request):
+    _require_google_origin(request)
+    api_rate_limiter.enforce(
+        RateLimitRule(scope="auth:google-challenge:client", key=client_rate_limit_key(request), limit=30, window_seconds=900),
+        RateLimitRule(scope="auth:google-challenge:global", key="all", limit=1000, window_seconds=3600),
+    )
+    try:
+        return create_google_challenge(payload.verifier_hash)
+    except GoogleIdentityUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@router.post("/google")
+def google_login(payload: GoogleLoginRequest, request: Request):
+    _require_google_origin(request)
+    api_rate_limiter.enforce(RateLimitRule(
+        scope="auth:google:client", key=client_rate_limit_key(request), limit=30, window_seconds=900,
+    ))
+    try:
+        identity = verify_google_login(payload.credential, payload.challenge_id, payload.verifier)
+        api_rate_limiter.enforce(RateLimitRule(
+            scope="auth:google:account", key=identity.subject, limit=15, window_seconds=900,
+        ))
+        return store.login_google(identity, payload.locale)
+    except GoogleIdentityUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except GoogleIdentityError as error:
+        raise HTTPException(status_code=401, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
 
 
 @router.post("/login")

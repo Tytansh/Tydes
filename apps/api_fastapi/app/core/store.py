@@ -343,6 +343,72 @@ class DemoStore:
         self._save_state()
         return self.user
 
+    def login_google(self, identity, locale: str = "en") -> dict[str, object]:
+        """Resolve Google's stable subject without replacing existing account data."""
+        email = identity.email
+        new_user = User(
+            id=f"usr_{secrets.token_urlsafe(8).replace('-', '').replace('_', '')}",
+            email=email, display_name="", handle="", bio="", surf_skill="",
+            home_region="", locale=locale, email_verified=identity.authoritative_email,
+            premium=self._email_has_premium_override(email),
+            ads_enabled=not self._email_has_premium_override(email),
+        )
+        with self._state_lock:
+            if self.postgres_auth is not None:
+                account = self.postgres_auth.resolve_google_account(
+                    identity.subject, email, identity.authoritative_email, new_user,
+                )
+            else:
+                account = next((item for item in self.auth_accounts.values()
+                                if item.get("google_subject") == identity.subject), None)
+                if account is None:
+                    account = self._get_auth_account(email)
+                    if account is not None:
+                        user = User.model_validate(account["user"])
+                        if user.banned:
+                            raise ValueError("This account has been suspended.")
+                        if account.get("google_subject") not in {None, identity.subject}:
+                            raise ValueError("This Tydes account is already connected to a different Google account.")
+                        if not identity.authoritative_email or not (user.email_verified or self._is_verified_email(email)):
+                            raise ValueError("For security, sign in with email and password and verify your existing Tydes email before connecting Google.")
+                    else:
+                        account = {"password_hash": "!google-only", "user": new_user.model_dump(mode="json")}
+                    account["google_subject"] = identity.subject
+            user = User.model_validate(account["user"])
+            if user.banned:
+                raise ValueError("This account has been suspended.")
+            # A changed Google email must not silently change the Tydes account
+            # or its billing identity: the existing subject binding wins.
+            email = str(user.email).lower()
+            self.auth_accounts[email] = account
+            self.user = user
+            self.user.locale = locale
+            self._apply_email_access_overrides(email)
+            verification_code = None
+            email_result = None
+            if not user.email_verified:
+                from app.core.rate_limit import RateLimitRule, api_rate_limiter
+                api_rate_limiter.enforce(RateLimitRule(
+                    scope="auth:google-verification:account", key=email, limit=3, window_seconds=3600,
+                ))
+                verification_code = _generate_verification_code()
+                email_result = send_verification_email(email, verification_code)
+                if email_result.configured and not email_result.sent:
+                    raise RuntimeError("Could not send verification email right now. Please try again.")
+                self._set_email_verification_code(email, verification_code)
+            else:
+                self._set_verified_email(email)
+            self._save_current_account_user()
+            token = self._create_session_token(email)
+            self._save_state()
+            return {
+                "session": Session(access_token=token, user=self.user),
+                "verification_required": not self.user.email_verified,
+                "verification_sent_to": email if verification_code else None,
+                "verification_hint": f"Demo verification code: {verification_code}"
+                if verification_code and email_result and not email_result.sent else None,
+            }
+
     def logout(self) -> User:
         previous_email = self.user.email.strip().lower()
         if self.postgres_auth is not None:
@@ -562,6 +628,10 @@ class DemoStore:
             return None
         resolved_user = User.model_validate(user_payload)
         if resolved_user.banned:
+            return None
+        if account.get("google_subject") and not resolved_user.email_verified:
+            # Google is not authoritative for all account email domains. Such
+            # new users cannot use a session until Tydes email confirmation.
             return None
         with self.request_user_context(resolved_user):
             access_changed = self._apply_email_access_overrides(email)

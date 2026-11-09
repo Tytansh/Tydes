@@ -71,12 +71,13 @@ class PostgresAuthRepository:
     def snapshot(self) -> AuthSnapshot:
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT email, password_hash, user_payload FROM auth_accounts"
+                "SELECT email, password_hash, user_payload, google_subject FROM auth_accounts"
             ).fetchall()
             accounts = {
                 row["email"]: {
                     "password_hash": row["password_hash"],
                     "user": dict(row["user_payload"]),
+                    "google_subject": row["google_subject"],
                 }
                 for row in rows
             }
@@ -125,7 +126,7 @@ class PostgresAuthRepository:
         with self._connect() as connection:
             row = connection.execute(
                 """
-                SELECT password_hash, user_payload
+                SELECT password_hash, user_payload, google_subject
                 FROM auth_accounts
                 WHERE email = %s
                 """,
@@ -136,7 +137,62 @@ class PostgresAuthRepository:
         return {
             "password_hash": row["password_hash"],
             "user": dict(row["user_payload"]),
+            "google_subject": row["google_subject"],
         }
+
+    def resolve_google_account(self, subject: str, email: str, authoritative: bool,
+                               new_user: User) -> dict[str, object]:
+        """Create/link atomically; never replace an existing profile or password."""
+        with self._connect() as connection, connection.transaction():
+            connection.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", ("google:" + subject,))
+            connection.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", ("email:" + email,))
+            row = connection.execute(
+                "SELECT email, password_hash, user_payload, google_subject FROM auth_accounts WHERE google_subject = %s FOR UPDATE",
+                (subject,),
+            ).fetchone()
+            if row is None:
+                inserted = connection.execute(
+                    """INSERT INTO auth_accounts (email, password_hash, user_payload, google_subject)
+                       VALUES (%s, %s, %s, %s) ON CONFLICT (email) DO NOTHING RETURNING email""",
+                    (email, "!google-only", self._jsonb(new_user.model_dump(mode="json")), subject),
+                ).fetchone()
+                row = connection.execute(
+                    "SELECT email, password_hash, user_payload, google_subject FROM auth_accounts WHERE email = %s FOR UPDATE", (email,),
+                ).fetchone()
+                if not inserted:
+                    if row["user_payload"].get("banned"):
+                        raise ValueError("This account has been suspended.")
+                    if row["google_subject"] not in {None, subject}:
+                        raise ValueError("This Tydes account is already connected to a different Google account.")
+                    verified = bool(row["user_payload"].get("email_verified")) or connection.execute(
+                        "SELECT 1 FROM auth_verified_emails WHERE email = %s", (email,),
+                    ).fetchone() is not None
+                    if not authoritative or not verified:
+                        raise ValueError("For security, sign in with email and password and verify your existing Tydes email before connecting Google.")
+                    connection.execute("UPDATE auth_accounts SET google_subject = %s WHERE email = %s", (subject, email))
+            if row["user_payload"].get("banned"):
+                raise ValueError("This account has been suspended.")
+            if row["user_payload"].get("email_verified"):
+                connection.execute("INSERT INTO auth_verified_emails (email) VALUES (%s) ON CONFLICT DO NOTHING", (row["email"],))
+        return {"password_hash": row["password_hash"], "user": dict(row["user_payload"]), "google_subject": subject}
+
+    def create_google_challenge(self, challenge_id: str, value: dict) -> None:
+        with self._connect() as connection:
+            connection.execute("DELETE FROM auth_google_challenges WHERE expires_at <= NOW()")
+            connection.execute(
+                "INSERT INTO auth_google_challenges (id, nonce, verifier_hash, expires_at) VALUES (%s, %s, %s, %s)",
+                (challenge_id, value["nonce"], value["verifier_hash"], value["expires_at"]),
+            )
+
+    def get_google_challenge(self, challenge_id: str) -> dict | None:
+        with self._connect() as connection:
+            row = connection.execute("SELECT nonce, verifier_hash, expires_at FROM auth_google_challenges WHERE id = %s AND expires_at > NOW()", (challenge_id,)).fetchone()
+        return dict(row) if row else None
+
+    def consume_google_challenge(self, challenge_id: str, proof: str) -> bool:
+        with self._connect() as connection:
+            row = connection.execute("DELETE FROM auth_google_challenges WHERE id = %s AND verifier_hash = %s AND expires_at > NOW() RETURNING id", (challenge_id, proof)).fetchone()
+        return row is not None
 
     def get_user_by_id(self, user_id: str) -> User | None:
         with self._connect() as connection:
@@ -481,6 +537,12 @@ class PostgresAuthRepository:
                 WHERE coalesce(user_payload->>'handle', '') <> ''
                 """
             )
+            connection.execute("ALTER TABLE auth_accounts ADD COLUMN IF NOT EXISTS google_subject TEXT")
+            connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS auth_accounts_google_subject_unique ON auth_accounts (google_subject) WHERE google_subject IS NOT NULL")
+            connection.execute("""CREATE TABLE IF NOT EXISTS auth_google_challenges (
+                id TEXT PRIMARY KEY, nonce TEXT NOT NULL, verifier_hash TEXT NOT NULL,
+                expires_at TIMESTAMPTZ NOT NULL)""")
+            connection.execute("CREATE INDEX IF NOT EXISTS auth_google_challenges_expiry ON auth_google_challenges (expires_at)")
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS auth_session_tokens (

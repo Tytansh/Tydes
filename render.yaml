@@ -21,6 +21,10 @@ services:
         value: Tydes
       - key: AUTH_EMAIL_FROM
         value: 'Tydes <verify@send.tydes.io>'
+      - key: GOOGLE_WEB_CLIENT_ID
+        sync: false
+      - key: GOOGLE_AUTH_ALLOWED_ORIGINS
+        value: 'https://tydes.io,https://www.tydes.io,https://tydes-surf-travel.tytaneth.chatgpt.site'
       - key: PUBLIC_BACKEND_URL
         value: 'https://api.tydes.io'
       - key: ALLOWED_ORIGINS

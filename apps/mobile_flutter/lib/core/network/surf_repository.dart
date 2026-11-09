@@ -90,6 +90,61 @@ class SurfRepository {
     ),
   );
 
+  Future<Map<String, dynamic>> fetchGoogleAuthConfig() async {
+    return (await _dio.get<Map<String, dynamic>>('/auth/google/config')).data!;
+  }
+
+  Future<Map<String, dynamic>> createGoogleAuthChallenge(
+    String verifierHash,
+  ) async {
+    return (await _dio.post<Map<String, dynamic>>(
+      '/auth/google/challenge',
+      data: {'verifier_hash': verifierHash},
+    )).data!;
+  }
+
+  Future<SignupResult> loginWithGoogle({
+    required String credential,
+    required String challengeId,
+    required String verifier,
+    required String locale,
+  }) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/auth/google',
+        data: {
+          'credential': credential,
+          'challenge_id': challengeId,
+          'verifier': verifier,
+          'locale': locale,
+        },
+      );
+      final data = response.data!;
+      final session = data['session'] as Map<String, dynamic>;
+      final profile = UserProfile.fromJson(
+        session['user'] as Map<String, dynamic>,
+      );
+      final token = session['access_token'] as String?;
+      if (token == null || token.isEmpty) {
+        throw StateError('Google did not complete sign-in.');
+      }
+      await _demoPersistence.saveAccessToken(token);
+      DemoSeed.me = profile;
+      return SignupResult(
+        user: profile,
+        verificationRequired: data['verification_required'] as bool? ?? false,
+        verificationSentTo: data['verification_sent_to'] as String?,
+        verificationHint: data['verification_hint'] as String?,
+      );
+    } on DioException catch (error) {
+      final detail = error.response?.data;
+      if (detail is Map<String, dynamic> && detail['detail'] is String) {
+        throw StateError(detail['detail'] as String);
+      }
+      throw StateError('Could not sign in with Google right now.');
+    }
+  }
+
   Future<UserProfile> login(
     String email,
     String locale, {

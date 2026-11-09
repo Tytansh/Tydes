@@ -9,6 +9,7 @@ import '../../core/network/surf_repository.dart';
 import '../home/home_page.dart';
 import '../spots/spot_detail_page.dart';
 import '../spots/spots_page.dart';
+import 'google_sign_in_button.dart';
 
 final authStateProvider = FutureProvider.autoDispose((ref) async {
   return ref.watch(surfRepositoryProvider).fetchMe();
@@ -130,6 +131,45 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     }
   }
 
+  Future<void> _submitGoogle(
+    String credential,
+    String challengeId,
+    String verifier,
+  ) async {
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _errorText = null;
+    });
+    try {
+      final result = await ref
+          .read(surfRepositoryProvider)
+          .loginWithGoogle(
+            credential: credential,
+            challengeId: challengeId,
+            verifier: verifier,
+            locale: ref.read(localeProvider).languageCode,
+          );
+      if (!mounted) return;
+      if (result.verificationRequired) {
+        setState(() {
+          _loading = false;
+          _verificationPending = true;
+          _verificationEmail = result.verificationSentTo;
+          _verificationHint = result.verificationHint;
+        });
+        return;
+      }
+      await _finishAuth(result.user);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _errorText = _friendlyAuthError(error);
+      });
+    }
+  }
+
   Future<void> _submitSignup() async {
     if (!_validateEmailAndPassword(requireConfirmation: true)) return;
     setState(() {
@@ -212,6 +252,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
         if (!_verificationPending) ...[
           _AuthModeToggle(mode: _mode, onChanged: _setMode),
           const SizedBox(height: 22),
+          GoogleSignInButton(enabled: !_loading, onCredential: _submitGoogle),
           TextField(
             controller: _emailController,
             keyboardType: TextInputType.emailAddress,
