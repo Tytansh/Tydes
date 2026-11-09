@@ -15,8 +15,9 @@ email/password flow; native iOS/Android Google sign-in is not included yet.
 - Render: `GOOGLE_WEB_CLIENT_ID` contains the public web client ID;
   `GOOGLE_AUTH_ALLOWED_ORIGINS` contains those three exact origins. No Google
   client secret is used by this ID-token flow.
-- Hosted frontend: Site version 61, source commit `8f956f0`, with the matching
-  approved Google privacy disclosure. Backend implementation: `68caab9`.
+- Hosted frontend: Site version 62, source commit `07cda71253683a7a293748e430ab2ba1ac0f502e`,
+  with the matching approved Google privacy disclosure. Backend signup/session
+  fixes: `0ada753` (initial Google implementation: `68caab9`).
 
 `ALLOWED_ORIGINS` and `BUNNY_STREAM_ENABLED` are deliberately `sync: false` in
 the Render Blueprint so a later sync cannot revert the live website origin or
@@ -70,6 +71,14 @@ switching accounts without deleting the account, and enforces the server's
 reported to the user, keeping their session for retry; media cleanup is queued
 instead of delaying the response on third-party storage. Tests cover deletion,
 old-session rejection, and reusing the email via either signup method.
+
+Deployment `appgdep_6af1842d67b88191ad931f1c11711faa` succeeded on November 9,
+2026. The live `tydes.io` page was observed displaying the new inline profile
+form for the owner's unfinished Google profile, with no bottom sheet and no
+account modification performed during that check. The live API schema confirms
+`allow_signup` defaults to false and its readiness endpoint returns ready.
+Deletion/recreation checks were performed with isolated test users, not by
+deleting the owner's live account.
 
 If a user unexpectedly sees **Create your profile**, first ask which Google
 email they selected and compare it with their existing Tydes login email. Do
