@@ -242,6 +242,42 @@ subscribers can still use Check subscription with their signed-in account.
 - Global public checkout remains disabled. The existing owner-only pilot
   allowlist was not widened, and no real payment was submitted.
 
+### Public website checkout activation (2026-11-09)
+
+- The owner explicitly requested that people be able to purchase. Set only
+  Render `REVENUECAT_WEB_CHECKOUT_ENABLED=true` and chose **Save and deploy**,
+  without rebuilding or changing hosting plans, private keys or product prices.
+  Environment-only deployment `dep-dbols1gu01pc73fmcr3g` succeeded and is live,
+  using backend source `c56fb9a`. Production `/health` returned `{"status":"ok"}`.
+- Website checkout now uses the existing live Stripe/RevenueCat configuration
+  for all authenticated Tydes accounts, not just the owner pilot. The monthly
+  base price remains USD 3.99; checkout displays any local currency conversion
+  and applicable taxes before payment. The prior owner pilot ID remains in the
+  allowlist but is redundant while the global flag is true.
+- Completed the dedicated fake-card subscription's closeout in **Stripe
+  sandbox only**: immediate cancellation and full last-payment test refund
+  (USD 4.19 including test tax). RevenueCat changed its sandbox entitlement to
+  **Inactive · refunded**. No production customer/payment was altered.
+- The authenticated account refresh then showed **Free plan active** in Tydes.
+  That same non-owner account loaded the live monthly offer and an enabled
+  **Subscribe monthly** button using the real production `/billing/config`.
+  A loopback-only preview relayed that config unchanged and restricted all
+  requests to the existing dedicated test user. This avoided weakening the
+  production CORS allowlist. No session tokens or private keys were logged or
+  stored; the preview server and its browser tab were stopped afterward.
+- The isolated verification build changed only API routing/build revision. It
+  was not published. Existing Sites version 60 and its verified production
+  Flutter bundle remain live. The web billing build guard and all 75 API/billing
+  tests passed. No real card was entered and no real purchase was submitted.
+- Native iOS/App Store purchase/restore on a real phone, actual time-based
+  expiry, and a first genuine customer sale/payout remain unobserved end-to-end.
+  Those checks must not be described as complete. This activation opens the
+  **website** purchase path, not a new App Store release or Android integration.
+- Rollback: set `REVENUECAT_WEB_CHECKOUT_ENABLED=false` and save/deploy. Clear
+  `REVENUECAT_WEB_CHECKOUT_USER_IDS` too if all purchases, including the prior
+  owner pilot, must be disabled. Existing paid access/check-subscription remains
+  available; never switch public users to a sandbox SDK key as a rollback.
+
 ### Last dashboard inspection (2026-11-06)
 
 The Apple product `tydes_premium_monthly` was attached to the expected offering,

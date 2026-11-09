@@ -10,6 +10,10 @@ Use this as the working launch list before TestFlight and App Store review.
 - Account signup, email verification, reset password, and delete account
 - Premium screen with Restore Purchases
 - RevenueCat entitlement wiring for `premium`
+- Website Premium checkout enabled for authenticated users on November 9, 2026
+  (live Stripe/RevenueCat, USD 3.99/month before applicable taxes); verified
+  sandbox purchase/cancellation/refund and non-owner live-offer availability.
+  Real-phone App Store testing and a first genuine sale/payout are separate.
 - Production RevenueCat App Store app, entitlement, offering, and monthly
   product connection
 - Public RevenueCat iOS SDK key embedded in the release build
