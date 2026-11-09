@@ -204,6 +204,12 @@ subscribers can still use Check subscription with their signed-in account.
   expiration, refund-state reconciliation, duplicate/out-of-order callbacks,
   and isolation between accounts. These automated tests are not a claim that
   every lifecycle event has been observed in a real transaction.
+- Published the repaired artifact as Sites version 59, source commit
+  `02d09d24dcec10fe0b92cd4c885c9a5aa14fa21f`, deployment
+  `appgdep_6af150bd6c208191b2d586a6e630cf38`. On `tydes.io`, the signed-in
+  pilot account then loaded **US$3.99 / month** and an enabled **Subscribe
+  monthly** button. The initial account-only environment deployment was
+  `dep-dbokp2ajnfac73f7kcsg`. No real payment was submitted by the agent.
 
 ### Last dashboard inspection (2026-11-06)
 
