@@ -15,4 +15,13 @@ class SessionTokenStore {
   Future<void> clear() async {
     web.window.localStorage.removeItem(_storageKey);
   }
+
+  Future<bool> clearIfMatches(String expectedToken) async {
+    if (web.window.localStorage.getItem(_storageKey) != expectedToken) {
+      return false;
+    }
+    // No await between compare and removal: another tab's newer session wins.
+    web.window.localStorage.removeItem(_storageKey);
+    return true;
+  }
 }

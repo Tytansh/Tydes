@@ -8,6 +8,10 @@ Use this as the working launch list before TestFlight and App Store review.
 - Open-Meteo paid customer API key support via Render `OPEN_METEO_API_KEY`
 - Public legal pages: Privacy Policy, Terms of Use, and Support
 - Account signup, email verification, reset password, and delete account
+- Website Google sign-in published November 9, 2026; email/password remains
+  available. See [setup and verification status](google-sign-in.md). The owner
+  reported successful sign-in; signup, account-switching, and deletion
+  regressions have dedicated tests. Native Google sign-in is separate work.
 - Premium screen with Restore Purchases
 - RevenueCat entitlement wiring for `premium`
 - Website Premium checkout enabled for authenticated users on November 9, 2026

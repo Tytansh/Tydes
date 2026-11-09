@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 import '../../app/router.dart';
 import '../../core/l10n/app_strings.dart';
 import '../../core/network/api_models.dart';
-import '../../core/network/surf_repository.dart';
 import '../home/home_page.dart';
 import '../social/social_profile.dart';
 import '../alerts/alerts_page.dart';
@@ -55,7 +54,8 @@ class _AppScaffoldState extends ConsumerState<AppScaffold>
     final me = ref.watch(meProvider);
     final profile = me.valueOrNull;
 
-    if (me.isLoading && !me.hasValue) {
+    if (me.isLoading &&
+        (!me.hasValue || (profile != null && _needsProfileSetup(profile)))) {
       return const _AppAuthGate(message: 'Loading your account...');
     }
 
@@ -63,12 +63,12 @@ class _AppScaffoldState extends ConsumerState<AppScaffold>
         me.hasError &&
         me.error.toString().toLowerCase().contains('session expired');
     if (sessionExpired || profile == null) {
-      _sendToLogin(context, ref);
+      _sendToLogin(context, ref, expected: me);
       return const _AppAuthGate(message: 'Taking you to sign in...');
     }
 
     if (_needsProfileSetup(profile)) {
-      _sendToLogin(context, ref, clearSession: true);
+      _sendToLogin(context, ref, expected: me, setupProfile: profile);
       return const _AppAuthGate(message: 'Taking you to sign in...');
     }
 
@@ -257,18 +257,16 @@ bool _needsProfileSetup(UserProfile profile) {
 void _sendToLogin(
   BuildContext context,
   WidgetRef ref, {
-  bool clearSession = false,
+  required AsyncValue<UserProfile> expected,
+  UserProfile? setupProfile,
 }) {
-  WidgetsBinding.instance.addPostFrameCallback((_) async {
+  WidgetsBinding.instance.addPostFrameCallback((_) {
     if (!context.mounted) return;
-    if (clearSession) {
-      await ref.read(surfRepositoryProvider).logout();
-    }
-    ref.invalidate(meProvider);
-    ref.invalidate(dashboardProvider);
-    ref.invalidate(homeAdsProvider);
+    final current = ref.read(meProvider);
+    // A redirect queued by the old session must not overtake a new login.
+    if (!identical(current, expected) || current.isLoading) return;
     if (context.mounted) {
-      context.go('/login');
+      context.go('/login', extra: setupProfile);
     }
   });
 }

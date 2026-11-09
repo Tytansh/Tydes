@@ -272,7 +272,7 @@ class DemoStore:
     def signup(self, email: str, password: str, locale: str = "en") -> dict[str, object]:
         normalized_email = email.strip().lower()
         if self._get_auth_account(normalized_email) is not None:
-            raise ValueError("An account already exists for that email.")
+            raise ValueError("An account already exists for that email. Sign in instead, or use Forgot password to regain access.")
 
         verification_code = _generate_verification_code()
         email_result = send_verification_email(normalized_email, verification_code)
@@ -343,7 +343,7 @@ class DemoStore:
         self._save_state()
         return self.user
 
-    def login_google(self, identity, locale: str = "en") -> dict[str, object]:
+    def login_google(self, identity, locale: str = "en", *, allow_signup: bool = True) -> dict[str, object]:
         """Resolve Google's stable subject without replacing existing account data."""
         email = identity.email
         new_user = User(
@@ -357,6 +357,7 @@ class DemoStore:
             if self.postgres_auth is not None:
                 account = self.postgres_auth.resolve_google_account(
                     identity.subject, email, identity.authoritative_email, new_user,
+                    allow_signup=allow_signup,
                 )
             else:
                 account = next((item for item in self.auth_accounts.values()
@@ -372,6 +373,8 @@ class DemoStore:
                         if not identity.authoritative_email or not (user.email_verified or self._is_verified_email(email)):
                             raise ValueError("For security, sign in with email and password and verify your existing Tydes email before connecting Google.")
                     else:
+                        if not allow_signup:
+                            raise ValueError("No Tydes account exists for this Google email. Choose Sign up to create one, or use your existing account's Google email.")
                         account = {"password_hash": "!google-only", "user": new_user.model_dump(mode="json")}
                     account["google_subject"] = identity.subject
             user = User.model_validate(account["user"])

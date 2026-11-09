@@ -25,7 +25,7 @@ final dioProvider = Provider<Dio>((ref) {
     InterceptorsWrapper(
       onRequest: (options, handler) async {
         final token = await persistence.loadAccessToken();
-        if (token != null) {
+        if (token != null && !options.headers.containsKey('Authorization')) {
           options.headers['Authorization'] = 'Bearer $token';
         }
         handler.next(options);
@@ -108,6 +108,7 @@ class SurfRepository {
     required String challengeId,
     required String verifier,
     required String locale,
+    bool allowSignup = false,
   }) async {
     try {
       final response = await _dio.post<Map<String, dynamic>>(
@@ -117,6 +118,7 @@ class SurfRepository {
           'challenge_id': challengeId,
           'verifier': verifier,
           'locale': locale,
+          'allow_signup': allowSignup,
         },
       );
       final data = response.data!;
@@ -150,7 +152,6 @@ class SurfRepository {
     String locale, {
     String? password,
   }) async {
-    await _demoPersistence.clearAccessToken();
     try {
       final payload = {'email': email, 'locale': locale};
       if (password != null) {
@@ -162,9 +163,10 @@ class SurfRepository {
       );
       final data = response.data!;
       final token = data['access_token'] as String?;
-      if (token != null) {
-        await _demoPersistence.saveAccessToken(token);
+      if (token == null || token.isEmpty) {
+        throw StateError('Sign-in did not complete.');
       }
+      await _demoPersistence.saveAccessToken(token);
       final profile = UserProfile.fromJson(
         data['user'] as Map<String, dynamic>,
       );
@@ -287,24 +289,38 @@ class SurfRepository {
   }
 
   Future<UserProfile> logout() async {
+    final token = await _demoPersistence.loadAccessToken();
+    if (token == null) return DemoSeed.me;
     try {
-      final response = await _dio.post<Map<String, dynamic>>('/auth/logout');
-      await _demoPersistence.clearAccessToken();
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/auth/logout',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      await _demoPersistence.clearAccessTokenIfMatches(token);
       return UserProfile.fromJson(response.data!);
     } catch (_) {
-      await _demoPersistence.clearAccessToken();
+      await _demoPersistence.clearAccessTokenIfMatches(token);
       return DemoSeed.me;
     }
   }
 
   Future<UserProfile> deleteAccount() async {
+    final token = await _demoPersistence.loadAccessToken();
+    if (token == null) {
+      throw StateError('Sign in before deleting your account.');
+    }
     try {
-      final response = await _dio.delete<Map<String, dynamic>>('/auth/account');
-      await _demoPersistence.clearAccessToken();
-      return UserProfile.fromJson(response.data!);
-    } catch (_) {
-      await _demoPersistence.clearAccessToken();
-      return DemoSeed.me;
+      final response = await _dio.delete<Map<String, dynamic>>(
+        '/auth/account',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final profile = UserProfile.fromJson(response.data!);
+      await _demoPersistence.clearAccessTokenIfMatches(token);
+      return profile;
+    } on DioException {
+      throw StateError(
+        'Account deletion could not be confirmed. You are still signed in. Please try again.',
+      );
     }
   }
 
@@ -314,15 +330,22 @@ class SurfRepository {
       throw StateError('Session expired. Please sign in again.');
     }
     try {
-      final response = await _dio.get<Map<String, dynamic>>('/users/me');
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/users/me',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      if (await _demoPersistence.loadAccessToken() != token) return fetchMe();
       final profile = UserProfile.fromJson(response.data!);
       DemoSeed.me = profile;
       await _demoPersistence.saveFavoriteSpotIds(profile.favoriteSpotIds);
       return profile;
     } on DioException catch (error) {
+      if (await _demoPersistence.loadAccessToken() != token) return fetchMe();
       final statusCode = error.response?.statusCode;
       if (statusCode == 401 || statusCode == 403) {
-        await _demoPersistence.clearAccessToken();
+        if (!await _demoPersistence.clearAccessTokenIfMatches(token)) {
+          return fetchMe();
+        }
         throw StateError('Session expired. Please sign in again.');
       }
       final persistedFavoriteSpotIds = await _demoPersistence
@@ -334,6 +357,7 @@ class SurfRepository {
       }
       return DemoSeed.me;
     } catch (_) {
+      if (await _demoPersistence.loadAccessToken() != token) return fetchMe();
       final persistedFavoriteSpotIds = await _demoPersistence
           .loadFavoriteSpotIds();
       if (persistedFavoriteSpotIds.isNotEmpty) {

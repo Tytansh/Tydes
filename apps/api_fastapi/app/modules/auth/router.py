@@ -2,7 +2,7 @@ from pydantic import BaseModel, EmailStr, Field
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.core.auth import require_authenticated_user
-from app.core.media_cleanup import queue_account_media_deletion, run_media_cleanup
+from app.core.media_cleanup import queue_account_media_deletion
 from app.core.rate_limit import (
     RateLimitRule,
     api_rate_limiter,
@@ -57,6 +57,8 @@ class GoogleLoginRequest(BaseModel):
     challenge_id: str = Field(min_length=43, max_length=128)
     verifier: str = Field(min_length=43, max_length=128)
     locale: str = Field(default="en", max_length=10)
+    # Account creation must be an explicit Sign up action, never a login retry.
+    allow_signup: bool = False
 
 
 def _require_google_origin(request: Request) -> None:
@@ -94,7 +96,7 @@ def google_login(payload: GoogleLoginRequest, request: Request):
         api_rate_limiter.enforce(RateLimitRule(
             scope="auth:google:account", key=identity.subject, limit=15, window_seconds=900,
         ))
-        return store.login_google(identity, payload.locale)
+        return store.login_google(identity, payload.locale, allow_signup=payload.allow_signup)
     except GoogleIdentityUnavailable as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
     except GoogleIdentityError as error:
@@ -198,7 +200,8 @@ def logout(_user=Depends(require_authenticated_user)):
 def delete_account(user=Depends(require_authenticated_user)):
     queue_account_media_deletion(user.id)
     deleted_user = store.delete_current_account()
-    run_media_cleanup()
+    # The existing cleanup worker handles queued media. Do not keep a deletion
+    # response waiting on third-party storage after the account is gone.
     return deleted_user
 
 

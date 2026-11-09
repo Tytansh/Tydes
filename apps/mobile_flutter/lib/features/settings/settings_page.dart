@@ -119,7 +119,7 @@ class SettingsPage extends ConsumerWidget {
             builder: (dialogContext) => AlertDialog(
               title: const Text('Delete account?'),
               content: const Text(
-                'This removes this test account from the backend so the email can sign up again.',
+                'Permanently delete your Tydes account and its content. You can create a new account with the same email afterward. Cancel any active subscription through Manage subscription or your app store before deleting.',
               ),
               actions: [
                 TextButton(
@@ -138,7 +138,20 @@ class SettingsPage extends ConsumerWidget {
             ),
           );
           if (confirmed != true) return;
-          await ref.read(surfRepositoryProvider).deleteAccount();
+          try {
+            await ref.read(surfRepositoryProvider).deleteAccount();
+          } catch (error) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    error.toString().replaceFirst('Bad state: ', ''),
+                  ),
+                ),
+              );
+            }
+            return;
+          }
           await ref.read(revenueCatServiceProvider).logOut();
           ref.invalidate(meProvider);
           ref.invalidate(dashboardProvider);

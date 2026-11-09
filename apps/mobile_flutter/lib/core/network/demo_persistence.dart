@@ -47,6 +47,10 @@ class DemoPersistence {
     }
   }
 
+  Future<bool> clearAccessTokenIfMatches(String expectedToken) async {
+    return _sessionTokenStore.clearIfMatches(expectedToken);
+  }
+
   Future<List<String>> loadFavoriteSpotIds() async {
     try {
       final file = await _favoriteSpotsFile();

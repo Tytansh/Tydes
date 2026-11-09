@@ -7,6 +7,7 @@ import '../../core/legal/legal_links.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../home/home_page.dart';
+import '../social/social_profile.dart';
 import '../spots/spot_detail_page.dart';
 import '../spots/spots_page.dart';
 import 'google_sign_in_button.dart';
@@ -18,7 +19,9 @@ final authStateProvider = FutureProvider.autoDispose((ref) async {
 enum _AuthMode { signIn, signUp }
 
 class AuthPage extends ConsumerStatefulWidget {
-  const AuthPage({super.key});
+  const AuthPage({super.key, this.initialProfile});
+
+  final UserProfile? initialProfile;
 
   @override
   ConsumerState<AuthPage> createState() => _AuthPageState();
@@ -37,6 +40,13 @@ class _AuthPageState extends ConsumerState<AuthPage> {
   String? _verificationHint;
   String? _errorText;
   bool _obscurePassword = true;
+  UserProfile? _profileSetup;
+
+  @override
+  void initState() {
+    super.initState();
+    _profileSetup = widget.initialProfile;
+  }
 
   @override
   void dispose() {
@@ -48,6 +58,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
   }
 
   void _setMode(_AuthMode mode) {
+    if (_loading) return;
     setState(() {
       _mode = mode;
       _errorText = null;
@@ -68,24 +79,53 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     ref.invalidate(spotTideProvider);
     ref.invalidate(spotSurfWindowProvider);
     ref.invalidate(spotDetailBundleProvider);
+    ref.invalidate(favoriteSpotIdsProvider);
+    ref.invalidate(followedUserIdsProvider);
+    ref.invalidate(followerUserIdsProvider);
+    ref.invalidate(blockedUserIdsProvider);
+    ref.invalidate(hiddenFollowingUserIdsProvider);
+    ref.invalidate(hiddenFollowerUserIdsProvider);
+    ref.invalidate(socialRelationshipHydrationProvider);
+    ref.read(socialRefreshKeyProvider.notifier).state++;
   }
 
   Future<void> _finishAuth(UserProfile profile) async {
     if (!mounted) return;
-    _refreshAfterAuth();
-    setState(() => _loading = false);
     if (_needsProfileSetup(profile)) {
-      final completed = await showModalBottomSheet<bool>(
-        context: context,
-        isScrollControlled: true,
-        isDismissible: false,
-        enableDrag: false,
-        builder: (context) => _ProfileSetupSheet(profile: profile),
-      );
-      if (!mounted || completed != true) return;
-      _refreshAfterAuth();
+      setState(() {
+        _profileSetup = profile;
+        _verificationPending = false;
+        _errorText = null;
+        _loading = false;
+      });
+      return;
     }
+    setState(() => _loading = true);
+    _refreshAfterAuth();
+    // Do not navigate with the previous account's retained AsyncValue. Wait
+    // until the new session has a fresh profile, for Google and email alike.
+    final currentProfile = await ref.read(meProvider.future);
+    if (!mounted) return;
+    if (_needsProfileSetup(currentProfile)) {
+      await _finishAuth(currentProfile);
+      return;
+    }
+    ref.read(currentTabProvider.notifier).state = 0;
     context.go('/');
+  }
+
+  Future<void> _useAnotherAccount() async {
+    setState(() => _loading = true);
+    await ref.read(surfRepositoryProvider).logout();
+    if (!mounted) return;
+    _refreshAfterAuth();
+    setState(() {
+      _profileSetup = null;
+      _verificationPending = false;
+      _verificationEmail = null;
+      _errorText = null;
+      _loading = false;
+    });
   }
 
   bool _validateEmailAndPassword({bool requireConfirmation = false}) {
@@ -149,6 +189,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
             challengeId: challengeId,
             verifier: verifier,
             locale: ref.read(localeProvider).languageCode,
+            allowSignup: _mode == _AuthMode.signUp,
           );
       if (!mounted) return;
       if (result.verificationRequired) {
@@ -364,12 +405,17 @@ class _AuthPageState extends ConsumerState<AuthPage> {
   @override
   Widget build(BuildContext context) {
     final isSignup = _mode == _AuthMode.signUp;
-    final title = _verificationPending
+    final setup = _profileSetup;
+    final title = setup != null
+        ? 'Create your profile'
+        : _verificationPending
         ? 'Verify your email'
         : isSignup
         ? 'Create account'
         : 'Welcome back';
-    final subtitle = _verificationPending
+    final subtitle = setup != null
+        ? 'Choose your name, @tag, and surf level. Location and bio are optional.'
+        : _verificationPending
         ? 'Enter the code sent to ${_verificationEmail ?? 'your email'} to finish creating your account.'
         : isSignup
         ? 'Build your surf profile'
@@ -398,10 +444,17 @@ class _AuthPageState extends ConsumerState<AuthPage> {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final desktop = constraints.maxWidth >= 980;
-                final formContent = _buildAuthFormContent(
-                  isSignup: isSignup,
-                  actionLabel: actionLabel,
-                );
+                final formContent = setup != null
+                    ? _ProfileSetupForm(
+                        key: ValueKey(setup.id),
+                        profile: setup,
+                        onCompleted: _finishAuth,
+                        onUseAnotherAccount: _useAnotherAccount,
+                      )
+                    : _buildAuthFormContent(
+                        isSignup: isSignup,
+                        actionLabel: actionLabel,
+                      );
                 if (desktop) {
                   return SingleChildScrollView(
                     padding: const EdgeInsets.fromLTRB(40, 32, 40, 40),
@@ -448,7 +501,8 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                           const SizedBox(height: 18),
                           _AuthFormCard(child: formContent),
                           const SizedBox(height: 16),
-                          if (!_verificationPending) const _AuthPerksCard(),
+                          if (!_verificationPending && setup == null)
+                            const _AuthPerksCard(),
                         ],
                       ),
                     ),
@@ -997,16 +1051,23 @@ bool _needsProfileSetup(UserProfile profile) {
       profile.surfSkill.trim().isEmpty;
 }
 
-class _ProfileSetupSheet extends ConsumerStatefulWidget {
-  const _ProfileSetupSheet({required this.profile});
+class _ProfileSetupForm extends ConsumerStatefulWidget {
+  const _ProfileSetupForm({
+    super.key,
+    required this.profile,
+    required this.onCompleted,
+    required this.onUseAnotherAccount,
+  });
 
   final UserProfile profile;
+  final Future<void> Function(UserProfile) onCompleted;
+  final Future<void> Function() onUseAnotherAccount;
 
   @override
-  ConsumerState<_ProfileSetupSheet> createState() => _ProfileSetupSheetState();
+  ConsumerState<_ProfileSetupForm> createState() => _ProfileSetupFormState();
 }
 
-class _ProfileSetupSheetState extends ConsumerState<_ProfileSetupSheet> {
+class _ProfileSetupFormState extends ConsumerState<_ProfileSetupForm> {
   late final TextEditingController _nameController;
   late final TextEditingController _handleController;
   late final TextEditingController _locationController;
@@ -1064,7 +1125,7 @@ class _ProfileSetupSheetState extends ConsumerState<_ProfileSetupSheet> {
       _saving = true;
     });
     try {
-      await ref
+      final profile = await ref
           .read(surfRepositoryProvider)
           .updateProfile(
             displayName: displayName,
@@ -1073,12 +1134,10 @@ class _ProfileSetupSheetState extends ConsumerState<_ProfileSetupSheet> {
             surfSkill: _skill!,
             homeRegion: location,
             avatarUrl: widget.profile.avatarUrl,
+            coverUrl: widget.profile.coverUrl,
           );
-      ref.invalidate(authStateProvider);
-      ref.invalidate(meProvider);
-      ref.invalidate(dashboardProvider);
       if (!mounted) return;
-      Navigator.of(context).pop(true);
+      await widget.onCompleted(profile);
     } catch (error) {
       if (!mounted) return;
       final message = error.toString().replaceFirst('Bad state: ', '');
@@ -1100,121 +1159,106 @@ class _ProfileSetupSheetState extends ConsumerState<_ProfileSetupSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    return PopScope(
-      canPop: false,
-      child: SafeArea(
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(20, 12, 20, 24 + bottomInset),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 42,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD5D0C6),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  'Set up your profile',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Choose your name, @tag, and surf level. You can add location and bio now or later.',
-                  style: TextStyle(color: Color(0xFF5D686C), height: 1.35),
-                ),
-                const SizedBox(height: 18),
-                TextField(
-                  controller: _nameController,
-                  textCapitalization: TextCapitalization.words,
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(
-                    labelText: 'Name',
-                    hintText: 'Your display name',
-                  ),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: _handleController,
-                  textInputAction: TextInputAction.next,
-                  decoration: InputDecoration(
-                    labelText: '@tag',
-                    hintText: 'yourtag',
-                    prefixText: '@',
-                    errorText: _handleError,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: _locationController,
-                  textCapitalization: TextCapitalization.words,
-                  textInputAction: TextInputAction.next,
-                  maxLength: 40,
-                  decoration: const InputDecoration(
-                    labelText: 'Location (optional)',
-                    hintText: 'Bali, Gold Coast, Canggu...',
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Surf level',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                const SizedBox(height: 8),
-                SegmentedButton<String>(
-                  emptySelectionAllowed: true,
-                  segments: const [
-                    ButtonSegment<String>(
-                      value: 'beginner',
-                      label: Text('Beginner'),
-                    ),
-                    ButtonSegment<String>(
-                      value: 'intermediate',
-                      label: Text('Skilled'),
-                    ),
-                    ButtonSegment<String>(value: 'pro', label: Text('Pro')),
-                  ],
-                  selected: _skill == null ? const {} : {_skill!},
-                  onSelectionChanged: _saving
-                      ? null
-                      : (selection) => setState(
-                          () => _skill = selection.isEmpty
-                              ? null
-                              : selection.first,
-                        ),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: _bioController,
-                  maxLines: 4,
-                  maxLength: 180,
-                  decoration: const InputDecoration(
-                    labelText: 'Bio (optional)',
-                    hintText:
-                        'Tell people what kind of waves and surf trips you are into.',
-                  ),
-                ),
-                const SizedBox(height: 18),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: _saving ? null : _save,
-                    child: Text(_saving ? 'Saving...' : 'Finish profile'),
-                  ),
-                ),
-              ],
-            ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _AuthNotice(text: 'Signed in as ${widget.profile.email}'),
+        const SizedBox(height: 6),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            onPressed: _saving ? null : widget.onUseAnotherAccount,
+            child: const Text('Use another account'),
           ),
         ),
-      ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: _nameController,
+          textCapitalization: TextCapitalization.words,
+          textInputAction: TextInputAction.next,
+          maxLength: 32,
+          decoration: const InputDecoration(
+            labelText: 'Name',
+            hintText: 'Your display name',
+            prefixIcon: Icon(Icons.person_outline),
+          ),
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: _handleController,
+          textInputAction: TextInputAction.next,
+          maxLength: 20,
+          decoration: InputDecoration(
+            labelText: '@tag',
+            hintText: 'yourtag',
+            prefixText: '@',
+            errorText: _handleError,
+            prefixIcon: const Icon(Icons.alternate_email),
+          ),
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: _locationController,
+          textCapitalization: TextCapitalization.words,
+          textInputAction: TextInputAction.next,
+          maxLength: 40,
+          decoration: const InputDecoration(
+            labelText: 'Location (optional)',
+            hintText: 'Bali, Gold Coast, Canggu...',
+            prefixIcon: Icon(Icons.place_outlined),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text('Surf level', style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: 8),
+        SegmentedButton<String>(
+          emptySelectionAllowed: true,
+          segments: const [
+            ButtonSegment<String>(value: 'beginner', label: Text('Beginner')),
+            ButtonSegment<String>(
+              value: 'intermediate',
+              label: Text('Skilled'),
+            ),
+            ButtonSegment<String>(value: 'pro', label: Text('Pro')),
+          ],
+          selected: _skill == null ? const {} : {_skill!},
+          onSelectionChanged: _saving
+              ? null
+              : (selection) => setState(
+                  () => _skill = selection.isEmpty ? null : selection.first,
+                ),
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: _bioController,
+          maxLines: 3,
+          maxLength: 180,
+          decoration: const InputDecoration(
+            labelText: 'Bio (optional)',
+            hintText:
+                'Tell people what kind of waves and surf trips you are into.',
+          ),
+        ),
+        const SizedBox(height: 18),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF073F43),
+              foregroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(56),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+            ),
+            onPressed: _saving ? null : _save,
+            child: Text(_saving ? 'Saving...' : 'Finish profile'),
+          ),
+        ),
+        const SizedBox(height: 10),
+        const _AuthLegalNote(isSignup: true),
+      ],
     );
   }
 }

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/network/api_models.dart';
+
 import '../features/alerts/alerts_page.dart';
 import '../features/admin/admin_users_page.dart';
 import '../features/auth/auth_page.dart';
@@ -24,7 +26,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/',
     routes: [
-      GoRoute(path: '/login', builder: (context, state) => const AuthPage()),
+      GoRoute(
+        path: '/login',
+        builder: (context, state) => AuthPage(
+          initialProfile: state.extra is UserProfile
+              ? state.extra as UserProfile
+              : null,
+        ),
+      ),
       GoRoute(
         path: '/',
         builder: (context, state) => const AppScaffold(),

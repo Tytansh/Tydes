@@ -57,13 +57,14 @@ def claims(challenge, **updates):
             "nonce": challenge["nonce"], **updates}
 
 
-def sign_in(monkeypatch, *, claim_updates=None, challenge=None, verifier=None, origin=ORIGIN):
+def sign_in(monkeypatch, *, claim_updates=None, challenge=None, verifier=None, origin=ORIGIN, allow_signup=True):
     if challenge is None:
         challenge, verifier = begin()
     monkeypatch.setattr(google, "_verify_google_token", lambda *_: claims(challenge, **(claim_updates or {})))
     return client.post("/api/v1/auth/google", headers=origin, json={
         "credential": "synthetic-google-token-for-test-only", "challenge_id": challenge["challenge_id"],
         "verifier": verifier,
+        "allow_signup": allow_signup,
     })
 
 
@@ -74,6 +75,16 @@ def test_google_config_is_public_identifier_only_and_disabled_by_default(monkeyp
     assert client.get("/api/v1/auth/google/config").json()["client_id"] == ""
     monkeypatch.setenv("GOOGLE_WEB_CLIENT_ID", CLIENT_ID)
     assert client.get("/api/v1/auth/google/config").json() == {"enabled": True, "client_id": CLIENT_ID}
+
+
+def test_missing_signup_intent_cannot_create_an_account(monkeypatch):
+    challenge, verifier = begin()
+    monkeypatch.setattr(google, "_verify_google_token", lambda *_: claims(challenge))
+    result = client.post("/api/v1/auth/google", headers=ORIGIN, json={
+        "credential": "synthetic-google-token-for-test-only", "challenge_id": challenge["challenge_id"],
+        "verifier": verifier,
+    })
+    assert result.status_code == 409 and not store.auth_accounts
 
 
 def test_google_signup_is_verified_clean_and_passwordless(monkeypatch):
@@ -90,6 +101,44 @@ def test_google_signup_is_verified_clean_and_passwordless(monkeypatch):
     assert "synthetic-google-token" not in store.state_file.read_text()
     assert store.auth_accounts["surfer@gmail.com"]["password_hash"] == "!google-only"
     assert client.post("/api/v1/auth/login", json={"email": "surfer@gmail.com", "password": "!google-only"}).status_code == 400
+
+
+def test_google_signin_does_not_recreate_a_deleted_account(monkeypatch):
+    first = sign_in(monkeypatch).json()["session"]
+    headers = {"Authorization": "Bearer " + first["access_token"]}
+    monkeypatch.setattr("app.modules.auth.router.queue_account_media_deletion", lambda *_: None)
+    monkeypatch.setattr(store, "postgres_planning", None)
+    assert client.delete("/api/v1/auth/account", headers=headers).status_code == 200
+    assert "surfer@gmail.com" not in store.auth_accounts
+    assert client.get("/api/v1/users/me", headers=headers).status_code == 401
+    missing = sign_in(monkeypatch, allow_signup=False)
+    assert missing.status_code == 409 and "Choose Sign up" in missing.json()["detail"]
+    assert "surfer@gmail.com" not in store.auth_accounts
+    regular = client.post("/api/v1/auth/signup", json={
+        "email": "surfer@gmail.com", "password": "replacement-long-password",
+    })
+    assert regular.status_code == 200, regular.text
+    assert regular.json()["session"]["user"]["id"] != first["user"]["id"]
+
+
+def test_explicit_google_signup_after_deletion_has_a_new_identity(monkeypatch):
+    first = sign_in(monkeypatch).json()["session"]
+    monkeypatch.setattr("app.modules.auth.router.queue_account_media_deletion", lambda *_: None)
+    monkeypatch.setattr(store, "postgres_planning", None)
+    assert client.delete("/api/v1/auth/account", headers={
+        "Authorization": "Bearer " + first["access_token"],
+    }).status_code == 200
+    second = sign_in(monkeypatch, allow_signup=True).json()["session"]
+    assert second["user"]["id"] != first["user"]["id"]
+    assert not second["user"]["premium"] and second["user"]["handle"] == ""
+
+
+def test_signin_mode_still_links_an_existing_verified_email(monkeypatch):
+    signup = store.signup("surfer@gmail.com", "existing-long-password")
+    store.verify_email("surfer@gmail.com", store.email_verification_codes["surfer@gmail.com"])
+    result = sign_in(monkeypatch, allow_signup=False)
+    assert result.status_code == 200, result.text
+    assert result.json()["session"]["user"]["id"] == signup["session"].user.id
 
 
 def test_existing_verified_account_preserves_id_password_profile_and_premium(monkeypatch):

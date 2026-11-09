@@ -141,7 +141,7 @@ class PostgresAuthRepository:
         }
 
     def resolve_google_account(self, subject: str, email: str, authoritative: bool,
-                               new_user: User) -> dict[str, object]:
+                               new_user: User, *, allow_signup: bool = True) -> dict[str, object]:
         """Create/link atomically; never replace an existing profile or password."""
         with self._connect() as connection, connection.transaction():
             connection.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", ("google:" + subject,))
@@ -155,10 +155,12 @@ class PostgresAuthRepository:
                     """INSERT INTO auth_accounts (email, password_hash, user_payload, google_subject)
                        VALUES (%s, %s, %s, %s) ON CONFLICT (email) DO NOTHING RETURNING email""",
                     (email, "!google-only", self._jsonb(new_user.model_dump(mode="json")), subject),
-                ).fetchone()
+                ).fetchone() if allow_signup else None
                 row = connection.execute(
                     "SELECT email, password_hash, user_payload, google_subject FROM auth_accounts WHERE email = %s FOR UPDATE", (email,),
                 ).fetchone()
+                if row is None:
+                    raise ValueError("No Tydes account exists for this Google email. Choose Sign up to create one, or use your existing account's Google email.")
                 if not inserted:
                     if row["user_payload"].get("banned"):
                         raise ValueError("This account has been suspended.")

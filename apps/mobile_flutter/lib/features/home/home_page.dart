@@ -48,7 +48,7 @@ class HomePage extends ConsumerWidget {
         return;
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) {
+        if (context.mounted && identical(ref.read(meProvider), next)) {
           context.go('/login');
         }
       });
