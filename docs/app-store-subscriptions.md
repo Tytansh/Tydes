@@ -170,6 +170,41 @@ subscribers can still use Check subscription with their signed-in account.
   form, verify live payout/readiness and actual merchant-of-record eligibility,
   and complete remaining lifecycle/cross-device checks.
 
+### Owner-only live pilot and production build repair (2026-11-09)
+
+- Ordinary Chrome navigation rendered the hosted sandbox card form correctly;
+  an automation-created tab remained blank. This narrows the earlier Chrome
+  finding to the tested browser-control path, not all Chrome checkout usage.
+  No browser extensions, security settings, or cookies were disabled.
+- The owner's account has an expired historical Apple **sandbox** subscription
+  and no active live RevenueCat entitlement. It was not manually granted
+  Premium as part of this test.
+- Stripe Account status showed **Payments** and **Payouts** active, no active
+  verification tasks, and a CAD Wise account linked. This is not evidence of
+  a completed payout or a guarantee that future verification cannot be needed.
+- Added only the owner's verified account ID to Render's
+  `REVENUECAT_WEB_CHECKOUT_USER_IDS`. The global
+  `REVENUECAT_WEB_CHECKOUT_ENABLED` stays **false**. The pilot is a real monthly
+  purchase option; never enter sandbox fake-card numbers in that live flow.
+  The owner must submit their own real payment, if they choose to purchase.
+- The pilot exposed a separate production artifact problem: the deployed
+  `main.dart.js` omitted the web payment plugin's registration/interop code,
+  despite the vendor asset being present. The working sandbox build included
+  it. A fresh production compilation with a new `BILLING_BUILD_REVISION` Dart
+  define restored the missing code. Do not rely on build exit status alone.
+- Before copying a Flutter release into Sites, run:
+
+  ```sh
+  bash tool/verify_web_billing.sh /absolute/path/to/web-build
+  ```
+
+  This rejects the observed incomplete artifact and checks both the compiled
+  plugin and its vendored JavaScript. It does not replace browser checkout QA.
+- Rechecked 75 billing/API integration tests, including owner-only gating,
+  expiration, refund-state reconciliation, duplicate/out-of-order callbacks,
+  and isolation between accounts. These automated tests are not a claim that
+  every lifecycle event has been observed in a real transaction.
+
 ### Last dashboard inspection (2026-11-06)
 
 The Apple product `tydes_premium_monthly` was attached to the expected offering,
