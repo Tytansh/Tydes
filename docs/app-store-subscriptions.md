@@ -186,7 +186,9 @@ subscribers can still use Check subscription with their signed-in account.
   `REVENUECAT_WEB_CHECKOUT_USER_IDS`. The global
   `REVENUECAT_WEB_CHECKOUT_ENABLED` stays **false**. The pilot is a real monthly
   purchase option; never enter sandbox fake-card numbers in that live flow.
-  The owner must submit their own real payment, if they choose to purchase.
+  Do not use an owner payment or another real card as a test transaction;
+  exercise purchase failures, activation, refunds, and cancellation in sandbox.
+  The agent does not submit real payments.
 - The pilot exposed a separate production artifact problem: the deployed
   `main.dart.js` omitted the web payment plugin's registration/interop code,
   despite the vendor asset being present. The working sandbox build included
@@ -210,6 +212,35 @@ subscribers can still use Check subscription with their signed-in account.
   pilot account then loaded **US$3.99 / month** and an enabled **Subscribe
   monthly** button. The initial account-only environment deployment was
   `dep-dbokp2ajnfac73f7kcsg`. No real payment was submitted by the agent.
+
+### Billing safeguards and customer disclosures (2026-11-09)
+
+- RevenueCat Project settings -> General -> Sandbox testing access now uses
+  **Allowed App User IDs only**. The saved list contains the dedicated verified
+  test account and the owner's internal account (two IDs). Other users cannot
+  gain Premium from sandbox/Test Store purchases. Real production purchases
+  are unaffected. Add future approved TestFlight testers explicitly; do not
+  restore the default **Anybody** setting for public testing.
+- Saved the existing public business contact `support@tydes.io`, support URL
+  `https://tydes.io/support`, Privacy URL `https://tydes.io/privacy`, and Terms
+  URL `https://tydes.io/terms` in live Stripe customer-support details. No bank,
+  identity, business classification, phone, or price changes were made.
+- The owner explicitly approved publishing website-billing disclosures naming
+  Stripe/Link and RevenueCat, monthly auto-renewal, cancellation and payment
+  data handling. Published Terms, Privacy and Support as Sites version 60,
+  source commit `c01b56da379ea5b1a83d678d6bee9188cb8e6c9a`, deployment
+  `appgdep_6af157b7f118819192ab31c2c5cc6a46`. The previously verified working
+  Flutter bundle was preserved, and the web billing build guard passed.
+- Enabled live Stripe emails for upcoming renewals, expiring cards, failed
+  card payments and failed bank-debit payments. Emails include the Stripe
+  customer portal; payment-method updates use a Stripe-hosted page. The owner
+  specifically approved leaving legacy mixed-link mode after Stripe warned
+  that this migration cannot be reversed. No paid notification/recovery add-on
+  was enabled. The existing upcoming-renewal schedule remains seven days.
+- Re-ran the 75 API/billing tests successfully. This does not replace the
+  still-outstanding sandbox refund/expiry and native cross-device checks.
+- Global public checkout remains disabled. The existing owner-only pilot
+  allowlist was not widened, and no real payment was submitted.
 
 ### Last dashboard inspection (2026-11-06)
 
