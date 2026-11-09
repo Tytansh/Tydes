@@ -119,6 +119,8 @@ void main() {
       final service = _BillingService();
       await _show(tester, repo, service);
       expect(find.text(r'US$3.99 / month'), findsOneWidget);
+      expect(find.text('Ad-free experience'), findsOneWidget);
+      expect(find.text('Ad-light experience'), findsNothing);
       final buy = find.widgetWithText(FilledButton, 'Subscribe monthly');
       await tester.ensureVisible(buy);
       await tester.tap(buy);

@@ -4726,7 +4726,7 @@ def build_seed() -> dict[str, list[BaseModel] | User]:
                 "Live data on every spot",
                 "Best Time Today windows",
                 "Tide-aware planning",
-                "Ad-light experience",
+                "Ad-free experience",
             ],
         ),
     ]

@@ -101,6 +101,24 @@ def test_subscription_sync_is_verified_and_scoped_to_signed_in_account(tmp_path,
     assert store.resolve_session_user(alice_token).subscription_expires_at == future
 
 
+def test_premium_plan_is_ad_free_and_premium_accounts_receive_no_ads(tmp_path, monkeypatch):
+    from app.integrations.revenuecat import RevenueCatSubscription
+
+    monkeypatch.setattr(store, "state_file", tmp_path / "ad-free.json")
+    monkeypatch.setattr(store, "auth_accounts", {})
+    monkeypatch.setattr(store, "session_tokens", {})
+    plan = next(item for item in client.get("/api/v1/billing/plans").json() if item["id"] == "premium")
+    assert "Ad-free experience" in plan["features"]
+    assert "Ad-light experience" not in plan["features"]
+    token = _signup_access_token(monkeypatch, "ad-free-subscriber@example.com")
+    user = store.resolve_session_user(token)
+    with store.request_user_context(user):
+        store.set_subscription_status(RevenueCatSubscription(True))
+    assert store.resolve_session_user(token).ads_enabled is False
+    response = client.get("/api/v1/ads", headers={"Authorization": "Bearer " + token})
+    assert response.status_code == 200 and response.json() == []
+
+
 def test_expired_subscription_is_revoked_but_admin_grants_survive(tmp_path, monkeypatch):
     from app.integrations.revenuecat import RevenueCatSubscription
     monkeypatch.setattr(store, "state_file", tmp_path / "expiration.json")

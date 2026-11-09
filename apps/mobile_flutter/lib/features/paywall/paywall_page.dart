@@ -266,7 +266,7 @@ class _PaywallPageState extends ConsumerState<PaywallPage>
           'Live data on every spot',
           'Best Time Today windows',
           'Tide-aware planning',
-          'Ad-light experience',
+          'Ad-free experience',
         ],
       ),
     );
@@ -283,7 +283,7 @@ class _PaywallPageState extends ConsumerState<PaywallPage>
           'Live data on every spot',
           'Best Time Today windows',
           'Tide-aware planning',
-          'Ad-light experience',
+          'Ad-free experience',
         ];
 
     return Scaffold(

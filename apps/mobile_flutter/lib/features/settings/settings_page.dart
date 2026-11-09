@@ -906,7 +906,7 @@ class _ProfileSettingsSheet extends StatelessWidget {
                 'Delete account',
                 style: TextStyle(color: Color(0xFFB3261E)),
               ),
-              subtitle: const Text('Remove this test account and reuse email'),
+              subtitle: const Text('Permanently delete your account'),
               onTap: onDeleteAccount,
             ),
           ],
