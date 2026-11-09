@@ -110,8 +110,8 @@ subscribers can still use Check subscription with their signed-in account.
 - Cancellation at the end of the billing period is enabled. Invoice history
   and payment-method management are available; plan switching and quantity
   changes are disabled. Redirect returns to `https://tydes.io/#/profile`.
-- Public web purchases remain gated off pending secure environment wiring,
-  sandbox end-to-end testing, and live checkout/merchant-of-record checks.
+- Public web purchases remain gated off pending sandbox end-to-end testing,
+  browser compatibility, and live checkout/merchant-of-record checks.
 - User explicitly approved the private callback credential connection. The
   random credential was saved only in RevenueCat and Render, never in source,
   chat output, or a local credentials file.
@@ -129,10 +129,46 @@ subscribers can still use Check subscription with their signed-in account.
 - Customer subscription-management links come from RevenueCat, not user input.
 - After store success with delayed verification, checkout stays disabled in that
   session and the user is directed to Check/Restore rather than buying twice.
-- No billing webhook has been configured by this code change. For immediate
-  server-to-server cancellation/refund updates, add an authenticated webhook
-  integration before a wider paid launch; hourly verification is the current
-  recovery path, not a claim of real-time webhook delivery.
+- Production lifecycle updates use the authenticated webhook configured above;
+  hourly verification remains a recovery path, not a real-time delivery SLA.
+  Sandbox events are deliberately excluded from the production webhook.
+
+### Isolated sandbox checkout verification (2026-11-09)
+
+- Updated `purchases_flutter` from 10.1.1 to pinned 10.19.0. The newer bundled
+  web SDK supports Stripe sandbox configuration keys; this update alone did
+  **not** resolve the Chrome blank embedded-checkout issue.
+- Tested a loopback-only build with a new, user-created and email-verified
+  non-Premium account. Sandbox public configuration was supplied in memory
+  only to that account. No live environment key, checkout gate, default
+  offering, reviewer access, or real payment method was changed.
+- Created the separate `sandbox_checkout_test` offering with only the existing
+  sandbox monthly product, and a sandbox-only RevenueCat Web Purchase Link.
+  Never publish or distribute that link as a customer purchase option.
+- Both embedded checkout and RevenueCat's HTTPS hosted checkout were blank in
+  the tested Chrome profile. The same hosted checkout loaded in Codex's in-app
+  browser. The specific Chrome cause remains unconfirmed; do not attribute it
+  to an extension without an isolated reproduction.
+- Verified Stripe's sandbox `livemode: false` before submission. Its fake
+  insufficient-funds card was declined. A successful fake-card purchase then
+  activated the correct customer's sandbox entitlement in RevenueCat.
+- Tydes' authenticated **Check subscription** verified that entitlement through
+  the real backend and displayed **Premium active**. This was not a manual
+  complimentary grant. No real money was charged.
+- Checkout showed the US$3.99 monthly base price, plus US$0.20 test tax for a
+  synthetic Canadian billing postal code. That test total is not a promise of
+  every customer's final tax or proof of live Managed Payments coverage.
+- **Manage subscription** opened the configured sandbox portal. Its email-login
+  page was checked, then the authenticated Stripe dashboard's **Open customer
+  portal** action supplied a session for this synthetic test customer. No real
+  customer's email or portal session was used.
+- The customer portal accepted end-of-period cancellation and showed service
+  ending December 8, 2026. Paid-period access correctly remains active; actual
+  time-based expiry, refund/revocation, native-device login, and live purchases
+  have not yet been verified end-to-end.
+- Public checkout remains disabled. Before enabling it, resolve Chrome's blank
+  form, verify live payout/readiness and actual merchant-of-record eligibility,
+  and complete remaining lifecycle/cross-device checks.
 
 ### Last dashboard inspection (2026-11-06)
 
