@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -42,6 +43,8 @@ final _spots = [
   _spot('batu', 'Batu Bolong', 'Indonesia', 'Bali', 'Canggu'),
   _spot('uluwatu', 'Uluwatu Peak', 'Indonesia', 'Bali', 'Uluwatu'),
   _spot('bondi', 'Bondi', 'Australia', 'New South Wales', 'Sydney'),
+  _spot('spot_padang_padang', 'Padang Padang', 'Indonesia', 'Bali', 'Uluwatu'),
+  _spot('desert', 'Desert Point', 'Indonesia', 'Lombok', 'Sekotong'),
 ];
 final _event = {
   'id': 'sunset',
@@ -244,6 +247,129 @@ void main() {
     );
   });
 
+  test(
+    'popular list uses only existing editorial picks; scoped lists keep every match',
+    () {
+      final catalog = [
+        ..._spots.map(PublicMapSpotPreview.fromJson),
+        PublicMapSpotPreview.fromJson(
+          _spot(
+            'spot_surfers_point',
+            'Surfers Point',
+            'Australia',
+            'Western Australia',
+            'Margaret River',
+          ),
+        ),
+        PublicMapSpotPreview.fromJson(
+          _spot(
+            'spot_siargao',
+            'Cloud 9',
+            'Philippines',
+            'Siargao',
+            'General Luna',
+          ),
+        ),
+      ];
+      expect(guestBrowseSpots(catalog, popularOnly: true).map((s) => s.id), [
+        'spot_padang_padang',
+        'spot_surfers_point',
+        'spot_siargao',
+      ]);
+      final indonesia = catalog
+          .where((s) => guestSpotMatches(s, country: 'Indonesia'))
+          .toList();
+      expect(
+        guestBrowseSpots(indonesia, popularOnly: false).map((s) => s.name),
+        ['Padang Padang', 'Batu Bolong', 'Desert Point', 'Uluwatu Peak'],
+      );
+      final bali = indonesia
+          .where((s) => guestSpotMatches(s, region: 'Bali'))
+          .toList();
+      expect(guestBrowseSpots(bali, popularOnly: false).map((s) => s.name), [
+        'Padang Padang',
+        'Batu Bolong',
+        'Uluwatu Peak',
+      ]);
+      expect(guestBrowseSpots([], popularOnly: true), isEmpty);
+    },
+  );
+
+  for (final width in [390.0, 1440.0]) {
+    testWidgets(
+      'popular spots appear below map and country/region filters update the list at $width',
+      (tester) async {
+        tester.view.physicalSize = Size(width, 1000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final transport = _PublicTransport();
+        await _show(tester, transport, '/explore', _Notifications());
+        await tester.ensureVisible(find.text('Popular spots'));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('guest-list-spot_padang_padang')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const ValueKey('guest-list-batu')), findsNothing);
+        await tester.ensureVisible(find.byType(Switch));
+        await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Indonesia').last);
+        await tester.pumpAndSettle();
+        await tester.tap(find.byType(DropdownButtonFormField<String>).last);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Bali').last);
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('Spots in Bali'));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('guest-list-spot_padang_padang')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const ValueKey('guest-list-bondi')), findsNothing);
+        expect(find.byKey(const ValueKey('guest-list-desert')), findsNothing);
+        expect(transport.requests.toSet(), {'/public/spots', '/public/events'});
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'a beach list card opens the public spot guide without signing in',
+    (tester) async {
+      final transport = _PublicTransport();
+      await _show(tester, transport, '/explore', _Notifications());
+      final card = find.byKey(const ValueKey('guest-list-spot_padang_padang'));
+      await tester.dragFrom(const Offset(4, 300), const Offset(0, -450));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(card);
+      await tester.tap(card);
+      await tester.pumpAndSettle();
+      expect(find.text('About this break'), findsOneWidget);
+      expect(transport.requests.last, '/public/spots/spot_padang_padang');
+      expect(transport.requests.every((p) => p.startsWith('/public/')), isTrue);
+    },
+  );
+
+  testWidgets('short narrow screens can scroll from map to the beach list', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 480);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final transport = _PublicTransport();
+    await _show(tester, transport, '/explore', _Notifications());
+    await tester.dragFrom(const Offset(4, 300), const Offset(0, -450));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('guest-list-spot_padang_padang')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   for (final path in ['/explore', '/explore/map', '/explore/events']) {
     testWidgets('$path enters one map with events switched on', (tester) async {
       final transport = _PublicTransport();
@@ -389,7 +515,9 @@ void main() {
     expect(find.byType(GuestEventMarker), findsNothing);
     expect(find.text('Retry events'), findsOneWidget);
     expect(
-      find.text('No upcoming public events in this area yet.'),
+      find.text(
+        'No upcoming public events yet. Only public events with a date and mapped spot appear here.',
+      ),
       findsNothing,
     );
     transport.failEvents = false;
@@ -406,7 +534,9 @@ void main() {
     expect(find.byType(GuestMapCanvas), findsOneWidget);
     expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
     expect(
-      find.text('No upcoming public events in this area yet.'),
+      find.text(
+        'No upcoming public events yet. Only public events with a date and mapped spot appear here.',
+      ),
       findsOneWidget,
     );
     expect(find.byType(GuestEventMarker), findsNothing);
@@ -438,4 +568,34 @@ void main() {
       expect(transport.requests.every((p) => p.startsWith('/public/')), isTrue);
     },
   );
+
+  testWidgets('scrolling the mouse wheel over the map reaches the beach list', (
+    tester,
+  ) async {
+    final transport = _PublicTransport();
+    await _show(tester, transport, '/explore', _Notifications());
+    final scroll = tester
+        .widget<CustomScrollView>(
+          find.byKey(const ValueKey('guest-explore-scroll')),
+        )
+        .controller!;
+    final map = tester.widget<FlutterMap>(find.byType(FlutterMap));
+    expect(
+      map.options.interactionOptions.flags & InteractiveFlag.scrollWheelZoom,
+      0,
+    );
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: tester.getCenter(find.byType(FlutterMap)),
+        scrollDelta: const Offset(0, 500),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(scroll.offset, greaterThan(0));
+    expect(
+      find.byKey(const ValueKey('guest-list-spot_padang_padang')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
 }

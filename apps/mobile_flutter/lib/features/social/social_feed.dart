@@ -3324,9 +3324,7 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
   @override
   void dispose() {
     _bodyController.removeListener(_syncCurrentDraft);
-    if (!_discardDraftOnDispose) {
-      _syncCurrentDraft();
-    }
+    // Edits already sync the draft; WidgetRef is unavailable during unmount.
     _bodyController.dispose();
     super.dispose();
   }
@@ -3340,6 +3338,7 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
     final selectedSpot = _spotForId(widget.spots, _spotId);
     final canPost =
         !_submitting &&
+        (!isSurfInvite || (_spotId != null && _inviteDate != null)) &&
         (_bodyController.text.trim().isNotEmpty ||
             _media.isNotEmpty ||
             (isSurfInvite && _spotId != null));
@@ -3425,9 +3424,23 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
                   ),
                   if (isSurfInvite) ...[
                     const SizedBox(height: 10),
+                    Text(
+                      _visibility == 'public'
+                          ? 'Public event: anyone can see it on the guest map.'
+                          : 'Followers-only event: hidden from the guest map.',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 8),
                     if (selectedSpot == null) ...[
                       Text(
                         'Choose a spot to show your event on the map.',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (_inviteDate == null) ...[
+                      Text(
+                        'Choose an event date before posting.',
                         style: theme.textTheme.bodySmall,
                       ),
                       const SizedBox(height: 8),
@@ -3533,9 +3546,9 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
   void _setPostType(String nextType) {
     setState(() {
       _postType = nextType;
-      if (nextType == 'surf_plan') {
-        _visibility = 'followers';
-      } else {
+      // Keep the audience the person selected instead of silently making
+      // every new event followers-only (and invisible to guest discovery).
+      if (nextType != 'surf_plan') {
         _inviteEndDate = null;
       }
     });
@@ -3874,6 +3887,14 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
   Future<void> _submitPost() async {
     final body = _bodyController.text.trim();
     final isSurfInvite = _postType == 'surf_plan';
+    if (isSurfInvite && (_spotId == null || _inviteDate == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Choose an event spot and date before posting.'),
+        ),
+      );
+      return;
+    }
     if (body.isEmpty && _media.isEmpty && !(isSurfInvite && _spotId != null)) {
       return;
     }

@@ -82,6 +82,42 @@ bool _mapped(PublicMapSpotPreview spot) =>
     spot.latitude.abs() <= 90 &&
     spot.longitude.abs() <= 180;
 
+// Editorial picks from the existing catalog, not live surf recommendations.
+const guestPopularSpotIds = [
+  'spot_padang_padang',
+  'spot_surfers_point',
+  'spot_siargao',
+  'spot_arugam',
+  'spot_jinzun_harbor',
+  'spot_kata',
+  'spot_cherating',
+  'spot_uluwatu_peak',
+];
+
+List<PublicMapSpotPreview> guestBrowseSpots(
+  List<PublicMapSpotPreview> visible, {
+  required bool popularOnly,
+}) {
+  final byId = {for (final spot in visible) spot.id: spot};
+  if (popularOnly) {
+    return [
+      for (final id in guestPopularSpotIds)
+        if (byId[id] != null) byId[id]!,
+    ];
+  }
+  final ranked = [...visible];
+  int rank(PublicMapSpotPreview spot) {
+    final index = guestPopularSpotIds.indexOf(spot.id);
+    return index < 0 ? guestPopularSpotIds.length : index;
+  }
+
+  ranked.sort((a, b) {
+    final order = rank(a).compareTo(rank(b));
+    return order != 0 ? order : a.name.compareTo(b.name);
+  });
+  return ranked;
+}
+
 class GuestMapEventGroup {
   const GuestMapEventGroup({required this.spot, required this.events});
   final PublicMapSpotPreview spot;
@@ -135,12 +171,14 @@ class GuestExplorePage extends ConsumerStatefulWidget {
 
 class _GuestExplorePageState extends ConsumerState<GuestExplorePage> {
   final _search = TextEditingController();
+  final _scroll = ScrollController();
   String _country = '', _region = '';
   bool _showEvents = true;
 
   @override
   void dispose() {
     _search.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -237,6 +275,14 @@ class _GuestExplorePageState extends ConsumerState<GuestExplorePage> {
       0,
       (count, group) => count + group.events.length,
     );
+    final popularOnly =
+        _country.isEmpty && _region.isEmpty && _search.text.trim().isEmpty;
+    final browseSpots = guestBrowseSpots(visible, popularOnly: popularOnly);
+    final listTitle = popularOnly
+        ? 'Popular spots'
+        : _search.text.trim().isNotEmpty
+        ? 'Matching spots'
+        : 'Spots in ${_region.isNotEmpty ? _region : _country}';
     final controls = Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
       child: Column(
@@ -355,11 +401,13 @@ class _GuestExplorePageState extends ConsumerState<GuestExplorePage> {
               events?.isLoading != true &&
               events?.hasError != true &&
               groups.isEmpty)
-            const Align(
+            Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'No upcoming public events in this area yet.',
-                style: TextStyle(fontSize: 12),
+                _country.isEmpty && _region.isEmpty && _search.text.isEmpty
+                    ? 'No upcoming public events yet. Only public events with a date and mapped spot appear here.'
+                    : 'No upcoming public events match these filters. Try All countries or another region.',
+                style: const TextStyle(fontSize: 12),
               ),
             ),
         ],
@@ -394,27 +442,139 @@ class _GuestExplorePageState extends ConsumerState<GuestExplorePage> {
             style: Theme.of(context).textTheme.bodySmall,
           ),
         );
-        if (size.maxHeight < 520) {
-          return SingleChildScrollView(
-            child: Column(
-              children: [
-                controls,
-                SizedBox(height: 360, child: map),
-                footer,
-              ],
+        final columns = size.maxWidth >= 1100
+            ? 3
+            : size.maxWidth >= 650
+            ? 2
+            : 1;
+        final mapHeight = (size.maxHeight * .56)
+            .clamp(320.0, size.maxWidth >= 900 ? 600.0 : 460.0)
+            .toDouble();
+        return CustomScrollView(
+          key: const ValueKey('guest-explore-scroll'),
+          controller: _scroll,
+          slivers: [
+            SliverToBoxAdapter(child: controls),
+            SliverToBoxAdapter(
+              child: SizedBox(height: mapHeight, child: map),
             ),
-          );
-        }
-        return Column(
-          children: [
-            controls,
-            Expanded(child: map),
-            footer,
+            SliverToBoxAdapter(child: footer),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        listTitle,
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    if (!popularOnly)
+                      Text(
+                        '${browseSpots.length} spots',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            if (browseSpots.isEmpty)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  child: Text(
+                    'No spots match. Try another place or clear your filters.',
+                  ),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                sliver: SliverGrid(
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    mainAxisExtent: 100,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => GuestSpotListCard(
+                      spot: browseSpots[index],
+                      onTap: () =>
+                          context.push('/spot/${browseSpots[index].id}'),
+                    ),
+                    childCount: browseSpots.length,
+                  ),
+                ),
+              ),
+            const SliverToBoxAdapter(child: SizedBox(height: 24)),
           ],
         );
       },
     );
   }
+}
+
+class GuestSpotListCard extends StatelessWidget {
+  const GuestSpotListCard({super.key, required this.spot, required this.onTap});
+  final PublicMapSpotPreview spot;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    margin: EdgeInsets.zero,
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(
+      key: ValueKey('guest-list-${spot.id}'),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE1F4F2),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(Icons.waves, color: Color(0xFF078A91)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    spot.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${spot.area} · ${spot.region} · ${spot.country}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right, color: Color(0xFF078A91)),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class GuestMapCanvas extends StatefulWidget {
@@ -468,6 +628,11 @@ class _GuestMapCanvasState extends State<GuestMapCanvas> {
             initialCameraFit: _fit,
             minZoom: 2,
             maxZoom: 14,
+            // The map shares a scrolling page with beach results. Wheel/trackpad
+            // scrolling should reach those results; use +/- or pinch to zoom.
+            interactionOptions: const InteractionOptions(
+              flags: InteractiveFlag.all & ~InteractiveFlag.scrollWheelZoom,
+            ),
             onMapReady: () {
               if (mounted) setState(() => _ready = true);
             },

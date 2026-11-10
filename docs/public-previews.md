@@ -46,6 +46,19 @@ destination. Past, undated, invalid-location or unknown-spot events are not mapp
 Hiding events leaves surf spots visible. A failed event request keeps the spot
 map usable and offers retry, without falsely claiming there are no events.
 
+The page scrolls past a bounded-height map to a **Popular spots** list of
+editorial picks already present in the catalog (not live condition rankings).
+Selecting a country/region or searching replaces those picks with all matching
+spots, with featured spots first and the rest alphabetically. Cards open public
+spot guides. Filtering and list browsing add no forecast, photo or private API
+requests. The empty event message distinguishes the unfiltered public catalog
+from a country/region/search with no matching events.
+
+Creating an event preserves the currently selected Public/Followers audience;
+switching post type no longer silently selects Followers. The composer explains
+that only Public events appear in guest discovery and requires a spot/date
+before event submission. Existing posts and their visibility are unchanged.
+
 No guest account is created. The guest shell does not mount the social/video
 feed, live forecasts, favorites, alerts, attendee lists, or chats. Public spot
 catalogs use a one-hour HTTP cache; event catalogs are `no-store` so privacy
