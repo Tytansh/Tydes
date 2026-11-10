@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_flutter/app/app.dart';
 import 'package:mobile_flutter/app/router.dart';
@@ -30,8 +31,12 @@ Map<String, dynamic> _spot(
   'summary': 'Public spot guide for $name.',
   'difficulty': 'intermediate',
   'best_months': ['May'],
-  'latitude': -8.5,
-  'longitude': 115.1,
+  'latitude': country == 'Australia'
+      ? -33.9
+      : id == 'batu'
+      ? -8.65
+      : -8.82,
+  'longitude': country == 'Australia' ? 151.2 : 115.13,
 };
 final _spots = [
   _spot('batu', 'Batu Bolong', 'Indonesia', 'Bali', 'Canggu'),
@@ -41,7 +46,10 @@ final _spots = [
 final _event = {
   'id': 'sunset',
   'body': 'Sunset surf together',
-  'meetup_date': '2026-11-20',
+  'meetup_date': DateTime.now()
+      .add(const Duration(days: 2))
+      .toIso8601String()
+      .substring(0, 10),
   'meetup_end_date': null,
   'ended': false,
   'host': {'name': 'Maya Surfer', 'handle': 'maya', 'avatar_url': null},
@@ -51,6 +59,12 @@ final _event = {
 class _NoSession extends DemoPersistence {
   @override
   Future<String?> loadAccessToken() async => null;
+}
+
+class _MemoryTiles extends TileProvider {
+  @override
+  ImageProvider getImage(TileCoordinates coordinates, TileLayer options) =>
+      MemoryImage(TileProvider.transparentImage);
 }
 
 class _Notifications extends NotificationService {
@@ -122,6 +136,7 @@ Future<ProviderContainer> _show(
           SurfRepository(dio, _NoSession()),
         ),
         notificationServiceProvider.overrideWithValue(notifications),
+        guestTileProviderFactory.overrideWithValue(_MemoryTiles.new),
         if (signedIn)
           meProvider.overrideWith(
             (_) async => DemoSeed.me.copyWith(
@@ -147,170 +162,280 @@ Future<ProviderContainer> _show(
 }
 
 void main() {
-  testWidgets(
-    'guest browsing pauses notifications even with an existing account',
-    (tester) async {
-      final transport = _PublicTransport();
-      final notifications = _Notifications();
-      await _show(tester, transport, '/explore', notifications, true);
-      expect(notifications.initializations, 0);
-      expect(transport.requests, ['/public/spots']);
-    },
-  );
   test(
-    'guest filters cover countries, regions, areas and public event hosts',
+    'event grouping excludes ended, undated, unknown and invalid locations',
     () {
-      final spot = PublicMapSpotPreview.fromJson(_spots.first);
-      expect(
-        guestSpotMatches(
-          spot,
-          country: 'Indonesia',
-          region: 'Bali',
-          query: 'canggu',
-        ),
-        isTrue,
+      final now = DateTime.now();
+      final today = DateUtils.dateOnly(now).toIso8601String().substring(0, 10);
+      final yesterday = now
+          .subtract(const Duration(days: 1))
+          .toIso8601String()
+          .substring(0, 10);
+      final groups = buildGuestEventGroups(
+        spots: _spots.map(PublicMapSpotPreview.fromJson).toList(),
+        now: now,
+        events: [
+          PublicEventPreview.fromJson(_event),
+          PublicEventPreview.fromJson({
+            ..._event,
+            'id': 'ongoing',
+            'meetup_date': yesterday,
+            'meetup_end_date': today,
+          }),
+          PublicEventPreview.fromJson({
+            ..._event,
+            'id': 'ended',
+            'ended': true,
+          }),
+          PublicEventPreview.fromJson({
+            ..._event,
+            'id': 'expired',
+            'meetup_date': yesterday,
+          }),
+          PublicEventPreview.fromJson({
+            ..._event,
+            'id': 'undated',
+            'meetup_date': null,
+          }),
+          PublicEventPreview.fromJson({
+            ..._event,
+            'id': 'unknown',
+            'spot': _spot('missing', 'Unknown', 'Indonesia', 'Bali', 'Canggu'),
+          }),
+        ],
       );
-      expect(guestSpotMatches(spot, country: 'Australia'), isFalse);
-      final event = PublicEventPreview.fromJson(_event);
+      expect(groups, hasLength(1));
+      expect(groups.single.events.map((e) => e.id), ['ongoing', 'sunset']);
       expect(
-        guestEventMatches(
-          event,
-          country: 'Indonesia',
-          region: 'Bali',
-          query: 'maya',
+        buildGuestEventGroups(
+          spots: [],
+          events: [PublicEventPreview.fromJson(_event)],
+          now: now,
         ),
-        isTrue,
+        isEmpty,
       );
-      expect(guestEventMatches(event, region: 'Lombok'), isFalse);
       expect(
-        guestEventMatches(
-          PublicEventPreview.fromJson({..._event, 'ended': true}),
+        buildGuestEventGroups(
+          spots: _spots.map(PublicMapSpotPreview.fromJson).toList(),
+          events: [PublicEventPreview.fromJson(_event)],
+          now: now,
+          country: 'Australia',
         ),
-        isFalse,
+        isEmpty,
       );
     },
   );
 
+  test('public map search matches place, region and event host', () {
+    final spot = PublicMapSpotPreview.fromJson(_spots.first);
+    expect(
+      guestSpotMatches(
+        spot,
+        country: 'Indonesia',
+        region: 'Bali',
+        query: 'canggu',
+      ),
+      isTrue,
+    );
+    expect(guestSpotMatches(spot, country: 'Australia'), isFalse);
+    expect(
+      guestEventMatches(PublicEventPreview.fromJson(_event), query: 'maya'),
+      isTrue,
+    );
+  });
+
+  for (final path in ['/explore', '/explore/map', '/explore/events']) {
+    testWidgets('$path enters one map with events switched on', (tester) async {
+      final transport = _PublicTransport();
+      final notifications = _Notifications();
+      final container = await _show(tester, transport, path, notifications);
+      expect(
+        container
+            .read(appRouterProvider)
+            .routeInformationProvider
+            .value
+            .uri
+            .path,
+        '/explore',
+      );
+      expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+      expect(find.byType(GuestMapCanvas), findsOneWidget);
+      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.byKey(const ValueKey('guest-event-batu')), findsOneWidget);
+      expect(transport.requests.toSet(), {'/public/spots', '/public/events'});
+      expect(notifications.initializations, 0);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   for (final width in [390.0, 1440.0]) {
     testWidgets(
-      'guest spots load only public API and no notifications at $width',
+      'events can toggle without losing spots or fetching private data at $width',
       (tester) async {
-        tester.view.physicalSize = Size(width, 1050);
+        tester.view.physicalSize = Size(width, 1000);
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
         final transport = _PublicTransport();
-        final notifications = _Notifications();
-        await _show(tester, transport, '/explore', notifications);
-        expect(find.text('Batu Bolong'), findsOneWidget);
-        expect(find.text('Bondi'), findsOneWidget);
-        expect(transport.requests, ['/public/spots']);
-        expect(notifications.initializations, 0);
-        expect(find.text('Feed'), findsNothing);
-        expect(find.text('Alerts'), findsNothing);
-        expect(tester.takeException(), isNull);
-        await tester.enterText(find.byType(TextField), 'Canggu');
+        await _show(tester, transport, '/explore', _Notifications());
+        expect(find.byType(GuestEventMarker), findsOneWidget);
+        final requests = transport.requests.length;
+        await tester.tap(find.byType(Switch));
         await tester.pumpAndSettle();
-        expect(find.text('Batu Bolong'), findsOneWidget);
-        expect(find.text('Bondi'), findsNothing);
-        expect(transport.requests, ['/public/spots']);
+        expect(find.byType(GuestEventMarker), findsNothing);
+        expect(find.byKey(const ValueKey('guest-spot-batu')), findsOneWidget);
+        await tester.tap(find.byType(Switch));
+        await tester.pumpAndSettle();
+        expect(find.byType(GuestEventMarker), findsOneWidget);
+        expect(transport.requests.length, requests);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'event marker opens public popup and join requires sign-in at $width',
+      (tester) async {
+        tester.view.physicalSize = Size(width, 1000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final transport = _PublicTransport();
+        final container = await _show(
+          tester,
+          transport,
+          '/explore',
+          _Notifications(),
+        );
+        await tester.tap(find.byKey(const ValueKey('guest-event-batu')));
+        await tester.pumpAndSettle();
+        expect(find.byType(GuestEventPopup), findsOneWidget);
+        expect(find.text('Maya Surfer'), findsOneWidget);
+        expect(find.text('Sunset surf together'), findsOneWidget);
+        expect(find.text('View event'), findsOneWidget);
+        expect(transport.requests.toSet(), {'/public/spots', '/public/events'});
+        await tester.ensureVisible(find.text('Sign in to join'));
+        await tester.tap(find.text('Sign in to join'));
+        await tester.pumpAndSettle();
+        expect(
+          container
+              .read(appRouterProvider)
+              .routeInformationProvider
+              .value
+              .uri
+              .queryParameters['next'],
+          '/post/sunset',
+        );
+        expect(
+          transport.requests.every((p) => p.startsWith('/public/')),
+          isTrue,
+        );
+        expect(tester.takeException(), isNull);
       },
     );
   }
 
-  testWidgets('guest can open a spot then sign in without losing its link', (
+  testWidgets('view event opens its public detail page without signing in', (
     tester,
   ) async {
     final transport = _PublicTransport();
-    final container = await _show(
-      tester,
-      transport,
-      '/explore',
-      _Notifications(),
-    );
-    await tester.tap(find.text('Batu Bolong'));
+    await _show(tester, transport, '/explore', _Notifications());
+    await tester.tap(find.byKey(const ValueKey('guest-event-batu')));
     await tester.pumpAndSettle();
-    expect(find.text('About this break'), findsOneWidget);
-    expect(transport.requests, ['/public/spots', '/public/spots/batu']);
-    await tester.ensureVisible(find.text('Sign in to explore this spot'));
-    await tester.tap(find.text('Sign in to explore this spot'));
-    await tester.pumpAndSettle();
-    expect(
-      container
-          .read(appRouterProvider)
-          .routeInformationProvider
-          .value
-          .uri
-          .queryParameters['next'],
-      '/spot/batu',
-    );
-    await tester.ensureVisible(find.text('Explore as guest'));
-    await tester.tap(find.text('Explore as guest'));
-    await tester.pumpAndSettle();
-    expect(find.text('About this break'), findsOneWidget);
-    expect(transport.requests.every((p) => p.startsWith('/public/')), isTrue);
-  });
-
-  testWidgets('guest sees events and opens a preview, not attendees or chat', (
-    tester,
-  ) async {
-    final transport = _PublicTransport();
-    await _show(tester, transport, '/explore/events', _Notifications());
-    expect(find.text('Sunset surf together'), findsOneWidget);
-    expect(transport.requests.toSet(), {'/public/spots', '/public/events'});
-    await tester.ensureVisible(find.text('Sunset surf together'));
-    await tester.tap(find.text('Sunset surf together'));
+    await tester.tap(find.text('View event'));
     await tester.pumpAndSettle();
     expect(find.text('Hosted by Maya Surfer'), findsOneWidget);
-    expect(find.text('Join now'), findsNothing);
     expect(transport.requests.last, '/public/events/sunset');
   });
 
-  testWidgets('empty guest event list has no fabricated events', (
+  testWidgets('spot guide still opens from map with events hidden', (
     tester,
   ) async {
-    final transport = _PublicTransport()..emptyEvents = true;
-    await _show(tester, transport, '/explore/events', _Notifications());
-    expect(
-      find.text(
-        'No upcoming public events here yet. Try another place or check back soon.',
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('Sunset surf together'), findsNothing);
+    final transport = _PublicTransport();
+    await _show(tester, transport, '/explore', _Notifications());
+    await tester.tap(find.byType(Switch));
+    await tester.enterText(find.byType(TextField), 'Canggu');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('guest-spot-batu')));
+    await tester.pumpAndSettle();
+    expect(find.text('About this break'), findsOneWidget);
+    expect(transport.requests.last, '/public/spots/batu');
   });
 
-  testWidgets('failed event read offers retry instead of fake success', (
+  testWidgets('host search filters the map without additional API requests', (
+    tester,
+  ) async {
+    final transport = _PublicTransport();
+    await _show(tester, transport, '/explore', _Notifications());
+    await tester.enterText(find.byType(TextField), 'maya');
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<GuestMapCanvas>(find.byType(GuestMapCanvas))
+          .spots
+          .single
+          .name,
+      'Batu Bolong',
+    );
+    expect(find.byType(GuestEventMarker), findsOneWidget);
+    expect(transport.requests.toSet(), {'/public/spots', '/public/events'});
+  });
+
+  testWidgets('failed event read keeps spot map usable and retry is honest', (
     tester,
   ) async {
     final transport = _PublicTransport()..failEvents = true;
-    await _show(tester, transport, '/explore/events', _Notifications());
-    expect(find.text('Retry'), findsOneWidget);
+    await _show(tester, transport, '/explore', _Notifications());
+    expect(find.byType(GuestMapCanvas), findsOneWidget);
+    expect(find.byType(GuestEventMarker), findsNothing);
+    expect(find.text('Retry events'), findsOneWidget);
     expect(
-      find.text(
-        'No upcoming public events here yet. Try another place or check back soon.',
-      ),
+      find.text('No upcoming public events in this area yet.'),
       findsNothing,
     );
     transport.failEvents = false;
-    await tester.ensureVisible(find.text('Retry'));
-    await tester.tap(find.text('Retry'));
+    await tester.tap(find.text('Retry events'));
     await tester.pumpAndSettle();
-    expect(find.text('Sunset surf together'), findsOneWidget);
+    expect(find.byType(GuestEventMarker), findsOneWidget);
+  });
+
+  testWidgets('no public events keeps map, switch and real empty state', (
+    tester,
+  ) async {
+    final transport = _PublicTransport()..emptyEvents = true;
+    await _show(tester, transport, '/explore', _Notifications());
+    expect(find.byType(GuestMapCanvas), findsOneWidget);
+    expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+    expect(
+      find.text('No upcoming public events in this area yet.'),
+      findsOneWidget,
+    );
+    expect(find.byType(GuestEventMarker), findsNothing);
+  });
+
+  testWidgets('empty catalog has no fabricated spots', (tester) async {
+    await _show(
+      tester,
+      _PublicTransport()..emptySpots = true,
+      '/explore',
+      _Notifications(),
+    );
+    expect(find.byType(GuestMapCanvas), findsNothing);
+    expect(
+      find.text(
+        'No mapped spots match. Try another place or clear your filters.',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets(
-    'direct guest map link does not require login or request private data',
+    'guest account never starts notifications even when already signed in',
     (tester) async {
-      final transport = _PublicTransport()..emptySpots = true;
       final notifications = _Notifications();
-      await _show(tester, transport, '/explore/map', notifications);
-      expect(
-        find.text('No spots match. Try another place or clear your filters.'),
-        findsOneWidget,
-      );
+      final transport = _PublicTransport();
+      await _show(tester, transport, '/explore', notifications, true);
       expect(notifications.initializations, 0);
-      expect(transport.requests, ['/public/spots']);
+      expect(transport.requests.every((p) => p.startsWith('/public/')), isTrue);
     },
   );
 }

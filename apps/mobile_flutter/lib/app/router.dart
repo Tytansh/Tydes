@@ -36,18 +36,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           returnTo: safeAuthReturnPath(state.uri.queryParameters['next']),
         ),
       ),
-      GoRoute(
-        path: '/explore',
-        builder: (_, _) => const GuestExplorePage(section: GuestSection.spots),
-      ),
-      GoRoute(
-        path: '/explore/map',
-        builder: (_, _) => const GuestExplorePage(section: GuestSection.map),
-      ),
-      GoRoute(
-        path: '/explore/events',
-        builder: (_, _) => const GuestExplorePage(section: GuestSection.events),
-      ),
+      GoRoute(path: '/explore', builder: (_, _) => const GuestExplorePage()),
+      GoRoute(path: '/explore/map', redirect: (_, _) => '/explore'),
+      GoRoute(path: '/explore/events', redirect: (_, _) => '/explore'),
       GoRoute(
         path: '/spot/:spotId',
         builder: (_, state) =>

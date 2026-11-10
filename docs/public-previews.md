@@ -30,24 +30,33 @@ this change.
 
 ## Guest explorer
 
-`/explore`, `/explore/map`, and `/explore/events` form a separate read-only guest
-shell, available from **Explore as guest** on the sign-in/sign-up card. It uses
+`/explore` is a single read-only guest map, available from **Explore as guest**
+on the sign-in/sign-up card. The old `/explore/map` and `/explore/events` links
+redirect to it. **Show events** starts on for each new entry. It uses
 only the whitelisted public catalogs: static spots with map coordinates and up
 to 100 upcoming public events, sorted by start date. Country, region and search
 filters run locally. Spot guides and event details retain their existing share
 routes and sign-in return destinations. Signing in from the guest explorer opens
-the corresponding normal Spots/Travel account tab.
+the normal Spots account tab.
+
+Upcoming, dated events with a valid mapped spot appear as host-avatar markers.
+Events at one spot share a marker/count and a public popup. View event opens the
+public detail page; Sign in to join preserves that event as the login return
+destination. Past, undated, invalid-location or unknown-spot events are not mapped.
+Hiding events leaves surf spots visible. A failed event request keeps the spot
+map usable and offers retry, without falsely claiming there are no events.
 
 No guest account is created. The guest shell does not mount the social/video
 feed, live forecasts, favorites, alerts, attendee lists, or chats. Public spot
 catalogs use a one-hour HTTP cache; event catalogs are `no-store` so privacy
 changes are re-evaluated on each fetch. Short in-app provider retention avoids
-re-fetching when switching guest tabs; refresh buttons explicitly reload.
+re-fetching when toggling the event overlay; refresh explicitly reloads.
 The same configured tile provider and attribution are reused, without adding a
 new paid map service. Alert monitoring and notification initialization require
 a completed signed-in profile and pause while browsing the guest shell.
 
 Verification: API privacy/limiter tests in `test_public_previews.py`; Flutter
 guest, responsive layout, copy-link and authentication return tests in
-`public_preview_test.dart`. Tests use isolated data and do not create live events
+`public_preview_test.dart`; map grouping, switch, popup and guest privacy checks
+are in `guest_explore_test.dart` with in-memory map tiles. Tests use isolated data and do not create live events
 or alter customer accounts.
