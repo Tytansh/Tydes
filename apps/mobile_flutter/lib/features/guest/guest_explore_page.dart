@@ -178,18 +178,24 @@ class _GuestExplorePageState extends ConsumerState<GuestExplorePage> {
                           for (final section in GuestSection.values)
                             Padding(
                               padding: const EdgeInsets.only(bottom: 8),
-                              child: ListTile(
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
+                              child: Material(
+                                color: widget.section == section
+                                    ? const Color(0xFFBFE9E5)
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(16),
+                                child: ListTile(
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  selected: widget.section == section,
+                                  selectedTileColor: const Color(0xFFBFE9E5),
+                                  selectedColor: const Color(0xFF103E43),
+                                  textColor: Colors.white,
+                                  iconColor: Colors.white70,
+                                  leading: Icon(section.icon),
+                                  title: Text(section.label),
+                                  onTap: () => context.go(section.path),
                                 ),
-                                selected: widget.section == section,
-                                selectedTileColor: const Color(0xFFBFE9E5),
-                                selectedColor: const Color(0xFF103E43),
-                                textColor: Colors.white,
-                                iconColor: Colors.white70,
-                                leading: Icon(section.icon),
-                                title: Text(section.label),
-                                onTap: () => context.go(section.path),
                               ),
                             ),
                           const Spacer(),
@@ -619,14 +625,12 @@ class _GuestMapState extends State<_GuestMap> {
               initialZoom: 4,
               minZoom: 2,
               maxZoom: 13,
-              onMapReady: () => _controller.fitCamera(
-                CameraFit.bounds(
-                  bounds: LatLngBounds.fromPoints(
-                    points.map((s) => LatLng(s.latitude, s.longitude)).toList(),
-                  ),
-                  padding: const EdgeInsets.all(40),
-                  maxZoom: 10,
+              initialCameraFit: CameraFit.bounds(
+                bounds: LatLngBounds.fromPoints(
+                  points.map((s) => LatLng(s.latitude, s.longitude)).toList(),
                 ),
+                padding: const EdgeInsets.all(40),
+                maxZoom: 10,
               ),
             ),
             children: [
