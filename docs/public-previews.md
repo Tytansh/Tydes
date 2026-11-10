@@ -38,6 +38,11 @@ filters run locally. Spot guides and event details retain their existing share
 routes and sign-in return destinations. Signing in from the guest explorer opens
 the corresponding normal Spots/Travel account tab.
 
+Feed and Profile are visible in desktop and phone guest navigation but open the
+sign-in/sign-up screen instead of mounting private screens. An allowlisted
+account destination returns successful sign-in/profile completion to the chosen
+Feed or Profile tab; Explore as guest returns to the prior guest section.
+
 No guest account is created. The guest shell does not mount the social/video
 feed, live forecasts, favorites, alerts, attendee lists, or chats. Public spot
 catalogs use a one-hour HTTP cache; event catalogs are `no-store` so privacy

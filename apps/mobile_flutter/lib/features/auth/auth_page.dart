@@ -21,10 +21,16 @@ final authStateProvider = FutureProvider.autoDispose((ref) async {
 enum _AuthMode { signIn, signUp }
 
 class AuthPage extends ConsumerStatefulWidget {
-  const AuthPage({super.key, this.initialProfile, this.returnTo = '/'});
+  const AuthPage({
+    super.key,
+    this.initialProfile,
+    this.returnTo = '/',
+    this.accountDestination,
+  });
 
   final UserProfile? initialProfile;
   final String returnTo;
+  final AccountDestination? accountDestination;
 
   @override
   ConsumerState<AuthPage> createState() => _AuthPageState();
@@ -116,10 +122,12 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     }
     final destination = safeAuthReturnPath(widget.returnTo);
     final fromGuest = destination.startsWith('/explore');
-    ref.read(currentTabProvider.notifier).state = fromGuest
-        ? (destination == '/explore/events' ? 2 : 1)
-        : 0;
-    context.go(fromGuest ? '/' : destination);
+    ref.read(currentTabProvider.notifier).state =
+        widget.accountDestination?.tabIndex ??
+        (fromGuest ? (destination == '/explore/events' ? 2 : 1) : 0);
+    context.go(
+      fromGuest || widget.accountDestination != null ? '/' : destination,
+    );
   }
 
   Future<void> _useAnotherAccount() async {

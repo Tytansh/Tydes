@@ -15,9 +15,25 @@ String safeAuthReturnPath(String? value) {
   return '/';
 }
 
-String loginForPath(String path) => Uri(
+enum AccountDestination {
+  feed(0),
+  profile(4);
+
+  const AccountDestination(this.tabIndex);
+  final int tabIndex;
+  static AccountDestination? parse(String? value) => switch (value) {
+    'feed' => feed,
+    'profile' => profile,
+    _ => null,
+  };
+}
+
+String loginForPath(String path, {AccountDestination? destination}) => Uri(
   path: '/login',
-  queryParameters: {'next': safeAuthReturnPath(path)},
+  queryParameters: {
+    'next': safeAuthReturnPath(path),
+    if (destination != null) 'destination': destination.name,
+  },
 ).toString();
 
 String publicSpotLink(String id) =>
