@@ -34,9 +34,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               ? state.extra as UserProfile
               : null,
           returnTo: safeAuthReturnPath(state.uri.queryParameters['next']),
-          accountDestination: AccountDestination.parse(
-            state.uri.queryParameters['destination'],
-          ),
         ),
       ),
       GoRoute(

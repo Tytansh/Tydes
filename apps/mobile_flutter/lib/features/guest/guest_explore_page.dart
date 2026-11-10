@@ -41,25 +41,6 @@ enum GuestSection {
   final IconData icon;
 }
 
-enum _GuestNavigationItem {
-  feed('Feed', Icons.home_outlined, account: AccountDestination.feed),
-  spots('Spots', Icons.waves_outlined, section: GuestSection.spots),
-  map('Map', Icons.map_outlined, section: GuestSection.map),
-  events('Events', Icons.event_outlined, section: GuestSection.events),
-  profile('Profile', Icons.person_outline, account: AccountDestination.profile);
-
-  const _GuestNavigationItem(
-    this.label,
-    this.icon, {
-    this.section,
-    this.account,
-  });
-  final String label;
-  final IconData icon;
-  final GuestSection? section;
-  final AccountDestination? account;
-}
-
 bool guestSpotMatches(
   PublicSpotPreview spot, {
   String country = '',
@@ -119,14 +100,6 @@ class _GuestExplorePageState extends ConsumerState<GuestExplorePage> {
   }
 
   void _signIn() => context.go(loginForPath(widget.section.path));
-
-  void _openNavigation(_GuestNavigationItem item) {
-    if (item.section != null) {
-      context.go(item.section!.path);
-    } else {
-      context.go(loginForPath(widget.section.path, destination: item.account));
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -202,11 +175,11 @@ class _GuestExplorePageState extends ConsumerState<GuestExplorePage> {
                             ),
                           ),
                           const SizedBox(height: 28),
-                          for (final item in _GuestNavigationItem.values)
+                          for (final section in GuestSection.values)
                             Padding(
                               padding: const EdgeInsets.only(bottom: 8),
                               child: Material(
-                                color: widget.section == item.section
+                                color: widget.section == section
                                     ? const Color(0xFFBFE9E5)
                                     : Colors.transparent,
                                 borderRadius: BorderRadius.circular(16),
@@ -214,21 +187,14 @@ class _GuestExplorePageState extends ConsumerState<GuestExplorePage> {
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(16),
                                   ),
-                                  selected: widget.section == item.section,
+                                  selected: widget.section == section,
                                   selectedTileColor: const Color(0xFFBFE9E5),
                                   selectedColor: const Color(0xFF103E43),
                                   textColor: Colors.white,
                                   iconColor: Colors.white70,
-                                  leading: Icon(item.icon),
-                                  title: Text(item.label),
-                                  trailing: item.account == null
-                                      ? null
-                                      : const Icon(
-                                          Icons.lock_outline,
-                                          size: 14,
-                                          color: Colors.white70,
-                                        ),
-                                  onTap: () => _openNavigation(item),
+                                  leading: Icon(section.icon),
+                                  title: Text(section.label),
+                                  onTap: () => context.go(section.path),
                                 ),
                               ),
                             ),
@@ -254,16 +220,14 @@ class _GuestExplorePageState extends ConsumerState<GuestExplorePage> {
       bottomNavigationBar: desktop
           ? null
           : NavigationBar(
-              selectedIndex: _GuestNavigationItem.values.indexWhere(
-                (item) => item.section == widget.section,
-              ),
+              selectedIndex: widget.section.index,
               onDestinationSelected: (index) =>
-                  _openNavigation(_GuestNavigationItem.values[index]),
+                  context.go(GuestSection.values[index].path),
               destinations: [
-                for (final item in _GuestNavigationItem.values)
+                for (final section in GuestSection.values)
                   NavigationDestination(
-                    icon: Icon(item.icon),
-                    label: item.label,
+                    icon: Icon(section.icon),
+                    label: section.label,
                   ),
               ],
             ),

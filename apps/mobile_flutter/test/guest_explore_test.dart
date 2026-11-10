@@ -14,7 +14,6 @@ import 'package:mobile_flutter/core/network/surf_repository.dart';
 import 'package:mobile_flutter/core/notifications/notification_service.dart';
 import 'package:mobile_flutter/features/guest/guest_explore_page.dart';
 import 'package:mobile_flutter/features/home/home_page.dart';
-import 'package:mobile_flutter/features/auth/auth_page.dart';
 
 Map<String, dynamic> _spot(
   String id,
@@ -193,58 +192,6 @@ void main() {
   );
 
   for (final width in [390.0, 1440.0]) {
-    for (final label in ['Feed', 'Profile']) {
-      testWidgets(
-        '$label prompts account access without private reads at $width',
-        (tester) async {
-          tester.view.physicalSize = Size(width, 1050);
-          tester.view.devicePixelRatio = 1;
-          addTearDown(tester.view.resetPhysicalSize);
-          addTearDown(tester.view.resetDevicePixelRatio);
-          final transport = _PublicTransport();
-          final container = await _show(
-            tester,
-            transport,
-            '/explore/events',
-            _Notifications(),
-          );
-          await tester.tap(find.text(label));
-          await tester.pumpAndSettle();
-          final uri = container
-              .read(appRouterProvider)
-              .routeInformationProvider
-              .value
-              .uri;
-          expect(uri.path, '/login');
-          expect(uri.queryParameters['destination'], label.toLowerCase());
-          expect(uri.queryParameters['next'], '/explore/events');
-          expect(find.byType(AuthPage), findsOneWidget);
-          await tester.tap(find.text('Sign up'));
-          await tester.pumpAndSettle();
-          expect(
-            find.widgetWithText(FilledButton, 'Create account'),
-            findsOneWidget,
-          );
-          await tester.ensureVisible(find.text('Explore as guest'));
-          await tester.tap(find.text('Explore as guest'));
-          await tester.pumpAndSettle();
-          expect(
-            container
-                .read(appRouterProvider)
-                .routeInformationProvider
-                .value
-                .uri
-                .path,
-            '/explore/events',
-          );
-          expect(
-            transport.requests.every((path) => path.startsWith('/public/')),
-            isTrue,
-          );
-          expect(tester.takeException(), isNull);
-        },
-      );
-    }
     testWidgets(
       'guest spots load only public API and no notifications at $width',
       (tester) async {
@@ -259,8 +206,7 @@ void main() {
         expect(find.text('Bondi'), findsOneWidget);
         expect(transport.requests, ['/public/spots']);
         expect(notifications.initializations, 0);
-        expect(find.text('Feed'), findsOneWidget);
-        expect(find.text('Profile'), findsOneWidget);
+        expect(find.text('Feed'), findsNothing);
         expect(find.text('Alerts'), findsNothing);
         expect(tester.takeException(), isNull);
         await tester.enterText(find.byType(TextField), 'Canggu');
