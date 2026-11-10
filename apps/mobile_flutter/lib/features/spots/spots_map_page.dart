@@ -295,26 +295,45 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                         });
                       },
                     ),
-                    if (_hasMapDrilldown) ...[
+                    if (_hasMapDrilldown ||
+                        _savedOnly ||
+                        _searchQuery.isNotEmpty) ...[
                       const SizedBox(height: 10),
                       Align(
                         alignment: Alignment.centerLeft,
-                        child: OutlinedButton.icon(
-                          onPressed: () => _stepBackOnMap(
-                            sourceItems,
-                            profileForecastBySpotId,
-                          ),
-                          icon: const Icon(Icons.arrow_back_rounded, size: 18),
-                          label: Text(_mapBackLabel),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Theme.of(
-                              context,
-                            ).colorScheme.primary,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 10,
+                        child: Wrap(
+                          spacing: 10,
+                          runSpacing: 8,
+                          children: [
+                            OutlinedButton.icon(
+                              key: const ValueKey('main-map-full-view'),
+                              onPressed: () => _backToFullMap(items),
+                              icon: const Icon(Icons.public, size: 18),
+                              label: const Text('Back to full map'),
                             ),
-                          ),
+                            if (_hasMapDrilldown &&
+                                _mapBackLabel != 'Back to full map')
+                              OutlinedButton.icon(
+                                onPressed: () => _stepBackOnMap(
+                                  sourceItems,
+                                  profileForecastBySpotId,
+                                ),
+                                icon: const Icon(
+                                  Icons.arrow_back_rounded,
+                                  size: 18,
+                                ),
+                                label: Text(_mapBackLabel),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.primary,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 10,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ],
@@ -355,7 +374,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
                   child: Text(
-                    'Tap a pin to explore a break or a host photo to see events. Pinch or use +/− to zoom; drag to pan.',
+                    'Tap a pin to explore a break or a host photo to see events. Scroll or pinch to zoom; drag to pan.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
@@ -519,6 +538,20 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
       _selectedCountry = spot.country;
       _selectedRegion = spot.region;
       _selectedArea = _locationAreaForSpot(spot);
+    });
+  }
+
+  void _backToFullMap(List<SpotModel> spots) {
+    setState(() {
+      _selectedCountry = _allCountriesLabel;
+      _selectedRegion = _allRegionsLabel;
+      _selectedArea = _allAreasLabel;
+      _selectedSpotId = null;
+      _savedOnly = false;
+      _searchController.clear();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _showSpots(spots);
     });
   }
 
@@ -1106,7 +1139,6 @@ class _MapCanvas extends StatefulWidget {
 
 class _MapCanvasState extends State<_MapCanvas> {
   late final TileProvider _tiles = widget.tileProviderFactory();
-  bool _ready = false;
 
   CameraFit get _fit => CameraFit.bounds(
     bounds: LatLngBounds.fromPoints(
@@ -1116,11 +1148,6 @@ class _MapCanvasState extends State<_MapCanvas> {
     ),
     padding: const EdgeInsets.all(48),
     maxZoom: 11,
-  );
-
-  void _zoom(int step) => widget.mapController.move(
-    widget.mapController.camera.center,
-    (widget.mapController.camera.zoom + step).clamp(2, 14).toDouble(),
   );
 
   @override
@@ -1136,12 +1163,9 @@ class _MapCanvasState extends State<_MapCanvas> {
             minZoom: 2,
             maxZoom: 14,
             interactionOptions: const InteractionOptions(
-              flags: InteractiveFlag.all & ~InteractiveFlag.scrollWheelZoom,
+              flags: InteractiveFlag.all,
             ),
             onPositionChanged: widget.onPositionChanged,
-            onMapReady: () {
-              if (mounted) setState(() => _ready = true);
-            },
           ),
           children: [
             TileLayer(
@@ -1190,34 +1214,6 @@ class _MapCanvasState extends State<_MapCanvas> {
             ),
             const _MapAttributionPill(),
           ],
-        ),
-        Positioned(
-          top: 10,
-          right: 10,
-          child: Card(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  tooltip: 'Zoom in',
-                  onPressed: _ready ? () => _zoom(1) : null,
-                  icon: const Icon(Icons.add),
-                ),
-                IconButton(
-                  tooltip: 'Zoom out',
-                  onPressed: _ready ? () => _zoom(-1) : null,
-                  icon: const Icon(Icons.remove),
-                ),
-                IconButton(
-                  tooltip: 'Fit map',
-                  onPressed: _ready
-                      ? () => widget.mapController.fitCamera(_fit)
-                      : null,
-                  icon: const Icon(Icons.fit_screen),
-                ),
-              ],
-            ),
-          ),
         ),
       ],
     );

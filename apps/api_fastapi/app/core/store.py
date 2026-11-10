@@ -1556,7 +1556,7 @@ class DemoStore:
                             )
                         ),
                         "rsvp_count": len(
-                            self.rsvp_user_ids_by_post.get(post.id, set())
+                            self.rsvp_user_ids_by_post.get(post.id, set()) - {post.user_id}
                         ),
                     }
                 )
@@ -1608,7 +1608,23 @@ class DemoStore:
             and post.user_id not in blocked
             and (post.visibility == "public" or post.user_id == self.user.id or post.user_id in followed)
         ]
-        return sorted(events, key=lambda post: post.meetup_date)[:limit]
+        return [
+            post.model_copy(update={"rsvp_count": len(
+                self.rsvp_user_ids_by_post.get(post.id, set()) - {post.user_id}
+            )})
+            for post in sorted(events, key=lambda post: post.meetup_date)[:limit]
+        ]
+
+    def list_event_chat_posts(self, *, limit: int = 200) -> list[SocialPost]:
+        if self.postgres_social is not None:
+            return self.postgres_social.list_event_chat_posts(self.user.id, limit)
+        posts = [
+            post for post in self.list_posts(self.user.id, limit=len(self.posts))
+            if post.post_type in {"surf_plan", "looking_for_buddy"}
+            and (post.user_id == self.user.id
+                 or self.user.id in self.rsvp_user_ids_by_post.get(post.id, set()))
+        ]
+        return posts[:limit]
 
     def count_user_posts_since(self, user_id: str, since: datetime) -> int:
         if self.postgres_social is not None:
@@ -1624,6 +1640,10 @@ class DemoStore:
             self.postgres_social.save_post(post)
             return post
         self.posts.append(post)
+        if post.post_type in {"surf_plan", "looking_for_buddy"}:
+            self.rsvp_user_ids_by_post.setdefault(post.id, set()).add(post.user_id)
+            if post.user_id == self.user.id:
+                self.rsvp_post_ids.add(post.id)
         self._save_state()
         return post
 
@@ -1674,6 +1694,9 @@ class DemoStore:
                     post_id
                     for post_id, user_ids in self.rsvp_user_ids_by_post.items()
                     if self.user.id in user_ids
+                } | {
+                    post.id for post in self.posts if post.user_id == self.user.id
+                    and post.post_type in {"surf_plan", "looking_for_buddy"}
                 }
             ),
             comments=sorted(
@@ -1722,6 +1745,8 @@ class DemoStore:
             return None
         if post.post_type not in {"surf_plan", "looking_for_buddy"}:
             return None
+        # The organizer is always going and cannot leave their own event.
+        joined = joined or post.user_id == self.user.id
         if self.postgres_social is not None:
             self.postgres_social.set_rsvp(self.user.id, post_id, joined)
             return self.social_engagement_state()

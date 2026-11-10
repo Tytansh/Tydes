@@ -94,9 +94,11 @@ class PostgresSocialRepository:
                 GROUP BY post_id
             ) AS reposts ON reposts.post_id = posts.id
             LEFT JOIN (
-                SELECT post_id, COUNT(*) AS rsvp_count
-                FROM social_rsvps
-                GROUP BY post_id
+                SELECT rsvps.post_id, COUNT(*) AS rsvp_count
+                FROM social_rsvps AS rsvps
+                JOIN social_posts AS events ON events.id = rsvps.post_id
+                WHERE rsvps.user_id <> events.user_id
+                GROUP BY rsvps.post_id
             ) AS rsvps ON rsvps.post_id = posts.id
         """
         parameters: tuple[Any, ...] = (viewer_id, viewer_id)
@@ -172,16 +174,51 @@ class PostgresSocialRepository:
     def get_post(self, post_id: str) -> SocialPost | None:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT payload FROM social_posts WHERE id = %s",
+                """
+                SELECT posts.payload, (
+                    SELECT COUNT(*) FROM social_rsvps AS rsvps
+                    WHERE rsvps.post_id = posts.id AND rsvps.user_id <> posts.user_id
+                ) AS rsvp_count
+                FROM social_posts AS posts WHERE posts.id = %s
+                """,
                 (post_id,),
             ).fetchone()
         if row is None:
             return None
-        return SocialPost.model_validate(_payload_dict(row["payload"]))
+        payload = _payload_dict(row["payload"])
+        payload["rsvp_count"] = int(row["rsvp_count"])
+        return SocialPost.model_validate(payload)
+
+    def list_event_chat_posts(self, user_id: str, limit: int = 200) -> list[SocialPost]:
+        # Membership is the event ID itself; an empty room exists as soon as the
+        # event exists. Do not derive the inbox from the latest 50 feed posts.
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT posts.payload FROM social_posts AS posts
+                WHERE posts.payload->>'post_type' IN ('surf_plan', 'looking_for_buddy')
+                  AND (posts.user_id = %s OR EXISTS (
+                    SELECT 1 FROM social_rsvps
+                    WHERE post_id = posts.id AND user_id = %s
+                  ))
+                  AND (posts.payload->>'visibility' = 'public' OR posts.user_id = %s OR EXISTS (
+                    SELECT 1 FROM social_follows
+                    WHERE follower_user_id = %s AND followed_user_id = posts.user_id
+                  ))
+                  AND NOT EXISTS (
+                    SELECT 1 FROM social_blocks
+                    WHERE (user_id = %s AND blocked_user_id = posts.user_id)
+                       OR (blocked_user_id = %s AND user_id = posts.user_id)
+                  )
+                ORDER BY posts.created_at DESC LIMIT %s
+                """,
+                (user_id, user_id, user_id, user_id, user_id, user_id, limit),
+            ).fetchall()
+        return [SocialPost.model_validate(_payload_dict(row["payload"])) for row in rows]
 
     def save_post(self, post: SocialPost) -> None:
         payload = post.model_dump(mode="json")
-        with self._connect() as connection:
+        with self._connect() as connection, connection.transaction():
             connection.execute(
                 """
                 INSERT INTO social_posts (id, user_id, payload, created_at)
@@ -199,6 +236,14 @@ class PostgresSocialRepository:
                     _aware_datetime(post.created_at),
                 ),
             )
+            if post.post_type in {"surf_plan", "looking_for_buddy"}:
+                connection.execute(
+                    """
+                    INSERT INTO social_rsvps (user_id, post_id) VALUES (%s, %s)
+                    ON CONFLICT (user_id, post_id) DO NOTHING
+                    """,
+                    (post.user_id, post.id),
+                )
 
     def list_comments(self, limit: int | None = 500) -> list[SocialComment]:
         query = "SELECT payload FROM social_comments ORDER BY created_at DESC"
@@ -627,9 +672,12 @@ class PostgresSocialRepository:
                 """
                 SELECT post_id FROM social_rsvps
                 WHERE user_id = %s
+                UNION
+                SELECT id AS post_id FROM social_posts
+                WHERE user_id = %s AND payload->>'post_type' IN ('surf_plan', 'looking_for_buddy')
                 ORDER BY post_id
                 """,
-                (user_id,),
+                (user_id, user_id),
             ).fetchall()
         reposts = [
             SocialRepost(

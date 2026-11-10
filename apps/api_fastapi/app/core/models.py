@@ -229,6 +229,7 @@ class SocialPost(BaseModel):
     created_at: datetime
     like_count: int = Field(default=0, ge=0)
     repost_count: int = Field(default=0, ge=0)
+    # Other attendees, excluding the organizer (who is always included once).
     rsvp_count: int = Field(default=0, ge=0)
 
 

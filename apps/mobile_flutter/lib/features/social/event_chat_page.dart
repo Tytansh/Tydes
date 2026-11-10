@@ -7,6 +7,12 @@ import 'package:go_router/go_router.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 
+final eventChatAttendeesProvider = FutureProvider.autoDispose
+    .family<List<EventAttendeeModel>, String>((ref, postId) {
+      ref.watch(socialRefreshKeyProvider);
+      return ref.watch(surfRepositoryProvider).fetchEventAttendees(postId);
+    });
+
 Future<void> showEventChatJoinPrompt(
   BuildContext context, {
   required String postId,
@@ -83,7 +89,7 @@ class _EventChatPageState extends ConsumerState<EventChatPage> {
       final repository = ref.read(surfRepositoryProvider);
       final results = await Future.wait<dynamic>([
         repository.fetchEventChat(widget.postId),
-        if (initial) repository.fetchSocialPosts(),
+        if (initial) repository.fetchSocialPost(widget.postId),
         if (initial) repository.fetchMe(),
       ]);
       if (!mounted) return;
@@ -91,8 +97,7 @@ class _EventChatPageState extends ConsumerState<EventChatPage> {
       setState(() {
         _messages = messages;
         if (initial) {
-          final posts = results[1] as List<SocialPostModel>;
-          _event = _findEvent(posts, widget.postId);
+          _event = results[1] as SocialPostModel;
           _viewerId = (results[2] as UserProfile).id;
         }
         _error = null;
@@ -223,13 +228,6 @@ class _EventChatPageState extends ConsumerState<EventChatPage> {
             ),
     );
   }
-}
-
-SocialPostModel? _findEvent(List<SocialPostModel> posts, String postId) {
-  for (final post in posts) {
-    if (post.id == postId) return post;
-  }
-  return null;
 }
 
 class _MessageBubble extends StatelessWidget {

@@ -70,16 +70,18 @@ class _Repository extends SurfRepository {
   _Repository() : super(Dio(), DemoPersistence());
   int eventLoads = 0;
   bool fail = false;
+  List<SocialPostModel>? posts;
   @override
   Future<List<SocialPostModel>> fetchMapEvents() async {
     eventLoads++;
     if (fail) throw StateError('Unavailable');
-    return [
-      _event('batu'),
-      _event('uluwatu'),
-      _event('echo', owner: 'stranger', visibility: 'followers'),
-      _event('echo', owner: 'blocked'),
-    ];
+    return posts ??
+        [
+          _event('batu'),
+          _event('uluwatu'),
+          _event('echo', owner: 'stranger', visibility: 'followers'),
+          _event('echo', owner: 'blocked'),
+        ];
   }
 }
 
@@ -88,6 +90,7 @@ Future<ProviderContainer> _pump(
   _Repository repository, {
   double width = 1440,
   List<String>? forecasts,
+  String? initialSpotId,
 }) async {
   tester.view.physicalSize = Size(width, 1100);
   tester.view.devicePixelRatio = 1;
@@ -110,7 +113,7 @@ Future<ProviderContainer> _pump(
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: const MaterialApp(home: SpotsMapPage()),
+      child: MaterialApp(home: SpotsMapPage(initialSpotId: initialSpotId)),
     ),
   );
   await tester.pumpAndSettle();
@@ -151,6 +154,13 @@ void main() {
         expect(tester.widget<SurfMapSpotPin>(pin).difficulty, spot.difficulty);
       }
       final map = tester.widget<FlutterMap>(find.byType(FlutterMap));
+      expect(
+        map.options.interactionOptions.flags & InteractiveFlag.scrollWheelZoom,
+        isNot(0),
+      );
+      expect(find.byTooltip('Zoom in'), findsNothing);
+      expect(find.byTooltip('Zoom out'), findsNothing);
+      expect(find.byTooltip('Fit map'), findsNothing);
       final center = map.mapController!.camera.center;
       final zoom = map.mapController!.camera.zoom;
       await tester.tap(toggle);
@@ -254,6 +264,77 @@ void main() {
     expect(tester.widget<SurfMapSpotPin>(selectedPin).size, 40);
     expect(forecasts, ['uluwatu']);
     expect(tester.takeException(), isNull);
+    await _finish(tester, container);
+  });
+
+  for (final width in [390.0, 1440.0]) {
+    testWidgets(
+      'full map resets area and reveals own followers event at $width',
+      (tester) async {
+        final repository = _Repository()
+          ..posts = [_event('batu', owner: 'viewer', visibility: 'followers')];
+        final container = await _pump(
+          tester,
+          repository,
+          width: width,
+          initialSpotId: 'uluwatu',
+        );
+        expect(
+          find.byKey(const ValueKey('map-event-marker-batu')),
+          findsNothing,
+        );
+        final full = find.byKey(const ValueKey('main-map-full-view'));
+        final regional = find.text('Back to Bukit / Uluwatu');
+        expect(full, findsOneWidget);
+        expect(regional, findsOneWidget);
+        if (width > 980) {
+          expect(
+            tester.getTopLeft(full).dx,
+            lessThan(tester.getTopLeft(regional).dx),
+          );
+        }
+        await tester.ensureVisible(full);
+        await tester.pumpAndSettle();
+        await tester.tap(full);
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('map-event-marker-batu')),
+          findsOneWidget,
+        );
+        expect(find.byType(SurfMapSpotPin), findsNWidgets(3));
+        expect(find.text('Back to Bali'), findsNothing);
+        tester
+            .state<ScrollableState>(find.byType(Scrollable).first)
+            .position
+            .jumpTo(0);
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<Switch>(
+                find.byKey(const ValueKey('main-map-show-events')),
+              )
+              .value,
+          isTrue,
+        );
+        expect(tester.takeException(), isNull);
+        await _finish(tester, container);
+      },
+    );
+  }
+
+  testWidgets('new own event refreshes while map stays mounted', (
+    tester,
+  ) async {
+    final repository = _Repository()..posts = [];
+    final container = await _pump(tester, repository);
+    expect(find.byType(MapEventMarker), findsNothing);
+    repository.posts = [
+      _event('batu', owner: 'viewer', visibility: 'followers'),
+    ];
+    container.read(socialRefreshKeyProvider.notifier).state++;
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('map-event-marker-batu')), findsOneWidget);
+    expect(repository.eventLoads, 2);
     await _finish(tester, container);
   });
 }

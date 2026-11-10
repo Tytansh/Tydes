@@ -779,6 +779,13 @@ class SurfRepository {
         .toList();
   }
 
+  Future<List<SocialPostModel>> fetchEventChatPosts() async {
+    final response = await _dio.get<List<dynamic>>('/social/event-chats');
+    return response.data!
+        .map((item) => SocialPostModel.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<SocialPostModel> createSocialPost({
     required String body,
     String? spotId,

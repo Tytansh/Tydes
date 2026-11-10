@@ -1994,6 +1994,7 @@ Future<void> _toggleEventRsvp({
         .setEventRsvp(postId: postId, joined: !joined);
     _applySocialEngagement(ref, engagement);
     ref.invalidate(joinedEventChatsProvider);
+    ref.read(socialRefreshKeyProvider.notifier).state++;
     if (!joined && context.mounted) {
       await showEventChatJoinPrompt(
         context,
@@ -5235,10 +5236,10 @@ class SurfInviteActions extends ConsumerWidget {
     final desktop = MediaQuery.sizeOf(context).width >= 980;
     final currentViewer = ref.watch(currentViewerProvider).valueOrNull;
     final joinedInviteIds = ref.watch(surfInviteRsvpProvider);
-    final joined = joinedInviteIds.contains(post.id);
-    final guestCount = _eventGuestProfiles(post, currentViewer?.id).length;
-    final hostCount = 1;
-    final count = hostCount + guestCount + (joined ? 1 : 0);
+    final isHost = currentViewer?.id == post.userId;
+    final joined = isHost || joinedInviteIds.contains(post.id);
+    // The backend counts guests; the organizer is included exactly once.
+    final count = 1 + post.rsvpCount;
     final details = [
       if (spot != null) spot!.name,
       if (post.meetupDate != null)
@@ -5312,17 +5313,19 @@ class SurfInviteActions extends ConsumerWidget {
             children: [
               Expanded(
                 child: FilledButton.tonalIcon(
-                  onPressed: () {
-                    unawaited(
-                      _toggleEventRsvp(
-                        context: context,
-                        ref: ref,
-                        post: post,
-                        joinedInviteIds: joinedInviteIds,
-                        joined: joined,
-                      ),
-                    );
-                  },
+                  onPressed: isHost
+                      ? null
+                      : () {
+                          unawaited(
+                            _toggleEventRsvp(
+                              context: context,
+                              ref: ref,
+                              post: post,
+                              joinedInviteIds: joinedInviteIds,
+                              joined: joined,
+                            ),
+                          );
+                        },
                   icon: Icon(
                     joined
                         ? Icons.check_circle_rounded
@@ -5369,7 +5372,7 @@ void _showEventGoingSheet({
   );
 }
 
-class _EventGoingSheet extends StatelessWidget {
+class _EventGoingSheet extends ConsumerWidget {
   const _EventGoingSheet({
     required this.post,
     required this.currentViewer,
@@ -5381,7 +5384,7 @@ class _EventGoingSheet extends StatelessWidget {
   final bool joined;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final hostProfile = PublicProfilePreview(
@@ -5402,7 +5405,25 @@ class _EventGoingSheet extends StatelessWidget {
     );
     final currentViewerId = currentViewer?.id;
     final hostIsCurrentUser = currentViewerId == post.userId;
-    final guestProfiles = _eventGuestProfiles(post, currentViewerId);
+    final attendees = ref.watch(eventChatAttendeesProvider(post.id));
+    final guestProfiles =
+        (attendees.valueOrNull ?? const <EventAttendeeModel>[])
+            .where(
+              (person) =>
+                  person.userId != post.userId &&
+                  person.userId != currentViewerId,
+            )
+            .map(
+              (person) => PublicProfilePreview(
+                userId: person.userId,
+                displayName: person.displayName,
+                handle: person.handle,
+                avatarUrl: person.avatarUrl,
+                premium: person.premium,
+                subtitle: 'Going to this event',
+              ),
+            )
+            .toList();
 
     return SafeArea(
       top: false,
@@ -5444,6 +5465,17 @@ class _EventGoingSheet extends StatelessWidget {
                           : 'Host',
                       isMe: hostIsCurrentUser,
                     ),
+                    if (attendees.isLoading) const LinearProgressIndicator(),
+                    if (attendees.hasError)
+                      ListTile(
+                        title: const Text('Could not load everyone going'),
+                        trailing: TextButton(
+                          onPressed: () => ref.invalidate(
+                            eventChatAttendeesProvider(post.id),
+                          ),
+                          child: const Text('Retry'),
+                        ),
+                      ),
                     for (final guest in guestProfiles) ...[
                       const SizedBox(height: 10),
                       _GoingPersonTile(
@@ -5469,13 +5501,6 @@ class _EventGoingSheet extends StatelessWidget {
       ),
     );
   }
-}
-
-List<PublicProfilePreview> _eventGuestProfiles(
-  SocialPostModel post,
-  String? currentViewerId,
-) {
-  return const [];
 }
 
 class _GoingPersonTile extends StatelessWidget {

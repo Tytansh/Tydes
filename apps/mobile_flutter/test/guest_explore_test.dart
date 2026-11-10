@@ -672,33 +672,28 @@ void main() {
     },
   );
 
-  testWidgets('scrolling the mouse wheel over the map reaches the beach list', (
+  testWidgets('mouse wheel zoom works without the new map buttons', (
     tester,
   ) async {
     final transport = _PublicTransport();
     await _show(tester, transport, '/explore', _Notifications());
-    final scroll = tester
-        .widget<CustomScrollView>(
-          find.byKey(const ValueKey('guest-explore-scroll')),
-        )
-        .controller!;
     final map = tester.widget<FlutterMap>(find.byType(FlutterMap));
     expect(
       map.options.interactionOptions.flags & InteractiveFlag.scrollWheelZoom,
-      0,
+      isNot(0),
     );
+    expect(find.byTooltip('Zoom in'), findsNothing);
+    expect(find.byTooltip('Zoom out'), findsNothing);
+    expect(find.byTooltip('Fit map'), findsNothing);
+    final zoom = map.mapController!.camera.zoom;
     await tester.sendEventToBinding(
       PointerScrollEvent(
         position: tester.getCenter(find.byType(FlutterMap)),
-        scrollDelta: const Offset(0, 500),
+        scrollDelta: const Offset(0, -100),
       ),
     );
     await tester.pumpAndSettle();
-    expect(scroll.offset, greaterThan(0));
-    expect(
-      find.byKey(const ValueKey('guest-list-spot_padang_padang')),
-      findsOneWidget,
-    );
+    expect(map.mapController!.camera.zoom, greaterThan(zoom));
     expect(tester.takeException(), isNull);
   });
 }

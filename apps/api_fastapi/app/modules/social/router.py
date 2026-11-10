@@ -144,6 +144,16 @@ def list_upcoming_events(
     return store.list_upcoming_events(limit=limit)
 
 
+@router.get("/event-chats")
+def list_event_chats(
+    request: Request,
+    limit: int = Query(default=200, ge=1, le=300),
+    _user=Depends(require_authenticated_user),
+):
+    _limit_public_read(request, "event-chats", limit=120)
+    return store.list_event_chat_posts(limit=limit)
+
+
 @router.get("/relationships")
 def get_relationships(_user=Depends(require_authenticated_user)):
     return store.social_relationship_state()

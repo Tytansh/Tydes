@@ -57,7 +57,10 @@ and `SurfMapEventAvatar`. Pin colors describe the catalog difficulty, not live
 conditions. The signed-in map's **Show events** switch starts on and overlays
 host avatars without hiding beach pins. Saved-only, location, and search filters
 apply to both layers. Turning the overlay off preserves the selected spot and
-camera. Zoom buttons and Fit map match Explore; wheel scrolling scrolls the page.
+camera. Both maps support the original scroll-wheel/trackpad/pinch zoom and drag
+gestures, without the added +/−/fit controls. The signed-in map's **Back to full
+map** action sits before the regional back action and clears geographic, search,
+and saved-only filters. Events outside the selected area reappear at full scope.
 
 Guest event data remains public-only. Signed-in grouping retains viewer/follow/
 block checks and existing join/group-chat flows. Event results are reused for two

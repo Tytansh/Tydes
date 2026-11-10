@@ -599,7 +599,6 @@ class GuestMapCanvas extends StatefulWidget {
 class _GuestMapCanvasState extends State<GuestMapCanvas> {
   final _controller = MapController();
   late final TileProvider _tiles = widget.tileProviderFactory();
-  bool _ready = false;
   CameraFit get _fit => CameraFit.bounds(
     bounds: LatLngBounds.fromPoints(
       widget.spots.map((s) => LatLng(s.latitude, s.longitude)).toList(),
@@ -613,11 +612,6 @@ class _GuestMapCanvasState extends State<GuestMapCanvas> {
     super.dispose();
   }
 
-  void _zoom(int step) => _controller.move(
-    _controller.camera.center,
-    (_controller.camera.zoom + step).clamp(2, 14).toDouble(),
-  );
-
   @override
   Widget build(BuildContext context) => ClipRRect(
     borderRadius: BorderRadius.circular(22),
@@ -629,14 +623,9 @@ class _GuestMapCanvasState extends State<GuestMapCanvas> {
             initialCameraFit: _fit,
             minZoom: 2,
             maxZoom: 14,
-            // The map shares a scrolling page with beach results. Wheel/trackpad
-            // scrolling should reach those results; use +/- or pinch to zoom.
             interactionOptions: const InteractionOptions(
-              flags: InteractiveFlag.all & ~InteractiveFlag.scrollWheelZoom,
+              flags: InteractiveFlag.all,
             ),
-            onMapReady: () {
-              if (mounted) setState(() => _ready = true);
-            },
           ),
           children: [
             TileLayer(
@@ -687,32 +676,6 @@ class _GuestMapCanvasState extends State<GuestMapCanvas> {
               ],
             ),
           ],
-        ),
-        Positioned(
-          top: 10,
-          right: 10,
-          child: Card(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  tooltip: 'Zoom in',
-                  onPressed: _ready ? () => _zoom(1) : null,
-                  icon: const Icon(Icons.add),
-                ),
-                IconButton(
-                  tooltip: 'Zoom out',
-                  onPressed: _ready ? () => _zoom(-1) : null,
-                  icon: const Icon(Icons.remove),
-                ),
-                IconButton(
-                  tooltip: 'Fit map',
-                  onPressed: _ready ? () => _controller.fitCamera(_fit) : null,
-                  icon: const Icon(Icons.fit_screen),
-                ),
-              ],
-            ),
-          ),
         ),
       ],
     ),

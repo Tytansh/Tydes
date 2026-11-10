@@ -43,24 +43,8 @@ final joinedEventChatsProvider =
     FutureProvider.autoDispose<List<JoinedEventChatSummary>>((ref) async {
       ref.watch(socialRefreshKeyProvider);
       final repository = ref.watch(surfRepositoryProvider);
-      final results = await Future.wait<dynamic>([
-        repository.fetchSocialPosts(),
-        repository.fetchSocialEngagement(),
-        repository.fetchMe(),
-      ]);
-      final posts = results[0] as List<SocialPostModel>;
-      final engagement = results[1] as SocialEngagementModel;
-      final viewer = results[2] as UserProfile;
-      final chats = posts
-          .where(
-            (post) =>
-                (post.postType == 'surf_plan' ||
-                    post.postType == 'looking_for_buddy') &&
-                (engagement.rsvpPostIds.contains(post.id) ||
-                    post.userId == viewer.id),
-          )
-          .map(JoinedEventChatSummary.fromPost)
-          .toList();
+      final posts = await repository.fetchEventChatPosts();
+      final chats = posts.map(JoinedEventChatSummary.fromPost).toList();
       chats.sort((a, b) => a.sortDate.compareTo(b.sortDate));
       return chats;
     });
@@ -518,6 +502,14 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage> {
             const Padding(
               padding: EdgeInsets.only(bottom: 16),
               child: LinearProgressIndicator(minHeight: 2),
+            ),
+          if (eventChats.hasError)
+            ListTile(
+              title: const Text('Could not load event chats'),
+              trailing: TextButton(
+                onPressed: () => ref.invalidate(joinedEventChatsProvider),
+                child: const Text('Retry'),
+              ),
             ),
           if (filteredEventChats.isNotEmpty) ...[
             Text('Event chats', style: Theme.of(context).textTheme.titleLarge),

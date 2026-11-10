@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
+import '../home/home_page.dart';
 import '../social/direct_messages_page.dart';
 import '../social/event_chat_page.dart';
 
@@ -952,6 +953,8 @@ class _TravelEventCardState extends ConsumerState<_TravelEventCard> {
   Widget build(BuildContext context) {
     final event = widget.event;
     final body = event.post.body.trim();
+    final isHost = ref.watch(meProvider).valueOrNull?.id == event.post.userId;
+    final joined = isHost || widget.joined;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1029,18 +1032,18 @@ class _TravelEventCardState extends ConsumerState<_TravelEventCard> {
             runSpacing: 8,
             children: [
               FilledButton.icon(
-                onPressed: _busy ? null : _toggleJoin,
+                onPressed: _busy || isHost ? null : _toggleJoin,
                 icon: _busy
                     ? const SizedBox.square(
                         dimension: 16,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : Icon(
-                        widget.joined
+                        joined
                             ? Icons.check_circle_outline
                             : Icons.add_circle_outline,
                       ),
-                label: Text(widget.joined ? 'Going' : 'Join now'),
+                label: Text(joined ? 'Going' : 'Join now'),
               ),
               OutlinedButton.icon(
                 onPressed: _showAttendees,
@@ -1056,7 +1059,7 @@ class _TravelEventCardState extends ConsumerState<_TravelEventCard> {
                 icon: const Icon(Icons.article_outlined),
                 label: const Text('See post'),
               ),
-              if (widget.joined)
+              if (joined)
                 TextButton.icon(
                   onPressed: () => context.push('/event/${event.post.id}/chat'),
                   icon: const Icon(Icons.forum_outlined),

@@ -742,6 +742,69 @@ def test_event_attendees_and_group_chat_follow_rsvp_membership(monkeypatch):
     assert blocked_again.status_code == 403
 
 
+def test_event_host_is_joined_once_and_has_an_automatic_inbox_chat(monkeypatch):
+    owner_token = _signup_access_token(monkeypatch, "automatic-host@example.com")
+    guest_token = _signup_access_token(monkeypatch, "automatic-guest@example.com")
+    owner = {"Authorization": f"Bearer {owner_token}"}
+    guest = {"Authorization": f"Bearer {guest_token}"}
+    created = client.post("/api/v1/social/posts", headers=owner, json={
+        "body": "Automatic host room", "post_type": "surf_plan",
+        "spot_id": "spot_broken_head", "meetup_date": "2030-01-05",
+    })
+    assert created.status_code == 200, created.text
+    event_id = created.json()["id"]
+    assert created.json()["rsvp_count"] == 0  # Guests only; host is implicit.
+    engagement = client.get("/api/v1/social/engagement", headers=owner).json()
+    assert event_id in engagement["rsvp_post_ids"]
+    inbox = client.get("/api/v1/social/event-chats", headers=owner)
+    assert inbox.status_code == 200, inbox.text
+    assert event_id in {post["id"] for post in inbox.json()}
+    assert client.get(f"/api/v1/social/posts/{event_id}/chat", headers=owner).json() == []
+    assert event_id not in {post["id"] for post in client.get(
+        "/api/v1/social/event-chats", headers=guest).json()}
+    assert client.get("/api/v1/social/event-chats").status_code == 401
+
+    # Existing clients may still send self-RSVP repeatedly or try to leave.
+    for method in (client.post, client.post, client.delete):
+        response = method(f"/api/v1/social/posts/{event_id}/rsvp", headers=owner)
+        assert response.status_code == 200
+        assert event_id in response.json()["rsvp_post_ids"]
+        people = client.get(f"/api/v1/social/posts/{event_id}/attendees", headers=owner).json()
+        assert len(people) == 1 and people[0]["organizer"] is True
+    posts = client.get("/api/v1/social/posts", headers=owner).json()
+    assert next(post for post in posts if post["id"] == event_id)["rsvp_count"] == 0
+
+    for _ in range(2):
+        client.post(f"/api/v1/social/posts/{event_id}/rsvp", headers=guest)
+    people = client.get(f"/api/v1/social/posts/{event_id}/attendees", headers=owner).json()
+    assert len(people) == 2
+    posts = client.get("/api/v1/social/posts", headers=owner).json()
+    assert next(post for post in posts if post["id"] == event_id)["rsvp_count"] == 1
+    assert event_id in {post["id"] for post in client.get(
+        "/api/v1/social/event-chats", headers=guest).json()}
+    events = client.get("/api/v1/social/events", headers=owner).json()
+    assert event_id in {post["id"] for post in events}
+
+
+def test_event_inbox_does_not_drop_hosted_rooms_beyond_latest_fifty_posts(monkeypatch):
+    token = _signup_access_token(monkeypatch, "older-event-host@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    host = store.resolve_session_user(token)
+    now = datetime.now(timezone.utc)
+    event = SocialPost(id="old-hosted-event", user_id=host.id,
+        author_name=host.display_name, post_type="surf_plan", visibility="followers",
+        body="Old but still my group chat", created_at=now - timedelta(days=30))
+    newer = [SocialPost(id=f"newer-{i}", user_id=host.id,
+        author_name=host.display_name, post_type="general", body="Normal post",
+        created_at=now) for i in range(60)]
+    monkeypatch.setattr(store, "posts", [event, *newer])
+    monkeypatch.setattr(store, "rsvp_user_ids_by_post", {})
+    inbox = client.get("/api/v1/social/event-chats", headers=headers)
+    assert inbox.status_code == 200, inbox.text
+    assert [post["id"] for post in inbox.json()] == [event.id]
+    assert client.get(f"/api/v1/social/posts/{event.id}/chat", headers=headers).status_code == 200
+
+
 def test_alert_changes_are_limited_to_the_owning_account(monkeypatch):
     owner_token = _signup_access_token(monkeypatch, "alert-owner@example.com")
     other_token = _signup_access_token(monkeypatch, "alert-other@example.com")
