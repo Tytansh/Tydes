@@ -15,6 +15,7 @@ import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../../core/widgets/feed_refresh_indicator.dart';
 import '../home/home_page.dart';
+import '../alerts/alert_state.dart';
 import '../social/direct_messages_page.dart';
 import '../social/notifications_page.dart';
 import '../social/social_feed.dart';
@@ -101,6 +102,7 @@ class SettingsPage extends ConsumerWidget {
         onLogout: () async {
           await ref.read(surfRepositoryProvider).logout();
           await ref.read(revenueCatServiceProvider).logOut();
+          ref.invalidate(alertsProvider);
           ref.invalidate(meProvider);
           ref.invalidate(dashboardProvider);
           ref.invalidate(homeAdsProvider);
@@ -153,6 +155,7 @@ class SettingsPage extends ConsumerWidget {
             return;
           }
           await ref.read(revenueCatServiceProvider).logOut();
+          ref.invalidate(alertsProvider);
           ref.invalidate(meProvider);
           ref.invalidate(dashboardProvider);
           ref.invalidate(homeAdsProvider);

@@ -7,6 +7,7 @@ import '../../core/legal/legal_links.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../home/home_page.dart';
+import '../alerts/alert_state.dart';
 import '../social/social_profile.dart';
 import '../spots/spot_detail_page.dart';
 import '../spots/spots_page.dart';
@@ -70,6 +71,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
   }
 
   void _refreshAfterAuth() {
+    ref.invalidate(alertsProvider);
     ref.invalidate(authStateProvider);
     ref.invalidate(meProvider);
     ref.invalidate(dashboardProvider);

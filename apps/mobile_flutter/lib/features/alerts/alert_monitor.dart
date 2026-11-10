@@ -29,10 +29,7 @@ class AlertMonitor {
 
   Future<void> initialize() async {
     await _notifications.initialize();
-    _timer ??= Timer.periodic(
-      const Duration(minutes: 2),
-      (_) => checkNow(),
-    );
+    _timer ??= Timer.periodic(const Duration(minutes: 2), (_) => checkNow());
     await checkNow();
   }
 
@@ -42,9 +39,7 @@ class AlertMonitor {
     try {
       final alerts = await _repository.fetchAlerts();
       final spots = await _repository.fetchSpots();
-      final spotNames = {
-        for (final spot in spots) spot.id: spot.name,
-      };
+      final spotNames = {for (final spot in spots) spot.id: spot.name};
 
       for (final alert in alerts) {
         final token = alert.lastTriggeredAt ?? alert.nextCheckAt;
@@ -63,6 +58,9 @@ class AlertMonitor {
           _seenTriggerTokens.remove(alert.id);
         }
       }
+    } catch (_) {
+      // Failed reads must not trigger notifications from cached/demo alerts.
+      // The next scheduled or explicitly requested check will retry.
     } finally {
       _checking = false;
     }
@@ -82,7 +80,9 @@ String _alertNotificationBody(AlertModel alert) {
   if (alert.windEnabled && alert.maxWindKts != null) {
     parts.add('wind below ${alert.maxWindKts}kts');
   }
-  if (alert.tideEnabled && alert.tideType != null && alert.tideOffsetHours != null) {
+  if (alert.tideEnabled &&
+      alert.tideType != null &&
+      alert.tideOffsetHours != null) {
     final tideLabel = alert.tideType == 'high' ? 'high tide' : 'low tide';
     if (alert.tideOffsetHours == 0) {
       parts.add('at $tideLabel');

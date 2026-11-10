@@ -4,14 +4,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
-import '../../core/network/surf_repository.dart';
+import 'alert_state.dart';
 import 'create_alert_sheet.dart';
 import '../spots/spots_page.dart';
 
-final alertsProvider = FutureProvider((ref) {
-  ref.watch(alertsRefreshKeyProvider);
-  return ref.watch(surfRepositoryProvider).fetchAlerts();
-});
+export 'alert_state.dart' show alertsProvider;
 
 class AlertsPage extends ConsumerWidget {
   const AlertsPage({super.key});
@@ -55,32 +52,11 @@ class AlertsPage extends ConsumerWidget {
                 itemBuilder: (context, index) {
                   final alert = items[index];
                   final spot = spotForId(spotItems, alert.spotId);
-                  return Dismissible(
+                  return _AlertRow(
                     key: ValueKey(alert.id),
-                    direction: DismissDirection.endToStart,
-                    background: Container(
-                      alignment: Alignment.centerRight,
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFCF4A3B),
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      child: const Icon(
-                        Icons.delete_outline,
-                        color: Colors.white,
-                      ),
-                    ),
-                    onDismissed: (_) async {
-                      await ref
-                          .read(surfRepositoryProvider)
-                          .deleteAlert(alert.id);
-                      ref.read(alertsRefreshKeyProvider.notifier).state++;
-                    },
-                    child: _AlertCard(
-                      alert: alert,
-                      spot: spot,
-                      spots: spotItems,
-                    ),
+                    alert: alert,
+                    spot: spot,
+                    spots: spotItems,
                   );
                 },
               );
@@ -90,7 +66,21 @@ class AlertsPage extends ConsumerWidget {
           ),
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) => Center(
-            child: Text(friendlyLoadErrorMessage(error, label: 'alerts')),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  friendlyLoadErrorMessage(error, label: 'alerts'),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () => ref.invalidate(alertsProvider),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry'),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -137,8 +127,9 @@ class _AddAlertButton extends StatelessWidget {
   }
 }
 
-class _AlertCard extends ConsumerWidget {
-  const _AlertCard({
+class _AlertRow extends ConsumerStatefulWidget {
+  const _AlertRow({
+    super.key,
     required this.alert,
     required this.spot,
     required this.spots,
@@ -149,61 +140,146 @@ class _AlertCard extends ConsumerWidget {
   final List<SpotModel> spots;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 14, 12, 14),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+  ConsumerState<_AlertRow> createState() => _AlertRowState();
+}
+
+class _AlertRowState extends ConsumerState<_AlertRow> {
+  bool _busy = false;
+  bool _editing = false;
+
+  void _showFailure(Object error, String operation, VoidCallback retry) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Could not $operation alert. ${friendlyErrorMessage(error)}',
+        ),
+        action: SnackBarAction(label: 'Retry', onPressed: retry),
+      ),
+    );
+  }
+
+  Future<bool> _delete() async {
+    if (!mounted || _busy) return false;
+    setState(() => _busy = true);
+    try {
+      await ref.read(alertsProvider.notifier).delete(widget.alert.id);
+      return true;
+    } catch (error) {
+      if (mounted) {
+        _showFailure(error, 'delete', () {
+          _delete();
+        });
+      }
+      return false;
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _setEnabled(bool enabled) async {
+    if (!mounted || _busy) return;
+    setState(() => _busy = true);
+    try {
+      await ref
+          .read(alertsProvider.notifier)
+          .setEnabled(widget.alert.id, enabled);
+    } catch (error) {
+      if (mounted) {
+        _showFailure(error, 'update', () {
+          _setEnabled(enabled);
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final alert = widget.alert;
+    final spot = widget.spot;
+    return Dismissible(
+      key: ValueKey('dismiss-${alert.id}'),
+      direction: _busy ? DismissDirection.none : DismissDirection.endToStart,
+      confirmDismiss: (_) => _delete(),
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        decoration: BoxDecoration(
+          color: const Color(0xFFCF4A3B),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: const Icon(Icons.delete_outline, color: Colors.white),
+      ),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 12, 14),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _AlertSpotButton(
+                      label: spot?.name ?? alert.spotId,
+                      onPressed: spot == null
+                          ? null
+                          : () => context.push('/spot/${spot.id}'),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${_alertStatusLine(alert)}\n${_alertSummary(alert)}\nNext check ${_formatAlertTime(alert.nextCheckAt)}',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  _AlertSpotButton(
-                    label: spot?.name ?? alert.spotId,
-                    onPressed: spot == null
+                  IconButton(
+                    onPressed: _busy
                         ? null
-                        : () => context.push('/spot/${spot!.id}'),
+                        : () async {
+                            setState(() {
+                              _busy = true;
+                              _editing = true;
+                            });
+                            try {
+                              await showModalBottomSheet<void>(
+                                context: context,
+                                isScrollControlled: true,
+                                builder: (context) => CreateAlertSheet(
+                                  spots: widget.spots,
+                                  alert: alert,
+                                ),
+                              );
+                            } finally {
+                              if (mounted) {
+                                setState(() {
+                                  _busy = false;
+                                  _editing = false;
+                                });
+                              }
+                            }
+                          },
+                    icon: const Icon(Icons.edit_outlined),
+                    tooltip: 'Edit alert',
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${_alertStatusLine(alert)}\n${_alertSummary(alert)}\nNext check ${_formatAlertTime(alert.nextCheckAt)}',
-                    style: Theme.of(context).textTheme.bodyMedium,
+                  Switch(
+                    value: alert.enabled,
+                    onChanged: _busy ? null : _setEnabled,
                   ),
+                  if (_busy && !_editing)
+                    const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
                 ],
               ),
-            ),
-            const SizedBox(width: 8),
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  onPressed: () async {
-                    await showModalBottomSheet<void>(
-                      context: context,
-                      isScrollControlled: true,
-                      builder: (context) =>
-                          CreateAlertSheet(spots: spots, alert: alert),
-                    );
-                  },
-                  icon: const Icon(Icons.edit_outlined),
-                  tooltip: 'Edit alert',
-                ),
-                Switch(
-                  value: alert.enabled,
-                  onChanged: (enabled) async {
-                    await ref
-                        .read(surfRepositoryProvider)
-                        .updateAlertEnabled(
-                          alertId: alert.id,
-                          enabled: enabled,
-                        );
-                    ref.read(alertsRefreshKeyProvider.notifier).state++;
-                  },
-                ),
-              ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

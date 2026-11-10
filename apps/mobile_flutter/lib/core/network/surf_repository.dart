@@ -597,25 +597,10 @@ class SurfRepository {
   }
 
   Future<List<AlertModel>> fetchAlerts() async {
-    try {
-      final response = await _dio.get<List<dynamic>>('/alerts');
-      final alerts = response.data!
-          .map((item) => AlertModel.fromJson(item as Map<String, dynamic>))
-          .toList();
-      DemoSeed.alerts
-        ..clear()
-        ..addAll(alerts);
-      await _demoPersistence.saveAlerts(DemoSeed.alerts);
-      return alerts;
-    } catch (_) {
-      final persistedAlerts = await _demoPersistence.loadAlerts();
-      if (persistedAlerts.isNotEmpty) {
-        DemoSeed.alerts
-          ..clear()
-          ..addAll(persistedAlerts);
-      }
-      return DemoSeed.alerts;
-    }
+    final response = await _dio.get<List<dynamic>>('/alerts');
+    return response.data!
+        .map((item) => AlertModel.fromJson(item as Map<String, dynamic>))
+        .toList();
   }
 
   Future<AlertModel> createAlert({
@@ -629,88 +614,36 @@ class SurfRepository {
     int? tideOffsetHours,
     bool enabled = true,
   }) async {
-    try {
-      final response = await _dio.post<Map<String, dynamic>>(
-        '/alerts',
-        data: {
-          'spot_id': spotId,
-          'wave_enabled': waveEnabled,
-          'min_wave_height_m': minWaveHeightM,
-          'wind_enabled': windEnabled,
-          'max_wind_kts': maxWindKts,
-          'tide_enabled': tideEnabled,
-          'tide_type': tideType,
-          'tide_offset_hours': tideOffsetHours,
-          'enabled': enabled,
-        },
-      );
-      final alert = AlertModel.fromJson(response.data!);
-      DemoSeed.alerts.removeWhere((item) => item.id == alert.id);
-      DemoSeed.alerts.insert(0, alert);
-      await _demoPersistence.saveAlerts(DemoSeed.alerts);
-      return alert;
-    } catch (_) {
-      final alert = AlertModel(
-        id: 'alert_${DateTime.now().millisecondsSinceEpoch}',
-        spotId: spotId,
-        waveEnabled: waveEnabled,
-        minWaveHeightM: minWaveHeightM,
-        windEnabled: windEnabled,
-        maxWindKts: maxWindKts,
-        tideEnabled: tideEnabled,
-        tideType: tideType,
-        tideOffsetHours: tideOffsetHours,
-        enabled: enabled,
-        nextCheckAt: DateTime.now()
-            .toUtc()
-            .add(const Duration(hours: 4))
-            .toIso8601String(),
-      );
-      DemoSeed.alerts.insert(0, alert);
-      await _demoPersistence.saveAlerts(DemoSeed.alerts);
-      return alert;
-    }
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/alerts',
+      data: {
+        'spot_id': spotId,
+        'wave_enabled': waveEnabled,
+        'min_wave_height_m': minWaveHeightM,
+        'wind_enabled': windEnabled,
+        'max_wind_kts': maxWindKts,
+        'tide_enabled': tideEnabled,
+        'tide_type': tideType,
+        'tide_offset_hours': tideOffsetHours,
+        'enabled': enabled,
+      },
+    );
+    return AlertModel.fromJson(response.data!);
   }
 
   Future<AlertModel> updateAlertEnabled({
     required String alertId,
     required bool enabled,
   }) async {
-    try {
-      final response = await _dio.patch<Map<String, dynamic>>(
-        '/alerts/$alertId',
-        data: {'enabled': enabled},
-      );
-      final updated = AlertModel.fromJson(response.data!);
-      final index = DemoSeed.alerts.indexWhere((item) => item.id == alertId);
-      if (index != -1) {
-        DemoSeed.alerts[index] = updated;
-      }
-      await _demoPersistence.saveAlerts(DemoSeed.alerts);
-      return updated;
-    } catch (_) {
-      final index = DemoSeed.alerts.indexWhere((item) => item.id == alertId);
-      if (index == -1) {
-        throw StateError('Alert not found');
-      }
-      final existing = DemoSeed.alerts[index];
-      final updated = AlertModel(
-        id: existing.id,
-        spotId: existing.spotId,
-        waveEnabled: existing.waveEnabled,
-        minWaveHeightM: existing.minWaveHeightM,
-        windEnabled: existing.windEnabled,
-        maxWindKts: existing.maxWindKts,
-        tideEnabled: existing.tideEnabled,
-        tideType: existing.tideType,
-        tideOffsetHours: existing.tideOffsetHours,
-        enabled: enabled,
-        nextCheckAt: existing.nextCheckAt,
-      );
-      DemoSeed.alerts[index] = updated;
-      await _demoPersistence.saveAlerts(DemoSeed.alerts);
-      return updated;
+    final response = await _dio.patch<Map<String, dynamic>>(
+      '/alerts/$alertId',
+      data: {'enabled': enabled},
+    );
+    final updated = AlertModel.fromJson(response.data!);
+    if (updated.id != alertId) {
+      throw StateError('The alert update could not be confirmed.');
     }
+    return updated;
   }
 
   Future<AlertModel> updateAlert({
@@ -725,61 +658,33 @@ class SurfRepository {
     int? tideOffsetHours,
     required bool enabled,
   }) async {
-    try {
-      final response = await _dio.patch<Map<String, dynamic>>(
-        '/alerts/$alertId',
-        data: {
-          'spot_id': spotId,
-          'wave_enabled': waveEnabled,
-          'min_wave_height_m': minWaveHeightM,
-          'wind_enabled': windEnabled,
-          'max_wind_kts': maxWindKts,
-          'tide_enabled': tideEnabled,
-          'tide_type': tideType,
-          'tide_offset_hours': tideOffsetHours,
-          'enabled': enabled,
-        },
-      );
-      final updated = AlertModel.fromJson(response.data!);
-      final index = DemoSeed.alerts.indexWhere((item) => item.id == alertId);
-      if (index != -1) {
-        DemoSeed.alerts[index] = updated;
-      }
-      await _demoPersistence.saveAlerts(DemoSeed.alerts);
-      return updated;
-    } catch (_) {
-      final index = DemoSeed.alerts.indexWhere((item) => item.id == alertId);
-      if (index == -1) {
-        throw StateError('Alert not found');
-      }
-      final existing = DemoSeed.alerts[index];
-      final updated = AlertModel(
-        id: existing.id,
-        spotId: spotId,
-        waveEnabled: waveEnabled,
-        minWaveHeightM: minWaveHeightM,
-        windEnabled: windEnabled,
-        maxWindKts: maxWindKts,
-        tideEnabled: tideEnabled,
-        tideType: tideType,
-        tideOffsetHours: tideOffsetHours,
-        enabled: enabled,
-        nextCheckAt: existing.nextCheckAt,
-      );
-      DemoSeed.alerts[index] = updated;
-      await _demoPersistence.saveAlerts(DemoSeed.alerts);
-      return updated;
+    final response = await _dio.patch<Map<String, dynamic>>(
+      '/alerts/$alertId',
+      data: {
+        'spot_id': spotId,
+        'wave_enabled': waveEnabled,
+        'min_wave_height_m': minWaveHeightM,
+        'wind_enabled': windEnabled,
+        'max_wind_kts': maxWindKts,
+        'tide_enabled': tideEnabled,
+        'tide_type': tideType,
+        'tide_offset_hours': tideOffsetHours,
+        'enabled': enabled,
+      },
+    );
+    final updated = AlertModel.fromJson(response.data!);
+    if (updated.id != alertId) {
+      throw StateError('The alert update could not be confirmed.');
     }
+    return updated;
   }
 
   Future<void> deleteAlert(String alertId) async {
-    try {
-      await _dio.delete<Map<String, dynamic>>('/alerts/$alertId');
-    } catch (_) {
-      // Preserve demo usability when the API is unavailable.
-    } finally {
-      DemoSeed.alerts.removeWhere((item) => item.id == alertId);
-      await _demoPersistence.saveAlerts(DemoSeed.alerts);
+    final response = await _dio.delete<Map<String, dynamic>>(
+      '/alerts/$alertId',
+    );
+    if (response.data?['deleted'] != true) {
+      throw StateError('The alert deletion could not be confirmed.');
     }
   }
 
