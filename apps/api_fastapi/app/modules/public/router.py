@@ -30,6 +30,11 @@ class PublicEventHost(BaseModel):
     avatar_url: str | None
 
 
+class PublicMapSpotPreview(PublicSpotPreview):
+    latitude: float
+    longitude: float
+
+
 class PublicEventPreview(BaseModel):
     id: str
     body: str
@@ -55,6 +60,49 @@ def _unavailable():
     # Identical response for a private, removed, or unknown event.
     raise HTTPException(status_code=404, detail="This event is not available publicly.",
                         headers={"Cache-Control": "no-store"})
+
+
+def _event(post, author: User) -> PublicEventPreview:
+    spot = store.get_spot(post.spot_id) if post.spot_id else None
+    end = post.meetup_end_date or post.meetup_date
+    return PublicEventPreview(
+        id=post.id, body=post.body, meetup_date=post.meetup_date,
+        meetup_end_date=post.meetup_end_date,
+        ended=end is not None and end < datetime.now(timezone.utc).date(),
+        host=PublicEventHost(name=author.display_name or "Event host", handle=author.handle or None,
+                             avatar_url=author.avatar_url),
+        spot=_spot(spot) if spot is not None else None,
+    )
+
+
+@router.get("/spots", response_model=list[PublicMapSpotPreview])
+def browse_spots(request: Request, response: Response):
+    _limit(request)
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    return [PublicMapSpotPreview(**_spot(spot).model_dump(), latitude=spot.latitude,
+                                 longitude=spot.longitude) for spot in store.list_spots()]
+
+
+@router.get("/events", response_model=list[PublicEventPreview])
+def browse_events(request: Request, response: Response):
+    _limit(request)
+    # Never cache event details across deletion or a switch to followers-only.
+    response.headers["Cache-Control"] = "no-store"
+    today = datetime.now(timezone.utc).date()
+    if store.postgres_social is not None:
+        pairs = store.postgres_social.list_public_events(today, limit=100)
+    else:
+        authors = {item["user"]["id"]: User.model_validate(item["user"])
+                   for item in store.auth_accounts.values() if isinstance(item.get("user"), dict)}
+        pairs = [(post, authors.get(post.user_id)) for post in store.posts]
+    valid = [(post, author) for post, author in pairs
+             if author is not None and not author.banned and post.visibility == "public"
+             and post.post_type in {"surf_plan", "looking_for_buddy"}
+             and post.meetup_date is not None
+             and (post.meetup_end_date or post.meetup_date) >= today
+             and (post.meetup_end_date or post.meetup_date) >= post.meetup_date]
+    valid.sort(key=lambda pair: (pair[0].meetup_date, pair[0].id))
+    return [_event(post, author) for post, author in valid[:100]]
 
 
 @router.get("/spots/{spot_id}", response_model=PublicSpotPreview)
@@ -84,13 +132,4 @@ def event_preview(post_id: str, request: Request, response: Response):
     viewer = optional_authenticated_user(request)
     if viewer is not None and post.user_id in store._blocked_user_ids_for(viewer.id):
         _unavailable()
-    spot = store.get_spot(post.spot_id) if post.spot_id else None
-    end = post.meetup_end_date or post.meetup_date
-    return PublicEventPreview(
-        id=post.id, body=post.body, meetup_date=post.meetup_date,
-        meetup_end_date=post.meetup_end_date,
-        ended=end is not None and end < datetime.now(timezone.utc).date(),
-        host=PublicEventHost(name=author.display_name or "Event host", handle=author.handle or None,
-                             avatar_url=author.avatar_url),
-        spot=_spot(spot) if spot is not None else None,
-    )
+    return _event(post, author)

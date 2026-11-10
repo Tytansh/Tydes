@@ -28,6 +28,25 @@ These are in-browser previews. Flutter's hash URLs still use the website's
 general social metadata; per-event Open Graph/link-unfurl cards are not part of
 this change.
 
+## Guest explorer
+
+`/explore`, `/explore/map`, and `/explore/events` form a separate read-only guest
+shell, available from **Explore as guest** on the sign-in/sign-up card. It uses
+only the whitelisted public catalogs: static spots with map coordinates and up
+to 100 upcoming public events, sorted by start date. Country, region and search
+filters run locally. Spot guides and event details retain their existing share
+routes and sign-in return destinations. Signing in from the guest explorer opens
+the corresponding normal Spots/Travel account tab.
+
+No guest account is created. The guest shell does not mount the social/video
+feed, live forecasts, favorites, alerts, attendee lists, or chats. Public spot
+catalogs use a one-hour HTTP cache; event catalogs are `no-store` so privacy
+changes are re-evaluated on each fetch. Short in-app provider retention avoids
+re-fetching when switching guest tabs; refresh buttons explicitly reload.
+The same configured tile provider and attribution are reused, without adding a
+new paid map service. Alert monitoring and notification initialization require
+a completed signed-in profile and pause while browsing the guest shell.
+
 Verification: API privacy/limiter tests in `test_public_previews.py`; Flutter
 guest, responsive layout, copy-link and authentication return tests in
 `public_preview_test.dart`. Tests use isolated data and do not create live events

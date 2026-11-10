@@ -123,6 +123,12 @@ class _Frame extends StatelessWidget {
           const Text('Tydes', style: TextStyle(fontWeight: FontWeight.w800)),
         ],
       ),
+      leading: IconButton(
+        tooltip: 'Explore Tydes',
+        icon: const Icon(Icons.arrow_back),
+        onPressed: () =>
+            context.canPop() ? context.pop() : context.go('/explore'),
+      ),
       actions: [
         TextButton(
           onPressed: () => _login(context, path, profile),

@@ -1,6 +1,11 @@
 /// Never accept an external URL as an after-login destination.
 String safeAuthReturnPath(String? value) {
-  if (value == '/' || value == '/paywall' || value == '/spots-map') {
+  if (value == '/' ||
+      value == '/paywall' ||
+      value == '/spots-map' ||
+      value == '/explore' ||
+      value == '/explore/map' ||
+      value == '/explore/events') {
     return value!;
   }
   if (value != null &&

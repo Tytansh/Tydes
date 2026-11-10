@@ -124,3 +124,48 @@ def test_preview_reads_are_rate_limited():
     response = client.get(path)
     assert response.status_code == 429
     assert "Retry-After" in response.headers
+
+
+def test_guest_spot_catalog_only_adds_public_map_coordinates():
+    response = client.get('/api/v1/public/spots')
+    assert response.status_code == 200 and response.json()
+    assert response.headers['Cache-Control'] == 'public, max-age=3600'
+    assert set(response.json()[0]) == {'id', 'name', 'country', 'region', 'area', 'summary',
+                                       'difficulty', 'best_months', 'latitude', 'longitude'}
+    for item in response.json():
+        assert -90 <= item['latitude'] <= 90 and -180 <= item['longitude'] <= 180
+    for secret in ['wave_height', 'water_temp', 'image_url', 'forecast']:
+        assert secret not in response.text
+
+
+@pytest.mark.parametrize('token', [None, 'host-token', 'viewer-token'])
+def test_guest_event_catalog_never_includes_private_or_expired_events(token):
+    event = store.posts[0]
+    today = datetime.now(timezone.utc).date()
+    store.posts.extend([
+        event.model_copy(update={'id': 'expired', 'meetup_date': today - timedelta(days=1)}),
+        event.model_copy(update={'id': 'undated', 'meetup_date': None}),
+        event.model_copy(update={'id': 'ongoing', 'meetup_date': today - timedelta(days=2), 'meetup_end_date': today}),
+    ])
+    headers = {} if token is None else {'Authorization': f'Bearer {token}'}
+    response = client.get('/api/v1/public/events', headers=headers)
+    assert response.status_code == 200
+    assert [item['id'] for item in response.json()] == ['ongoing', 'public_event']
+    assert response.headers['Cache-Control'] == 'no-store'
+    for secret in ['host@example.com', 'rsvp_count', 'private_event', 'video.mp4', 'user_id']:
+        assert secret not in response.text
+    store.posts[0].visibility = 'followers'
+    assert [item['id'] for item in client.get('/api/v1/public/events').json()] == ['ongoing']
+    store.auth_accounts['host@example.com']['user']['banned'] = True
+    assert client.get('/api/v1/public/events').json() == []
+
+
+def test_guest_events_are_bounded_and_read_only():
+    event = store.posts[0]
+    store.posts[:] = [event.model_copy(update={'id': f'public_{n:03}'}) for n in range(130)]
+    response = client.get('/api/v1/public/events')
+    assert len(response.json()) == 100
+    assert response.json()[0]['id'] == 'public_000'
+    assert client.post('/api/v1/public/events', json={'body': 'not allowed'}).status_code == 405
+    assert client.post('/api/v1/social/posts/public_000/rsvp').status_code == 401
+    assert client.get('/api/v1/social/posts/public_000/chat').status_code == 401

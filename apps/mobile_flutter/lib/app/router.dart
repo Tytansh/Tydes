@@ -9,6 +9,7 @@ import '../features/admin/admin_users_page.dart';
 import '../features/auth/auth_page.dart';
 import '../features/auth/auth_return_path.dart';
 import '../features/public_previews/public_preview_page.dart';
+import '../features/guest/guest_explore_page.dart';
 import '../features/home/home_page.dart';
 import '../features/paywall/paywall_page.dart';
 import '../features/settings/settings_page.dart';
@@ -34,6 +35,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               : null,
           returnTo: safeAuthReturnPath(state.uri.queryParameters['next']),
         ),
+      ),
+      GoRoute(
+        path: '/explore',
+        builder: (_, _) => const GuestExplorePage(section: GuestSection.spots),
+      ),
+      GoRoute(
+        path: '/explore/map',
+        builder: (_, _) => const GuestExplorePage(section: GuestSection.map),
+      ),
+      GoRoute(
+        path: '/explore/events',
+        builder: (_, _) => const GuestExplorePage(section: GuestSection.events),
       ),
       GoRoute(
         path: '/spot/:spotId',

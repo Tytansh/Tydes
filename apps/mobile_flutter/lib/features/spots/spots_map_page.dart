@@ -13,6 +13,7 @@ import '../../core/network/surf_repository.dart';
 import '../home/home_page.dart';
 import '../social/social_profile.dart';
 import 'map_events.dart';
+import 'map_tile_config.dart' as tiles;
 import 'spots_page.dart';
 
 const _difficultyBeginnerColor = Color(0xFF4BAF74);
@@ -24,62 +25,6 @@ const _favoriteAccent = Color(0xFF2AA7A1);
 const _allCountriesLabel = 'All surf regions';
 const _allRegionsLabel = 'All regions';
 const _allAreasLabel = 'All areas';
-const _defaultMapTileUrlTemplate =
-    'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-const _defaultMapAttributionLabel = '© OpenStreetMap contributors';
-const _defaultMapAttributionUrl = 'https://www.openstreetmap.org/copyright';
-const _mapTileUrlTemplateOverride = String.fromEnvironment(
-  'MAP_TILE_URL_TEMPLATE',
-);
-const _mapTilerApiKey = String.fromEnvironment('MAPTILER_API_KEY');
-const _mapTilerMapId = String.fromEnvironment(
-  'MAPTILER_MAP_ID',
-  defaultValue: 'outdoor-v2',
-);
-const _mapTileUserAgent = String.fromEnvironment(
-  'MAP_TILE_USER_AGENT',
-  defaultValue: 'com.tytaneth.surftravel',
-);
-const _mapAttributionLabelOverride = String.fromEnvironment('MAP_ATTRIBUTION');
-const _mapAttributionUrlOverride = String.fromEnvironment(
-  'MAP_ATTRIBUTION_URL',
-);
-
-String get _mapTileUrlTemplate {
-  if (_mapTileUrlTemplateOverride.isNotEmpty) {
-    return _mapTileUrlTemplateOverride;
-  }
-
-  if (_mapTilerApiKey.isNotEmpty) {
-    return 'https://api.maptiler.com/maps/$_mapTilerMapId/256/{z}/{x}/{y}.png?key=$_mapTilerApiKey';
-  }
-
-  return _defaultMapTileUrlTemplate;
-}
-
-String get _mapAttributionLabel {
-  if (_mapAttributionLabelOverride.isNotEmpty) {
-    return _mapAttributionLabelOverride;
-  }
-
-  if (_mapTilerApiKey.isNotEmpty) {
-    return '© MapTiler © OpenStreetMap contributors';
-  }
-
-  return _defaultMapAttributionLabel;
-}
-
-String get _mapAttributionUrl {
-  if (_mapAttributionUrlOverride.isNotEmpty) {
-    return _mapAttributionUrlOverride;
-  }
-
-  if (_mapTilerApiKey.isNotEmpty) {
-    return 'https://www.maptiler.com/copyright/';
-  }
-
-  return _defaultMapAttributionUrl;
-}
 
 class SpotsMapPage extends ConsumerStatefulWidget {
   const SpotsMapPage({super.key, this.initialSpotId});
@@ -1171,8 +1116,8 @@ class _MapCanvas extends StatelessWidget {
       ),
       children: [
         TileLayer(
-          urlTemplate: _mapTileUrlTemplate,
-          userAgentPackageName: _mapTileUserAgent,
+          urlTemplate: tiles.mapTileUrlTemplate,
+          userAgentPackageName: tiles.mapTileUserAgent,
         ),
         MarkerLayer(
           markers: showEvents
@@ -1234,16 +1179,16 @@ class _MapAttributionPill extends StatelessWidget {
           elevation: 2,
           child: InkWell(
             borderRadius: BorderRadius.circular(999),
-            onTap: _mapAttributionUrl.isEmpty
+            onTap: tiles.mapAttributionUrl.isEmpty
                 ? null
                 : () => launchUrl(
-                    Uri.parse(_mapAttributionUrl),
+                    Uri.parse(tiles.mapAttributionUrl),
                     mode: LaunchMode.externalApplication,
                   ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
               child: Text(
-                _mapAttributionLabel,
+                tiles.mapAttributionLabel,
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: theme.colorScheme.onSurface,
                   fontWeight: FontWeight.w700,

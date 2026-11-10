@@ -26,22 +26,33 @@ class AlertMonitor {
 
   Timer? _timer;
   bool _checking = false;
+  int _generation = 0;
 
   Future<void> initialize() async {
-    await _notifications.initialize();
+    final generation = _generation;
+    try {
+      await _notifications.initialize();
+    } catch (_) {
+      // A platform without local notifications must not break browsing.
+      return;
+    }
+    if (generation != _generation) return;
     _timer ??= Timer.periodic(const Duration(minutes: 2), (_) => checkNow());
     await checkNow();
   }
 
   Future<void> checkNow() async {
     if (_checking) return;
+    final generation = _generation;
     _checking = true;
     try {
       final alerts = await _repository.fetchAlerts();
+      if (generation != _generation) return;
       final spots = await _repository.fetchSpots();
       final spotNames = {for (final spot in spots) spot.id: spot.name};
 
       for (final alert in alerts) {
+        if (generation != _generation) return;
         final token = alert.lastTriggeredAt ?? alert.nextCheckAt;
         if (alert.enabled && alert.status == 'triggered') {
           final previous = _seenTriggerTokens[alert.id];
@@ -67,8 +78,10 @@ class AlertMonitor {
   }
 
   void dispose() {
+    _generation++;
     _timer?.cancel();
     _timer = null;
+    _seenTriggerTokens.clear();
   }
 }
 

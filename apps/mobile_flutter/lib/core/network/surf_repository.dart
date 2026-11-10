@@ -84,6 +84,28 @@ class SurfRepository {
   final Dio _dio;
   final DemoPersistence _demoPersistence;
 
+  Future<List<PublicMapSpotPreview>> fetchPublicSpots() async {
+    final response = await _dio.get<List<dynamic>>('/public/spots');
+    return response.data!
+        .map(
+          (item) => PublicMapSpotPreview.fromJson(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
+        .toList();
+  }
+
+  Future<List<PublicEventPreview>> fetchPublicEvents() async {
+    final response = await _dio.get<List<dynamic>>('/public/events');
+    return response.data!
+        .map(
+          (item) => PublicEventPreview.fromJson(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
+        .toList();
+  }
+
   Future<PublicSpotPreview> fetchPublicSpot(String id) async {
     final response = await _dio.get<Map<String, dynamic>>(
       '/public/spots/${Uri.encodeComponent(id)}',

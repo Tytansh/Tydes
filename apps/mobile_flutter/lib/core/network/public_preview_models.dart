@@ -12,6 +12,14 @@ class PublicSpotPreview {
   final List<String> bestMonths;
 }
 
+class PublicMapSpotPreview extends PublicSpotPreview {
+  PublicMapSpotPreview.fromJson(super.data)
+    : latitude = (data['latitude'] as num).toDouble(),
+      longitude = (data['longitude'] as num).toDouble(),
+      super.fromJson();
+  final double latitude, longitude;
+}
+
 class PublicEventPreview {
   PublicEventPreview.fromJson(Map<String, dynamic> data)
     : id = data['id'] as String,

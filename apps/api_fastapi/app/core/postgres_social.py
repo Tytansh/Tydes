@@ -137,6 +137,27 @@ class PostgresSocialRepository:
             posts.append(SocialPost.model_validate(payload))
         return posts
 
+    def list_public_events(self, today: date, limit: int = 100) -> list[tuple[SocialPost, User]]:
+        # No viewer state, engagement aggregates or per-event author queries.
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT posts.payload, accounts.user_payload
+                FROM social_posts AS posts
+                JOIN auth_accounts AS accounts ON accounts.user_payload->>'id' = posts.user_id
+                WHERE posts.payload->>'visibility' = 'public'
+                  AND posts.payload->>'post_type' IN ('surf_plan', 'looking_for_buddy')
+                  AND posts.payload->>'meetup_date' IS NOT NULL
+                  AND COALESCE(posts.payload->>'meetup_end_date', posts.payload->>'meetup_date') >= %s
+                  AND COALESCE(accounts.user_payload->>'banned', 'false') <> 'true'
+                ORDER BY posts.payload->>'meetup_date', posts.id
+                LIMIT %s
+                """,
+                (today.isoformat(), min(max(limit, 1), 100)),
+            ).fetchall()
+        return [(SocialPost.model_validate(_payload_dict(row["payload"])),
+                 User.model_validate(_payload_dict(row["user_payload"]))) for row in rows]
+
     def count_user_posts_since(self, user_id: str, since: datetime) -> int:
         with self._connect() as connection:
             row = connection.execute(

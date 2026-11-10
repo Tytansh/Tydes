@@ -81,6 +81,51 @@ class _AuthRepo extends SurfRepository {
 }
 
 void main() {
+  testWidgets('signing in from guest events opens the normal Travel tab', (
+    tester,
+  ) async {
+    final repo = _AuthRepo()..profile = _complete;
+    final router = GoRouter(
+      initialLocation: '/login',
+      routes: [
+        GoRoute(
+          path: '/login',
+          builder: (_, _) => const AuthPage(returnTo: '/explore/events'),
+        ),
+        GoRoute(path: '/', builder: (_, _) => const Text('Account opened')),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [surfRepositoryProvider.overrideWithValue(repo)],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+    for (final entry in {
+      'Email': 'current@example.com',
+      'Password': 'test-password',
+    }.entries) {
+      final field = find.byWidgetPredicate(
+        (w) => w is TextField && w.decoration?.labelText == entry.key,
+      );
+      await tester.ensureVisible(field);
+      await tester.enterText(field, entry.value);
+    }
+    tester.testTextInput.hide();
+    await tester.pumpAndSettle();
+    final submit = find.widgetWithText(FilledButton, 'Sign in');
+    await tester.ensureVisible(submit);
+    await tester.pumpAndSettle();
+    await tester.tap(submit);
+    await tester.pumpAndSettle();
+    expect(find.text('Account opened'), findsOneWidget);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+    expect(container.read(currentTabProvider), 2);
+  });
   for (final width in [430.0, 1440.0]) {
     testWidgets(
       'Google and email profile completion share the signup card at $width',
@@ -250,7 +295,10 @@ void main() {
       await tester.ensureVisible(field);
       await tester.enterText(field, entry.value);
     }
+    tester.testTextInput.hide();
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
     await tester.pump();
     expect(find.text('Login completed once'), findsNothing);

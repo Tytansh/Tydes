@@ -114,8 +114,12 @@ class _AuthPageState extends ConsumerState<AuthPage> {
       await _finishAuth(currentProfile);
       return;
     }
-    ref.read(currentTabProvider.notifier).state = 0;
-    context.go(safeAuthReturnPath(widget.returnTo));
+    final destination = safeAuthReturnPath(widget.returnTo);
+    final fromGuest = destination.startsWith('/explore');
+    ref.read(currentTabProvider.notifier).state = fromGuest
+        ? (destination == '/explore/events' ? 2 : 1)
+        : 0;
+    context.go(fromGuest ? '/' : destination);
   }
 
   Future<void> _useAnotherAccount() async {
@@ -402,6 +406,27 @@ class _AuthPageState extends ConsumerState<AuthPage> {
         ),
         const SizedBox(height: 10),
         _AuthLegalNote(isSignup: isSignup),
+        if (!_verificationPending) ...[
+          const SizedBox(height: 14),
+          OutlinedButton.icon(
+            onPressed: _loading
+                ? null
+                : () {
+                    final next = safeAuthReturnPath(widget.returnTo);
+                    context.go(
+                      next.startsWith('/spot/') ||
+                              next.startsWith('/post/') ||
+                              next.startsWith('/explore')
+                          ? next
+                          : next == '/spots-map'
+                          ? '/explore/map'
+                          : '/explore',
+                    );
+                  },
+            icon: const Icon(Icons.explore_outlined),
+            label: const Text('Explore as guest'),
+          ),
+        ],
       ],
     );
   }
