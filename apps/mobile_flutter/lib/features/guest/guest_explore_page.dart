@@ -14,6 +14,7 @@ import '../../core/network/surf_repository.dart';
 import '../auth/auth_return_path.dart';
 import '../social/social_profile.dart';
 import '../spots/map_tile_config.dart' as tiles;
+import '../spots/surf_map_markers.dart';
 
 final guestSpotsProvider =
     FutureProvider.autoDispose<List<PublicMapSpotPreview>>((ref) {
@@ -655,15 +656,7 @@ class _GuestMapCanvasState extends State<GuestMapCanvas> {
                       tooltip: spot.name,
                       padding: EdgeInsets.zero,
                       onPressed: () => widget.onSpot(spot),
-                      icon: Icon(
-                        Icons.location_on,
-                        size: 28,
-                        color: spot.difficulty == 'beginner'
-                            ? const Color(0xFF4BAF74)
-                            : spot.difficulty == 'advanced'
-                            ? const Color(0xFFD75A4A)
-                            : const Color(0xFF2E8FE8),
-                      ),
+                      icon: SurfMapSpotPin(difficulty: spot.difficulty),
                     ),
                   ),
               ],
@@ -733,67 +726,13 @@ class GuestEventMarker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final host = group.events.first;
-    return Tooltip(
-      message:
-          '${group.events.length} ${group.events.length == 1 ? 'event' : 'events'} at ${group.spot.name}',
-      child: Semantics(
-        button: true,
-        label: 'Events at ${group.spot.name}',
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            key: ValueKey('guest-event-${group.spot.id}'),
-            onTap: onTap,
-            customBorder: const CircleBorder(),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: const Color(0xFF079CA3),
-                      width: 2,
-                    ),
-                  ),
-                  child: TydesProfileAvatar(
-                    displayName: host.hostName,
-                    imageUrl: host.hostAvatarUrl,
-                    size: 40,
-                  ),
-                ),
-                Positioned(
-                  right: 0,
-                  bottom: 1,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF079CA3),
-                      shape: BoxShape.circle,
-                    ),
-                    child: group.events.length > 1
-                        ? Text(
-                            '${group.events.length}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          )
-                        : const Icon(
-                            Icons.event,
-                            color: Colors.white,
-                            size: 12,
-                          ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return SurfMapEventAvatar(
+      displayName: host.hostName,
+      avatarUrl: host.hostAvatarUrl,
+      spotName: group.spot.name,
+      eventCount: group.events.length,
+      onTap: onTap,
+      tapKey: ValueKey('guest-event-${group.spot.id}'),
     );
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,10 +12,14 @@ import '../social/event_chat_page.dart';
 import '../social/social_feed.dart';
 import '../social/social_profile.dart';
 import '../trips/trips_page.dart';
+import 'surf_map_markers.dart';
 
 final mapEventPostsProvider = FutureProvider.autoDispose<List<SocialPostModel>>(
   (ref) {
     ref.watch(socialRefreshKeyProvider);
+    final link = ref.keepAlive();
+    final timer = Timer(const Duration(minutes: 2), link.close);
+    ref.onDispose(timer.cancel);
     return ref.watch(surfRepositoryProvider).fetchMapEvents();
   },
 );
@@ -157,89 +163,13 @@ class MapEventMarker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final host = group.events.first.post;
-    final label =
-        '${group.events.length} ${group.events.length == 1 ? 'event' : 'events'} at ${group.spot.name}';
-    return Tooltip(
-      message: label,
-      child: Semantics(
-        button: true,
-        label: label,
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            key: ValueKey('map-event-marker-${group.spot.id}'),
-            onTap: onTap,
-            customBorder: const CircleBorder(),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: const Color(0xFF079CA3),
-                      width: 2,
-                    ),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x40002529),
-                        blurRadius: 8,
-                        offset: Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: TydesProfileAvatar(
-                    displayName: host.authorName,
-                    imageUrl: host.authorAvatarUrl,
-                    size: 40,
-                  ),
-                ),
-                Positioned(
-                  bottom: 0,
-                  left: 1,
-                  child: Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF079CA3),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.event_rounded,
-                      size: 12,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-                if (group.events.length > 1)
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 5,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF063E48),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        '${group.events.length}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return SurfMapEventAvatar(
+      displayName: host.authorName,
+      avatarUrl: host.authorAvatarUrl,
+      spotName: group.spot.name,
+      eventCount: group.events.length,
+      onTap: onTap,
+      tapKey: ValueKey('map-event-marker-${group.spot.id}'),
     );
   }
 }

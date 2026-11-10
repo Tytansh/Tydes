@@ -49,3 +49,17 @@ work:
 The URL template must support `{z}`, `{x}`, and `{y}` placeholders because
 `flutter_map` fills those per tile. Keep provider API keys out of GitHub. Use
 build settings, CI secrets, or local terminal commands.
+
+## Shared guest and signed-in markers
+
+Both maps use `SurfMapSpotPin` (green beginner, blue intermediate, red advanced)
+and `SurfMapEventAvatar`. Pin colors describe the catalog difficulty, not live
+conditions. The signed-in map's **Show events** switch starts on and overlays
+host avatars without hiding beach pins. Saved-only, location, and search filters
+apply to both layers. Turning the overlay off preserves the selected spot and
+camera. Zoom buttons and Fit map match Explore; wheel scrolling scrolls the page.
+
+Guest event data remains public-only. Signed-in grouping retains viewer/follow/
+block checks and existing join/group-chat flows. Event results are reused for two
+minutes between toggles (manual refresh and social changes invalidate them).
+This adds no provider, paid service, forecast polling, or per-pin forecast calls.
