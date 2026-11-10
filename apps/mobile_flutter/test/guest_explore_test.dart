@@ -410,7 +410,7 @@ void main() {
           Uri(path: '/login', queryParameters: {'next': next}).toString(),
           _Notifications(),
         );
-        final guest = find.text('Explore as guest');
+        final guest = find.byKey(const ValueKey('explore-as-guest'));
         await tester.ensureVisible(guest);
         await tester.tap(guest);
         await tester.pumpAndSettle();
@@ -467,8 +467,10 @@ void main() {
               .queryParameters['next'],
           '/spot/bondi',
         );
-        await tester.ensureVisible(find.text('Explore as guest'));
-        await tester.tap(find.text('Explore as guest'));
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('explore-as-guest')),
+        );
+        await tester.tap(find.byKey(const ValueKey('explore-as-guest')));
         await tester.pumpAndSettle();
         expect(
           container

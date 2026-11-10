@@ -11,7 +11,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:web/web.dart' as web;
 
-import '../../core/legal/legal_links.dart';
 import '../../core/network/surf_repository.dart';
 
 @JS('google.accounts.id.initialize')
@@ -97,6 +96,9 @@ class GoogleSignInButton extends ConsumerStatefulWidget {
 }
 
 class _GoogleSignInButtonState extends ConsumerState<GoogleSignInButton> {
+  // Local visual review only. Production builds leave this false and keep
+  // the real Google SDK, origin checks and challenge flow unchanged.
+  static const _designPreview = bool.fromEnvironment('AUTH_DESIGN_PREVIEW');
   Map<String, dynamic>? _challenge;
   String? _verifier;
   String? _error;
@@ -107,7 +109,7 @@ class _GoogleSignInButtonState extends ConsumerState<GoogleSignInButton> {
   @override
   void initState() {
     super.initState();
-    unawaited(_prepare());
+    if (!_designPreview) unawaited(_prepare());
   }
 
   Future<void> _prepare() async {
@@ -197,11 +199,30 @@ class _GoogleSignInButtonState extends ConsumerState<GoogleSignInButton> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_available) return const SizedBox.shrink();
+    if (!_designPreview && !_available) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (_error != null)
+        if (_designPreview) ...[
+          OutlinedButton(
+            onPressed: null,
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(44),
+              disabledForegroundColor: const Color(0xFF435B65),
+              side: const BorderSide(color: Color(0xFFD7E1E2)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text('Continue with Google'),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Google sign-in is disabled in this local design preview.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11, color: Color(0xFF5A6F77)),
+          ),
+        ] else if (_error != null)
           TextButton(
             onPressed: widget.enabled ? _prepare : null,
             child: Text(_error!),
@@ -232,15 +253,6 @@ class _GoogleSignInButtonState extends ConsumerState<GoogleSignInButton> {
               );
             },
           ),
-        const SizedBox(height: 8),
-        Text(
-          'By continuing with Google, you agree to Tydes Terms and Privacy Policy.',
-          textAlign: TextAlign.center,
-          style: Theme.of(
-            context,
-          ).textTheme.bodySmall?.copyWith(color: const Color(0xFF607175)),
-        ),
-        const TydesLegalLinks(dense: true),
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 18),
           child: Row(

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -13,6 +14,7 @@ import '../spots/spot_detail_page.dart';
 import '../spots/spots_page.dart';
 import 'google_sign_in_button.dart';
 import 'auth_return_path.dart';
+import 'auth_entry_layout.dart';
 
 final authStateProvider = FutureProvider.autoDispose((ref) async {
   return ref.watch(surfRepositoryProvider).fetchMe();
@@ -392,7 +394,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
               fontWeight: FontWeight.w800,
             ),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(12),
             ),
           ),
           onPressed: _loading
@@ -404,16 +406,42 @@ class _AuthPageState extends ConsumerState<AuthPage> {
               : _submitSignIn,
           child: Text(actionLabel),
         ),
-        const SizedBox(height: 10),
-        _AuthLegalNote(isSignup: isSignup),
         if (!_verificationPending) ...[
-          const SizedBox(height: 14),
+          const SizedBox(height: 24),
+          const Text(
+            'Just looking around?',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Color(0xFF5A6F77), fontSize: 13),
+          ),
+          const SizedBox(height: 10),
           OutlinedButton.icon(
+            key: const ValueKey('explore-as-guest'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(52),
+              backgroundColor: const Color(0xFFE9F3F0),
+              foregroundColor: const Color(0xFF164D59),
+              side: const BorderSide(color: Color(0xFFD2E4DE)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              textStyle: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+              ),
+            ),
             onPressed: _loading ? null : () => context.go('/explore'),
-            icon: const Icon(Icons.explore_outlined),
-            label: const Text('Explore as guest'),
+            icon: const Icon(Icons.map_outlined, size: 20),
+            label: const Text('Explore the map'),
+          ),
+          const SizedBox(height: 7),
+          const Text(
+            'No account needed',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Color(0xFF5A6F77), fontSize: 11),
           ),
         ],
+        const SizedBox(height: 24),
+        _AuthLegalNote(isSignup: isSignup),
       ],
     );
   }
@@ -435,7 +463,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
         ? 'Enter the code sent to ${_verificationEmail ?? 'your email'} to finish creating your account.'
         : isSignup
         ? 'Build your surf profile'
-        : 'Sign in to unlock your saved spots, alerts, and live forecast tools.';
+        : 'Your spots, your crew, your next session.';
     final actionLabel = _loading
         ? 'Working...'
         : _verificationPending
@@ -447,86 +475,21 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     return PopScope(
       canPop: false,
       child: Scaffold(
-        body: DecoratedBox(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFFDFF5F2), Color(0xFFF8F7F2), Color(0xFFFFF2E2)],
-              stops: [0, 0.58, 1],
-            ),
-          ),
-          child: SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final desktop = constraints.maxWidth >= 980;
-                final formContent = setup != null
-                    ? _ProfileSetupForm(
-                        key: ValueKey(setup.id),
-                        profile: setup,
-                        onCompleted: _finishAuth,
-                        onUseAnotherAccount: _useAnotherAccount,
-                      )
-                    : _buildAuthFormContent(
-                        isSignup: isSignup,
-                        actionLabel: actionLabel,
-                      );
-                if (desktop) {
-                  return SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(40, 32, 40, 40),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 1180),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Expanded(child: _DesktopAuthShowcase()),
-                            const SizedBox(width: 38),
-                            SizedBox(
-                              width: 470,
-                              child: _AuthFormCard(
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    _DesktopAuthHeading(
-                                      title: title,
-                                      subtitle: subtitle,
-                                    ),
-                                    const SizedBox(height: 30),
-                                    formContent,
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                }
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 28),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 500),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _AuthBrandHeader(title: title, subtitle: subtitle),
-                          const SizedBox(height: 18),
-                          _AuthFormCard(child: formContent),
-                          const SizedBox(height: 16),
-                          if (!_verificationPending && setup == null)
-                            const _AuthPerksCard(),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
+        backgroundColor: const Color(0xFFF9FAF7),
+        body: AuthEntryLayout(
+          title: title,
+          subtitle: subtitle,
+          child: setup != null
+              ? _ProfileSetupForm(
+                  key: ValueKey(setup.id),
+                  profile: setup,
+                  onCompleted: _finishAuth,
+                  onUseAnotherAccount: _useAnotherAccount,
+                )
+              : _buildAuthFormContent(
+                  isSignup: isSignup,
+                  actionLabel: actionLabel,
+                ),
         ),
       ),
     );
@@ -545,6 +508,8 @@ class _AuthLegalNote extends StatelessWidget {
         Text(
           isSignup
               ? 'By creating an account, you agree to Tydes Terms and Privacy Policy.'
+              : kIsWeb
+              ? 'By continuing with Google, you agree to Tydes Terms and Privacy Policy.'
               : 'Need help or want to review Tydes policies?',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -559,335 +524,6 @@ class _AuthLegalNote extends StatelessWidget {
   }
 }
 
-class _DesktopAuthShowcase extends StatelessWidget {
-  const _DesktopAuthShowcase();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 660,
-      padding: const EdgeInsets.all(46),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(42),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF075C6E), Color(0xFF08A9AF), Color(0xFFE3BC74)],
-          stops: [0, 0.56, 1],
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x26073F43),
-            blurRadius: 42,
-            offset: Offset(0, 24),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(24),
-                child: Image.asset(
-                  'assets/branding/tydes-wave-blue-256.png',
-                  width: 82,
-                  height: 82,
-                  fit: BoxFit.cover,
-                ),
-              ),
-              const SizedBox(width: 20),
-              const Text(
-                'Tydes',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 35,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -1.2,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 78),
-          const SizedBox(
-            height: 82,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Where We Surfing',
-                maxLines: 1,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontFamily: 'Pacifico',
-                  fontSize: 60,
-                  height: 1.1,
-                  fontWeight: FontWeight.w400,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 22),
-          const Text(
-            'Check the forecast, pick a spot, and see who’s heading out.',
-            style: TextStyle(
-              color: Color(0xEFFFFFFF),
-              fontSize: 18,
-              height: 1.48,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 34),
-          const Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _DesktopFeaturePill(
-                icon: Icons.map_outlined,
-                label: '300+ surf breaks',
-              ),
-              _DesktopFeaturePill(
-                icon: Icons.waves_rounded,
-                label: 'Live conditions',
-              ),
-              _DesktopFeaturePill(
-                icon: Icons.people_alt_outlined,
-                label: 'Surf community',
-              ),
-            ],
-          ),
-          const Spacer(),
-        ],
-      ),
-    );
-  }
-}
-
-class _DesktopFeaturePill extends StatelessWidget {
-  const _DesktopFeaturePill({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: Colors.white, size: 19),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DesktopAuthHeading extends StatelessWidget {
-  const _DesktopAuthHeading({required this.title, required this.subtitle});
-
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const _SurfLogoBadge(),
-            const SizedBox(width: 14),
-            Text(
-              'Tydes',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: const Color(0xFF1687C5),
-                fontWeight: FontWeight.w900,
-                letterSpacing: -0.6,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 38),
-        Text(
-          title,
-          style: Theme.of(context).textTheme.displaySmall?.copyWith(
-            color: const Color(0xFF142127),
-            fontSize: 40,
-            fontWeight: FontWeight.w900,
-            letterSpacing: -1.3,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Text(
-          subtitle,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            color: const Color(0xFF58666A),
-            fontSize: 17,
-            height: 1.45,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _AuthBrandHeader extends StatelessWidget {
-  const _AuthBrandHeader({required this.title, required this.subtitle});
-
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(32),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x14073F43),
-            blurRadius: 28,
-            offset: Offset(0, 18),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const _SurfLogoBadge(),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Tydes',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: const Color(0xFF1687C5),
-                        fontSize: 24,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Text(
-            title,
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-              color: const Color(0xFF142127),
-              fontSize: 32,
-              letterSpacing: -0.8,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            subtitle,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: const Color(0xFF4F5E62),
-              height: 1.4,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SurfLogoBadge extends StatelessWidget {
-  const _SurfLogoBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
-      child: Image.asset(
-        'assets/branding/tydes-wave-blue-256.png',
-        width: 72,
-        height: 72,
-        fit: BoxFit.cover,
-      ),
-    );
-  }
-}
-
-class _AuthFormCard extends StatelessWidget {
-  const _AuthFormCard({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final baseTheme = Theme.of(context);
-    final desktop = MediaQuery.sizeOf(context).width >= 980;
-    return Container(
-      padding: EdgeInsets.all(desktop ? 32 : 18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: const Color(0xFFEDEAE1)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0F073F43),
-            blurRadius: 24,
-            offset: Offset(0, 14),
-          ),
-        ],
-      ),
-      child: Theme(
-        data: baseTheme.copyWith(
-          inputDecorationTheme: InputDecorationTheme(
-            filled: true,
-            fillColor: const Color(0xFFF8F7F2),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(18),
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(18),
-              borderSide: const BorderSide(color: Color(0xFFECE8DD)),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(18),
-              borderSide: const BorderSide(
-                color: Color(0xFF079CA3),
-                width: 1.4,
-              ),
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 16,
-            ),
-          ),
-        ),
-        child: child,
-      ),
-    );
-  }
-}
-
 class _AuthModeToggle extends StatelessWidget {
   const _AuthModeToggle({required this.mode, required this.onChanged});
 
@@ -897,10 +533,8 @@ class _AuthModeToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(5),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1EFE7),
-        borderRadius: BorderRadius.circular(22),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFFDEE6E5))),
       ),
       child: Row(
         children: [
@@ -942,34 +576,29 @@ class _AuthModeButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(8),
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
         padding: const EdgeInsets.symmetric(vertical: 13),
         decoration: BoxDecoration(
-          color: selected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: selected
-              ? const [
-                  BoxShadow(
-                    color: Color(0x12073F43),
-                    blurRadius: 12,
-                    offset: Offset(0, 6),
-                  ),
-                ]
-              : null,
+          border: Border(
+            bottom: BorderSide(
+              color: selected ? const Color(0xFF168F99) : Colors.transparent,
+              width: 2.5,
+            ),
+          ),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               icon,
-              size: 18,
+              size: 16,
               color: selected
                   ? const Color(0xFF079CA3)
-                  : const Color(0xFF738185),
+                  : const Color(0xFF5F737C),
             ),
             const SizedBox(width: 8),
             Text(
@@ -977,86 +606,13 @@ class _AuthModeButton extends StatelessWidget {
               style: TextStyle(
                 color: selected
                     ? const Color(0xFF073F43)
-                    : const Color(0xFF738185),
+                    : const Color(0xFF5F737C),
                 fontWeight: FontWeight.w800,
               ),
             ),
           ],
         ),
       ),
-    );
-  }
-}
-
-class _AuthPerksCard extends StatelessWidget {
-  const _AuthPerksCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xEFFFFFFF),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: const Color(0xFFEDEAE1)),
-      ),
-      child: const Column(
-        children: [
-          _AuthPerk(
-            icon: Icons.waves_rounded,
-            text: 'Save your favorite surf spots across devices.',
-          ),
-          SizedBox(height: 12),
-          _AuthPerk(
-            icon: Icons.notifications_active_outlined,
-            text: 'Create wave, wind, and tide alerts for unlocked breaks.',
-          ),
-          SizedBox(height: 12),
-          _AuthPerk(
-            icon: Icons.travel_explore_rounded,
-            text: 'Keep trip planning, maps, and live forecast tools together.',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AuthPerk extends StatelessWidget {
-  const _AuthPerk({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            color: const Color(0xFFE3F5F2),
-            borderRadius: BorderRadius.circular(13),
-          ),
-          child: Icon(icon, color: const Color(0xFF079CA3), size: 19),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 5),
-            child: Text(
-              text,
-              style: const TextStyle(
-                color: Color(0xFF4F5E62),
-                fontWeight: FontWeight.w700,
-                height: 1.25,
-              ),
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

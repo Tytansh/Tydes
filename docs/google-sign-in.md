@@ -50,6 +50,18 @@ Render when needed; preserve website checkout configuration.
 
 ## Verification and troubleshooting
 
+The photo-led authentication layout keeps one shared legal footer and the same
+Google SDK/challenge/login flow. For local visual review only,
+`--dart-define=AUTH_DESIGN_PREVIEW=true` displays a clearly disabled Google button
+without requesting a challenge. Do not use that define for publication. The
+release guard in `tool/verify_web_billing.sh` rejects bundles containing that
+preview state. Real Google sign-in remains restricted to the approved production
+origins; do not broaden origin permissions merely to take design screenshots.
+
+Decorative surf photos are bundled local assets, with provenance and license
+recorded in `apps/mobile_flutter/assets/images/README.md`. They do not issue
+visitor requests to a stock-photo service or touch customer uploads.
+
 Automated checks passed: 106 backend tests (including 23 Google-auth tests),
 45 Flutter tests, Flutter analysis, the release web build, and the website
 billing build guard. The live public config reports Google enabled, the button

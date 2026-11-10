@@ -13,6 +13,12 @@ if [[ ! -s "$main_bundle" || ! -s "$vendor_bundle" ]]; then
   exit 1
 fi
 
+if rg --fixed-strings --quiet 'Google sign-in is disabled in this local design preview.' "$main_bundle"; then
+  printf '%s\n' 'Release build check failed: AUTH_DESIGN_PREVIEW is enabled.' >&2
+  printf '%s\n' 'Rebuild without AUTH_DESIGN_PREVIEW before publishing.' >&2
+  exit 1
+fi
+
 for marker in 'PurchasesHybridMappings' 'web/purchases_js_hybrid_mappings.js'; do
   if ! rg --fixed-strings --quiet "$marker" "$main_bundle"; then
     printf '%s\n' 'Billing build check failed: the compiled web payment plugin is missing.' >&2

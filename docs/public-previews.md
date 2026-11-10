@@ -30,7 +30,7 @@ this change.
 
 ## Guest explorer
 
-`/explore` is a single read-only guest map, available from **Explore as guest**
+`/explore` is a single read-only guest map, available from **Explore the map**
 on the sign-in/sign-up card. The old `/explore/map` and `/explore/events` links
 redirect to it. **Show events** starts on for each new entry. It uses
 only the whitelisted public catalogs: static spots with map coordinates and up
@@ -39,7 +39,7 @@ filters run locally. Spot guides and event details retain their existing share
 routes and sign-in return destinations. Signing in from the guest explorer opens
 the normal Spots account tab.
 
-**Explore as guest** always starts the main `/explore` map with fresh page state,
+**Explore the map** always starts the main `/explore` map with fresh page state,
 regardless of a spot/event saved in the sign-in `next` parameter. Actual sign-in
 continues to return to that original item. Re-entering as a guest resets filters,
 scroll position and the event switch rather than resuming a detail screen.
