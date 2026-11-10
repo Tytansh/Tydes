@@ -337,4 +337,17 @@ void main() {
     expect(repository.eventLoads, 2);
     await _finish(tester, container);
   });
+
+  testWidgets('own event marker paints above nearby host markers', (
+    tester,
+  ) async {
+    final repository = _Repository()
+      ..posts = [_event('batu', owner: 'viewer'), _event('uluwatu')];
+    final container = await _pump(tester, repository);
+    final layer = tester.widgetList<MarkerLayer>(find.byType(MarkerLayer)).last;
+    final topMarker = layer.markers.last.child as MapEventMarker;
+    expect(topMarker.group.spot.id, 'batu');
+    expect(topMarker.viewerId, 'viewer');
+    await _finish(tester, container);
+  });
 }

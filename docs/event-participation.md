@@ -14,6 +14,9 @@
 - Creation increments the existing social refresh key, refreshing mounted map and
   inbox providers. Map events respect location/search/saved-only filters; **Back
   to full map** clears them while retaining the event overlay switch.
+- Signed-in maps paint the viewer's event markers above nearby hosts. When a
+  beach has several events, its marker prefers the viewer's host avatar if they
+  are organizing one; the popup still lists all permitted events at that beach.
 
 Regression coverage: backend API host/guest membership, old hosted rooms, SQL
 counting/visibility/atomic writes; Flutter host auto-selection, attendee counts,

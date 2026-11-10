@@ -9,6 +9,7 @@ import 'package:mobile_flutter/core/network/demo_seed.dart';
 import 'package:mobile_flutter/core/network/surf_repository.dart';
 import 'package:mobile_flutter/features/home/home_page.dart';
 import 'package:mobile_flutter/features/spots/map_events.dart';
+import 'package:mobile_flutter/features/social/social_profile.dart';
 
 final _spot = DemoSeed.spots.first;
 final _now = DateTime(2026, 11, 5);
@@ -21,10 +22,11 @@ SocialPostModel _event(
   String? end,
   String type = 'surf_plan',
   String? spotId,
+  String authorName = 'Maya Surfer',
 }) => SocialPostModel(
   id: id,
   userId: owner,
-  authorName: 'Maya Surfer',
+  authorName: authorName,
   authorHandle: 'maya',
   authorAvatarUrl: null,
   authorPremium: false,
@@ -68,6 +70,42 @@ class _EventRepository extends SurfRepository {
 }
 
 void main() {
+  testWidgets('shared beach marker prefers the viewers own host avatar', (
+    tester,
+  ) async {
+    final group = buildMapEventGroups(
+      posts: [
+        _event('other'),
+        _event('own', owner: 'viewer', authorName: 'Your Name'),
+      ],
+      spots: [_spot],
+      now: _now,
+      viewerId: 'viewer',
+    ).single;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox.square(
+            dimension: 62,
+            child: MapEventMarker(
+              group: group,
+              viewerId: 'viewer',
+              onTap: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<TydesProfileAvatar>(find.byType(TydesProfileAvatar))
+          .displayName,
+      'Your Name',
+    );
+    expect(group.events, hasLength(2));
+  });
+
   test('map groups real dated events, including ongoing multi-day events', () {
     final groups = buildMapEventGroups(
       posts: [

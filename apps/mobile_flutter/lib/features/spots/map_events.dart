@@ -155,14 +155,25 @@ Future<void> showMapEventPopup(BuildContext context, MapEventGroup group) {
 }
 
 class MapEventMarker extends StatelessWidget {
-  const MapEventMarker({super.key, required this.group, required this.onTap});
+  const MapEventMarker({
+    super.key,
+    required this.group,
+    required this.onTap,
+    this.viewerId,
+  });
 
   final MapEventGroup group;
   final VoidCallback onTap;
+  final String? viewerId;
 
   @override
   Widget build(BuildContext context) {
-    final host = group.events.first.post;
+    final host = group.events
+        .firstWhere(
+          (event) => event.post.userId == viewerId,
+          orElse: () => group.events.first,
+        )
+        .post;
     return SurfMapEventAvatar(
       displayName: host.authorName,
       avatarUrl: host.authorAvatarUrl,

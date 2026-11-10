@@ -394,7 +394,21 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                       selectedSpotId: _selectedSpotId,
                       selectedForecast: selectedForecast,
                       onSpotTap: _focusSpot,
-                      eventGroups: eventGroups,
+                      // Paint the viewer's markers last so nearby hosts cannot
+                      // cover their own event at overview zoom levels.
+                      eventGroups: [
+                        ...eventGroups.where(
+                          (group) => !group.events.any(
+                            (event) => event.post.userId == viewer?.id,
+                          ),
+                        ),
+                        ...eventGroups.where(
+                          (group) => group.events.any(
+                            (event) => event.post.userId == viewer?.id,
+                          ),
+                        ),
+                      ],
+                      viewerId: viewer?.id,
                       tileProviderFactory: ref.watch(
                         spotsMapTileProviderFactory,
                       ),
@@ -1119,6 +1133,7 @@ class _MapCanvas extends StatefulWidget {
     required this.eventGroups,
     required this.onEventTap,
     required this.tileProviderFactory,
+    required this.viewerId,
   });
 
   final MapController mapController;
@@ -1132,6 +1147,7 @@ class _MapCanvas extends StatefulWidget {
   final List<MapEventGroup> eventGroups;
   final ValueChanged<MapEventGroup> onEventTap;
   final TileProvider Function() tileProviderFactory;
+  final String? viewerId;
 
   @override
   State<_MapCanvas> createState() => _MapCanvasState();
@@ -1207,6 +1223,7 @@ class _MapCanvasState extends State<_MapCanvas> {
                     height: 62,
                     child: MapEventMarker(
                       group: group,
+                      viewerId: widget.viewerId,
                       onTap: () => widget.onEventTap(group),
                     ),
                   ),
