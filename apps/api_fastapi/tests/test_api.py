@@ -2061,12 +2061,14 @@ def test_social_feed_and_create_post(monkeypatch):
 
     posts_response = client.get("/api/v1/social/posts")
     assert posts_response.status_code == 200
-    assert any(
+    assert not any(
         post["body"].startswith("Anyone surfing")
         for post in posts_response.json()
     )
+    # Followers-only posts must not be available to anonymous visitors.
+    owner_posts = client.get("/api/v1/social/posts", headers={"Authorization": f"Bearer {access_token}"})
     created_post = next(
-        post for post in posts_response.json() if post["id"] == post_id
+        post for post in owner_posts.json() if post["id"] == post_id
     )
     assert created_post["like_count"] == 0
     assert created_post["repost_count"] == 0
@@ -2188,6 +2190,10 @@ def test_social_feed_and_create_post(monkeypatch):
         headers={"Authorization": f"Bearer {actor_token}"},
     )
     assert restored_posts_response.status_code == 200
+    # Unblocking does not silently re-follow the author of a followers-only post.
+    assert all(post["id"] != post_id for post in restored_posts_response.json())
+    client.post(f"/api/v1/social/follows/{owner_user_id}", headers={"Authorization": f"Bearer {actor_token}"})
+    restored_posts_response = client.get("/api/v1/social/posts", headers={"Authorization": f"Bearer {actor_token}"})
     assert any(
         post["id"] == post_id
         for post in restored_posts_response.json()

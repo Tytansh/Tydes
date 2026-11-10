@@ -21,6 +21,8 @@ import 'direct_messages_page.dart';
 import 'event_chat_page.dart';
 import 'post_media_zoom.dart';
 import 'social_profile.dart';
+import '../auth/auth_return_path.dart';
+import '../public_previews/public_link_button.dart';
 
 final travelFeedPostsProvider = FutureProvider((ref) {
   ref.watch(socialRefreshKeyProvider);
@@ -2100,6 +2102,18 @@ class _SharePostSheetState extends ConsumerState<_SharePostSheet> {
                 Text('Send to', style: theme.textTheme.headlineSmall),
                 const SizedBox(height: 6),
                 _SharePostPreviewLine(post: widget.post, spot: widget.spot),
+                if (_isSurfInvite(widget.post) &&
+                    widget.post.visibility == 'public') ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.link),
+                    label: const Text('Copy public event link'),
+                    onPressed: () => copyPublicLink(
+                      context,
+                      publicEventLink(widget.post.id),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 TextField(
                   controller: _searchController,

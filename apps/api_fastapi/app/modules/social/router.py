@@ -231,6 +231,15 @@ def report_social_content(
     return report
 
 
+@router.get("/posts/{post_id}", response_model=SocialPost)
+def get_post(post_id: str, request: Request, user=Depends(require_authenticated_user)):
+    _limit_public_read(request, "post-detail", limit=240)
+    post = store.get_visible_post(post_id, user.id)
+    if post is None:
+        raise HTTPException(status_code=404, detail="Post not found.")
+    return post
+
+
 @router.post("/posts/{post_id}/likes")
 def like_post(post_id: str, _user=Depends(require_authenticated_user)):
     state = store.set_post_like(post_id, True)

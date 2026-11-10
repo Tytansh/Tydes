@@ -24,6 +24,7 @@ from app.modules.billing.router import router as billing_router
 from app.modules.forecasts.router import router as forecasts_router
 from app.modules.social.router import router as social_router
 from app.modules.spots.router import router as spots_router
+from app.modules.public.router import router as public_router
 from app.modules.trips.router import router as trips_router
 from app.modules.users.router import router as users_router
 
@@ -234,6 +235,7 @@ def root():
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(users_router, prefix="/api/v1")
 app.include_router(spots_router, prefix="/api/v1")
+app.include_router(public_router, prefix="/api/v1")
 app.include_router(forecasts_router, prefix="/api/v1")
 app.include_router(social_router, prefix="/api/v1")
 app.include_router(trips_router, prefix="/api/v1")

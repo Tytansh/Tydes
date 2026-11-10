@@ -1562,6 +1562,14 @@ class DemoStore:
                 )
                 for post in posts
             ]
+        # Visibility is enforced on the server, not only by feed widgets.
+        followed = set()
+        if current_user_id is not None:
+            followed = set(self.postgres_social.relationship_state(current_user_id)["followed_user_ids"]
+                           if self.postgres_social is not None else self.followed_user_ids)
+        posts = [post for post in posts if post.visibility == "public" or (
+            current_user_id is not None and (post.user_id == current_user_id or post.user_id in followed)
+        )]
         blocked_user_ids = self._blocked_user_ids_for(current_user_id)
         if blocked_user_ids:
             posts = [
@@ -1912,6 +1920,18 @@ class DemoStore:
         if self.postgres_social is not None:
             return self.postgres_social.get_post(post_id)
         return next((post for post in self.posts if post.id == post_id), None)
+
+    def get_visible_post(self, post_id: str, viewer_id: str) -> SocialPost | None:
+        post = self.get_post(post_id)
+        if post is None or post.user_id in self._blocked_user_ids_for(viewer_id):
+            return None
+        if post.visibility == "public" or post.user_id == viewer_id:
+            return post
+        following = (
+            self.postgres_social.relationship_state(viewer_id)["followed_user_ids"]
+            if self.postgres_social is not None else self.followed_user_ids
+        )
+        return post if post.user_id in following else None
 
     def get_comment(self, comment_id: str) -> SocialComment | None:
         if self.postgres_social is not None:

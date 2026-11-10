@@ -12,6 +12,7 @@ import '../social/social_profile.dart';
 import '../spots/spot_detail_page.dart';
 import '../spots/spots_page.dart';
 import 'google_sign_in_button.dart';
+import 'auth_return_path.dart';
 
 final authStateProvider = FutureProvider.autoDispose((ref) async {
   return ref.watch(surfRepositoryProvider).fetchMe();
@@ -20,9 +21,10 @@ final authStateProvider = FutureProvider.autoDispose((ref) async {
 enum _AuthMode { signIn, signUp }
 
 class AuthPage extends ConsumerStatefulWidget {
-  const AuthPage({super.key, this.initialProfile});
+  const AuthPage({super.key, this.initialProfile, this.returnTo = '/'});
 
   final UserProfile? initialProfile;
+  final String returnTo;
 
   @override
   ConsumerState<AuthPage> createState() => _AuthPageState();
@@ -113,7 +115,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
       return;
     }
     ref.read(currentTabProvider.notifier).state = 0;
-    context.go('/');
+    context.go(safeAuthReturnPath(widget.returnTo));
   }
 
   Future<void> _useAnotherAccount() async {

@@ -7,16 +7,16 @@ import '../core/network/api_models.dart';
 import '../features/alerts/alerts_page.dart';
 import '../features/admin/admin_users_page.dart';
 import '../features/auth/auth_page.dart';
+import '../features/auth/auth_return_path.dart';
+import '../features/public_previews/public_preview_page.dart';
 import '../features/home/home_page.dart';
 import '../features/paywall/paywall_page.dart';
 import '../features/settings/settings_page.dart';
 import '../features/social/direct_messages_page.dart';
 import '../features/social/event_chat_page.dart';
 import '../features/social/notifications_page.dart';
-import '../features/social/post_detail_page.dart';
 import '../features/social/public_profile_page.dart';
 import '../features/social/social_profile.dart';
-import '../features/spots/spot_detail_page.dart';
 import '../features/spots/spots_map_page.dart';
 import '../features/spots/spots_page.dart';
 import '../features/trips/trips_page.dart';
@@ -32,17 +32,23 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           initialProfile: state.extra is UserProfile
               ? state.extra as UserProfile
               : null,
+          returnTo: safeAuthReturnPath(state.uri.queryParameters['next']),
         ),
+      ),
+      GoRoute(
+        path: '/spot/:spotId',
+        builder: (_, state) =>
+            SharedSpotPage(spotId: state.pathParameters['spotId']!),
+      ),
+      GoRoute(
+        path: '/post/:postId',
+        builder: (_, state) =>
+            SharedEventPage(postId: state.pathParameters['postId']!),
       ),
       GoRoute(
         path: '/',
         builder: (context, state) => const AppScaffold(),
         routes: [
-          GoRoute(
-            path: 'spot/:spotId',
-            builder: (context, state) =>
-                SpotDetailPage(spotId: state.pathParameters['spotId']!),
-          ),
           GoRoute(
             path: 'spots-map',
             builder: (context, state) => SpotsMapPage(
@@ -74,11 +80,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'notifications',
             builder: (context, state) => const SocialNotificationsPage(),
-          ),
-          GoRoute(
-            path: 'post/:postId',
-            builder: (context, state) =>
-                PostDetailPage(postId: state.pathParameters['postId']!),
           ),
           GoRoute(
             path: 'event/:postId/chat',

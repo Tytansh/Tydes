@@ -5,20 +5,21 @@ import 'package:go_router/go_router.dart';
 import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
+import '../auth/auth_return_path.dart';
+import '../public_previews/public_link_button.dart';
 import 'social_feed.dart';
 import 'social_profile.dart';
 
-final _postDetailBundleProvider = FutureProvider((ref) async {
-  final repository = ref.watch(surfRepositoryProvider);
-  final results = await Future.wait([
-    repository.fetchSocialPosts(),
-    repository.fetchSpots(),
-  ]);
-  return _PostDetailBundle(
-    posts: results[0] as List<SocialPostModel>,
-    spots: results[1] as List<SpotModel>,
-  );
-});
+final _postDetailBundleProvider = FutureProvider.autoDispose
+    .family<_PostDetailBundle, String>((ref, postId) async {
+      ref.watch(socialRefreshKeyProvider);
+      final repository = ref.watch(surfRepositoryProvider);
+      final post = await repository.fetchSocialPost(postId);
+      final spot = post.spotId == null
+          ? null
+          : await repository.fetchSpot(post.spotId!);
+      return _PostDetailBundle(post: post, spot: spot);
+    });
 
 class PostDetailPage extends ConsumerWidget {
   const PostDetailPage({super.key, required this.postId});
@@ -27,24 +28,28 @@ class PostDetailPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final bundle = ref.watch(_postDetailBundleProvider);
+    final bundle = ref.watch(_postDetailBundleProvider(postId));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Post')),
+      appBar: AppBar(
+        title: const Text('Post'),
+        leading: IconButton(
+          tooltip: 'Back to Tydes',
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.canPop() ? context.pop() : context.go('/'),
+        ),
+        actions: [
+          if (bundle.valueOrNull?.post.visibility == 'public' &&
+              (bundle.valueOrNull?.post.postType == 'surf_plan' ||
+                  bundle.valueOrNull?.post.postType == 'looking_for_buddy'))
+            CopyPublicLinkButton(url: publicEventLink(postId)),
+        ],
+      ),
       body: bundle.when(
         data: (data) {
-          final post = _postForId(data.posts, postId);
-          if (post == null) {
-            return const Center(child: Text('Post not found.'));
-          }
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-            children: [
-              _PostDetailCard(
-                post: post,
-                spot: _spotForId(data.spots, post.spotId),
-              ),
-            ],
+            children: [_PostDetailCard(post: data.post, spot: data.spot)],
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -167,23 +172,8 @@ class _PostDetailCard extends StatelessWidget {
 }
 
 class _PostDetailBundle {
-  const _PostDetailBundle({required this.posts, required this.spots});
+  const _PostDetailBundle({required this.post, required this.spot});
 
-  final List<SocialPostModel> posts;
-  final List<SpotModel> spots;
-}
-
-SocialPostModel? _postForId(List<SocialPostModel> posts, String postId) {
-  for (final post in posts) {
-    if (post.id == postId) return post;
-  }
-  return null;
-}
-
-SpotModel? _spotForId(List<SpotModel> spots, String? spotId) {
-  if (spotId == null) return null;
-  for (final spot in spots) {
-    if (spot.id == spotId) return spot;
-  }
-  return null;
+  final SocialPostModel post;
+  final SpotModel? spot;
 }

@@ -8,6 +8,8 @@ import '../../core/network/surf_repository.dart';
 import '../alerts/create_alert_sheet.dart';
 import '../home/home_page.dart';
 import 'spots_page.dart';
+import '../auth/auth_return_path.dart';
+import '../public_previews/public_link_button.dart';
 
 const _favoriteAccent = Color(0xFF2AA7A1);
 const _surfSafetyDisclaimer =
@@ -95,8 +97,14 @@ class SpotDetailPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          tooltip: 'Back to Tydes',
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.canPop() ? context.pop() : context.go('/'),
+        ),
         title: const Text('Spot detail'),
         actions: [
+          CopyPublicLinkButton(url: publicSpotLink(spotId)),
           IconButton(
             onPressed: () => context.push('/spots-map?spotId=$spotId'),
             icon: const Icon(Icons.map_outlined),

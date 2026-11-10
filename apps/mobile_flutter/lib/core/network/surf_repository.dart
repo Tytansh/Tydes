@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import '../moderation/content_moderation.dart';
 import 'api_config.dart';
 import 'api_models.dart';
+import 'public_preview_models.dart';
 import 'demo_persistence.dart';
 import 'demo_seed.dart';
 
@@ -82,6 +83,21 @@ class SurfRepository {
 
   final Dio _dio;
   final DemoPersistence _demoPersistence;
+
+  Future<PublicSpotPreview> fetchPublicSpot(String id) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/public/spots/${Uri.encodeComponent(id)}',
+    );
+    return PublicSpotPreview.fromJson(response.data!);
+  }
+
+  Future<PublicEventPreview> fetchPublicEvent(String id) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/public/events/${Uri.encodeComponent(id)}',
+    );
+    return PublicEventPreview.fromJson(response.data!);
+  }
+
   final Dio _directUploadDio = Dio(
     BaseOptions(
       connectTimeout: const Duration(seconds: 45),
@@ -725,6 +741,13 @@ class SurfRepository {
     } catch (_) {
       return DemoSeed.posts;
     }
+  }
+
+  Future<SocialPostModel> fetchSocialPost(String id) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/social/posts/${Uri.encodeComponent(id)}',
+    );
+    return SocialPostModel.fromJson(response.data!);
   }
 
   Future<List<SocialPostModel>> fetchMapEvents() async {
