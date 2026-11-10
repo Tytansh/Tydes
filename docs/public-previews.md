@@ -39,6 +39,11 @@ filters run locally. Spot guides and event details retain their existing share
 routes and sign-in return destinations. Signing in from the guest explorer opens
 the normal Spots account tab.
 
+**Explore as guest** always starts the main `/explore` map with fresh page state,
+regardless of a spot/event saved in the sign-in `next` parameter. Actual sign-in
+continues to return to that original item. Re-entering as a guest resets filters,
+scroll position and the event switch rather than resuming a detail screen.
+
 Upcoming, dated events with a valid mapped spot appear as host-avatar markers.
 Events at one spot share a marker/count and a public popup. View event opens the
 public detail page; Sign in to join preserves that event as the login return

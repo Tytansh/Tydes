@@ -394,6 +394,107 @@ void main() {
     });
   }
 
+  for (final next in [
+    '/spot/bondi',
+    '/post/sunset',
+    '/explore/events',
+    '/spots-map',
+  ]) {
+    testWidgets(
+      'Explore as guest ignores the sign-in return destination $next',
+      (tester) async {
+        final transport = _PublicTransport();
+        final container = await _show(
+          tester,
+          transport,
+          Uri(path: '/login', queryParameters: {'next': next}).toString(),
+          _Notifications(),
+        );
+        final guest = find.text('Explore as guest');
+        await tester.ensureVisible(guest);
+        await tester.tap(guest);
+        await tester.pumpAndSettle();
+        expect(
+          container
+              .read(appRouterProvider)
+              .routeInformationProvider
+              .value
+              .uri
+              .path,
+          '/explore',
+        );
+        expect(find.byType(GuestMapCanvas), findsOneWidget);
+        expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+        expect(transport.requests.toSet(), {'/public/spots', '/public/events'});
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  for (final width in [390.0, 1440.0]) {
+    testWidgets(
+      'returning through sign in restarts the guest map and clears old filters at $width',
+      (tester) async {
+        tester.view.physicalSize = Size(width, 1000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final transport = _PublicTransport();
+        final container = await _show(
+          tester,
+          transport,
+          '/explore',
+          _Notifications(),
+        );
+        await tester.tap(find.byType(Switch));
+        await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Australia').last);
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('Spots in Australia'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('guest-list-bondi')));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('Sign in to explore this spot'));
+        await tester.tap(find.text('Sign in to explore this spot'));
+        await tester.pumpAndSettle();
+        expect(
+          container
+              .read(appRouterProvider)
+              .routeInformationProvider
+              .value
+              .uri
+              .queryParameters['next'],
+          '/spot/bondi',
+        );
+        await tester.ensureVisible(find.text('Explore as guest'));
+        await tester.tap(find.text('Explore as guest'));
+        await tester.pumpAndSettle();
+        expect(
+          container
+              .read(appRouterProvider)
+              .routeInformationProvider
+              .value
+              .uri
+              .path,
+          '/explore',
+        );
+        expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+        expect(
+          tester.widget<GuestMapCanvas>(find.byType(GuestMapCanvas)).spots,
+          hasLength(_spots.length),
+        );
+        final page = tester.widget<CustomScrollView>(
+          find.byKey(const ValueKey('guest-explore-scroll')),
+        );
+        expect(page.controller!.offset, 0);
+        expect(find.text('All countries'), findsOneWidget);
+        expect(find.text('All regions'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   for (final width in [390.0, 1440.0]) {
     testWidgets(
       'events can toggle without losing spots or fetching private data at $width',

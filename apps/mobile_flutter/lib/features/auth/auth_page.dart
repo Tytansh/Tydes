@@ -409,20 +409,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
         if (!_verificationPending) ...[
           const SizedBox(height: 14),
           OutlinedButton.icon(
-            onPressed: _loading
-                ? null
-                : () {
-                    final next = safeAuthReturnPath(widget.returnTo);
-                    context.go(
-                      next.startsWith('/spot/') ||
-                              next.startsWith('/post/') ||
-                              next.startsWith('/explore')
-                          ? next
-                          : next == '/spots-map'
-                          ? '/explore/map'
-                          : '/explore',
-                    );
-                  },
+            onPressed: _loading ? null : () => context.go('/explore'),
             icon: const Icon(Icons.explore_outlined),
             label: const Text('Explore as guest'),
           ),
