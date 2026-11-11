@@ -32,6 +32,23 @@ Use this as the working launch list before TestFlight and App Store review.
 - Google Workspace aliases for `support@tydes.io`, `appstore@tydes.io`,
   `reviewer@tydes.io`, and `security@tydes.io`
 
+## Latest native simulator check — November 12, 2026
+
+- Built and launched the current shared Flutter app on the existing iPhone 16
+  Plus simulator (iOS 18.6), using Xcode 16.4 and the production API.
+- Synchronized the iOS lockfile with the already-selected Flutter payment SDK:
+  `purchases_flutter` 10.19.0, `PurchasesHybridCommon` 19.17.0, and RevenueCat
+  5.99.0. The Podfile now explicitly matches Runner's iOS 13 minimum.
+- The new native build contains the hourly forecast UI and saved
+  Light/Dark/System appearance setting. The current sign-in screen was
+  visually checked; authenticated native checks still require sign-in.
+- Updated the existing installation without erasing simulator app data. This
+  was **not** a fresh-install test, physical-iPhone test, signed release archive,
+  TestFlight upload, purchase, or Restore Purchases verification.
+- CocoaPods was already installed, but unavailable in the native command's
+  default search path. A command-scoped Ruby/CocoaPods path was sufficient;
+  no global tool reinstall or shell configuration change was made.
+
 ## Before TestFlight
 
 - Set `TYDES_PREMIUM_EMAILS=reviewer@tydes.io` in Render if the reviewer
