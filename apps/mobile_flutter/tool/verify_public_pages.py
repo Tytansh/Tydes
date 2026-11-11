@@ -52,6 +52,8 @@ def verify(directory):
         if name != "about":
             assert "/about/" in page.links, f"{name}: About page is not discoverable"
     about = (root / "about/index.html").read_text()
+    assert '<h1 id="about-title">Where We Surfing</h1>' in about
+    assert '<h2 id="today-title">Find your break.<br /> Meet your crew.</h2>' in about
     assert 'id="partnerships"' in about
     assert "stays cannot currently be booked through Tydes" in about
     assert "mailto:support@tydes.io?subject=Tydes%20partnership%20enquiry" in about
