@@ -291,9 +291,10 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
                         color: _teal,
                       ),
                       _Metric(
+                        key: const ValueKey('selected-wind-metric'),
                         width: width,
                         label: 'WIND',
-                        value: _value(hour.windKts, 'kt', digits: 0),
+                        value: _value(hour.windKts, 'kt'),
                         detail: _direction(hour.windDirectionDeg),
                         color: _ink,
                       ),
@@ -788,6 +789,7 @@ class _SectionHeading extends StatelessWidget {
 
 class _Metric extends StatelessWidget {
   const _Metric({
+    super.key,
     required this.width,
     required this.label,
     required this.value,

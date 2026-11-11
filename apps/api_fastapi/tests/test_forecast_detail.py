@@ -161,7 +161,7 @@ def test_expired_calendar_rows_are_not_returned_as_current(monkeypatch):
     provider, _, _, calls = _provider(monkeypatch)
     spot = store.spots[0]
     provider.fetch_spot_forecast(spot)
-    cached = provider._cache[spot.id]
+    cached = provider._cache[provider._cache_identity(spot)]
     for entry in cached.data:
         entry.day = entry.day - timedelta(days=10)
     provider.fetch_spot_forecast(spot)
@@ -172,7 +172,7 @@ def test_cache_refreshes_after_spot_local_midnight_to_keep_five_days(monkeypatch
     provider, _, _, calls = _provider(monkeypatch)
     spot = store.spots[0]
     provider.fetch_spot_forecast(spot)
-    cached = provider._cache[spot.id]
+    cached = provider._cache[provider._cache_identity(spot)]
     # Four dates would still be in the future, but the new local day should
     # start a fresh five-day horizon rather than retain yesterday's first day.
     for entry in cached.data:
@@ -185,7 +185,7 @@ def test_open_meteo_rejects_cache_timestamp_far_in_the_future(monkeypatch):
     provider, _, _, calls = _provider(monkeypatch)
     spot = store.spots[0]
     provider.fetch_spot_forecast(spot)
-    provider._cache[spot.id].fetched_at = datetime.now(UTC) + timedelta(hours=1)
+    provider._cache[provider._cache_identity(spot)].fetched_at = datetime.now(UTC) + timedelta(hours=1)
     provider.fetch_spot_forecast(spot)
     assert len(calls) == 4
 
@@ -197,6 +197,43 @@ def test_weather_is_joined_by_utc_stamp_not_array_position(monkeypatch):
     rows = provider._to_hourly_rows(marine, weather)
     assert rows[0]["wind_speed"] == 119.0
     assert rows[-1]["wind_speed"] == 0.0
+
+
+def test_coordinate_correction_invalidates_marine_memory_and_persistent_identity(monkeypatch):
+    provider, _, _, calls = _provider(monkeypatch)
+    reads, writes = [], []
+    provider._persistent_cache = SimpleNamespace(
+        get=lambda key, age: reads.append(key),
+        set=lambda key, payload: writes.append(key),
+    )
+    original = store.spots[0]
+    corrected = original.model_copy(update={"latitude": original.latitude - 0.3, "longitude": original.longitude - 0.4})
+    provider.fetch_spot_forecast(original)
+    detail = provider.fetch_spot_detail(corrected)
+    provider.fetch_spot_forecast(original)
+    assert detail.spot_id == original.id == corrected.id
+    assert len(calls) == 4
+    assert calls[2][1]["latitude"] == corrected.latitude
+    assert calls[2][1]["longitude"] == corrected.longitude
+    assert len(set(reads)) == len(set(writes)) == 2
+    assert all(key.startswith("open-meteo:v3:") for key in writes)
+    assert f":{corrected.latitude!r}:{corrected.longitude!r}" in writes[1]
+
+
+def test_coordinate_correction_does_not_inherit_marine_failure_backoff(monkeypatch):
+    provider, _, _, calls = _provider(monkeypatch)
+    original_client = provider._marine_client
+    def limited(*_args, **_kwargs):
+        request = httpx.Request("GET", "https://marine-api.open-meteo.com/v1/marine")
+        raise httpx.HTTPStatusError("rate limited", request=request, response=httpx.Response(429, request=request))
+    provider._marine_client = SimpleNamespace(get=limited)
+    original = store.spots[0]
+    with pytest.raises(httpx.HTTPStatusError):
+        provider.fetch_spot_forecast(original)
+    provider._marine_client = original_client
+    corrected = original.model_copy(update={"latitude": original.latitude - 0.3})
+    assert provider.fetch_spot_detail(corrected).available
+    assert len(calls) == 2
 
 
 def test_best_window_uses_current_local_day_not_first_cached_day():
@@ -306,7 +343,7 @@ def test_tide_chart_refreshes_share_single_flight_and_twelve_hour_cache(monkeypa
         forecasts = list(pool.map(lambda _: provider.fetch_spot_tides(spot, local_day, days=5), range(6)))
     assert all(forecast.available for forecast in forecasts)
     assert len(calls) == 2  # One station lookup and one prediction request.
-    cache_key = f"{spot.id}:{local_day.isoformat()}:5"
+    cache_key = f"{provider._cache_identity(spot)}:{local_day.isoformat()}:5"
     assert timedelta(hours=11, minutes=59) < provider._tide_cache[cache_key].expires_at - datetime.now(UTC) <= timedelta(hours=12)
     assert provider.fetch_spot_tides(spot, local_day, days=5).available
     assert len(calls) == 2
@@ -325,7 +362,7 @@ def test_tide_429_negative_cache_stops_chart_refresh_hammering(monkeypatch):
         result = provider.fetch_spot_tides(spot, local_day + timedelta(days=offset), days=5)
         assert not result.available and result.samples == []
     assert len(calls) == 1
-    assert timedelta(minutes=4, seconds=59) < provider._negative_cache[spot.id].expires_at - datetime.now(UTC) <= timedelta(minutes=5)
+    assert timedelta(minutes=4, seconds=59) < provider._negative_cache[provider._cache_identity(spot)].expires_at - datetime.now(UTC) <= timedelta(minutes=5)
 
 
 def test_tide_empty_response_is_negatively_cached_without_invented_readings(monkeypatch):
@@ -337,7 +374,7 @@ def test_tide_empty_response_is_negatively_cached_without_invented_readings(monk
         result = provider.fetch_spot_tides(spot, local_day)
         assert not result.available and result.samples == [] and result.events == []
     assert len(calls) == 2
-    assert timedelta(seconds=59) < provider._negative_cache[spot.id].expires_at - datetime.now(UTC) <= timedelta(minutes=1)
+    assert timedelta(seconds=59) < provider._negative_cache[provider._cache_identity(spot)].expires_at - datetime.now(UTC) <= timedelta(minutes=1)
 
 
 def test_tide_budget_counts_actual_requests_not_positive_cache_reads(monkeypatch):
@@ -370,7 +407,58 @@ def test_tide_rejects_future_dated_positive_cache(monkeypatch):
     provider, _, calls, local_day = _tide_provider(monkeypatch)
     spot = store.spots[0]
     provider.fetch_spot_tides(spot, local_day)
-    cache_key = f"{spot.id}:{local_day.isoformat()}:3"
+    cache_key = f"{provider._cache_identity(spot)}:{local_day.isoformat()}:3"
     provider._tide_cache[cache_key].data.fetched_at = datetime.now(UTC) + timedelta(hours=1)
     assert provider.fetch_spot_tides(spot, local_day).available
     assert len(calls) == 3  # Existing station remains cached, predictions refresh.
+
+
+def test_coordinate_correction_invalidates_station_and_tide_caches(monkeypatch):
+    provider, _, calls, local_day = _tide_provider(monkeypatch)
+    reads, writes = [], []
+    provider._persistent_cache = SimpleNamespace(
+        get=lambda key, age: reads.append(key),
+        set=lambda key, payload: writes.append(key),
+    )
+    original = store.spots[0]
+    corrected = original.model_copy(update={"latitude": original.latitude - 0.3, "longitude": original.longitude - 0.4})
+    provider.fetch_spot_tides(original, local_day)
+    forecast = provider.fetch_spot_tides(corrected, local_day)
+    provider.fetch_spot_tides(original, local_day)
+    assert forecast.spot_id == original.id == corrected.id
+    assert calls.count("/api/stations/nearest") == 2
+    assert len(calls) == 4
+    assert len(set(writes)) == 4
+    assert all(key.startswith("tidecheck:v3:") for key in reads + writes)
+    for kind in ("station", "tides"):
+        assert any(f"tidecheck:v3:{kind}:{corrected.id}:{corrected.latitude!r}:{corrected.longitude!r}" in key for key in writes)
+
+
+def test_coordinate_correction_does_not_inherit_tide_failure_backoff(monkeypatch):
+    provider, _, calls, local_day = _tide_provider(monkeypatch)
+    original_client = provider._client
+    def limited(path, **_kwargs):
+        request = httpx.Request("GET", "https://tidecheck.com/api/stations/nearest")
+        raise httpx.HTTPStatusError("rate limited", request=request, response=httpx.Response(429, request=request))
+    provider._client = SimpleNamespace(get=limited)
+    original = store.spots[0]
+    assert not provider.fetch_spot_tides(original, local_day).available
+    provider._client = original_client
+    corrected = original.model_copy(update={"longitude": original.longitude - 0.4})
+    assert provider.fetch_spot_tides(corrected, local_day).available
+    assert len(calls) == 2
+
+
+def test_sumbawa_reference_areas_are_not_the_legacy_sape_points():
+    references = {
+        "spot_lakey_peak": (-8.79, 118.38, "Hu'u"),
+        "spot_lakey_pipe": (-8.80, 118.38, "Hu'u"),
+        "spot_nungas": (-8.79, 118.38, "Hu'u"),
+        "spot_periscope_point": (-8.78, 118.37, "Hu'u"),
+        "spot_cobblestones_sumbawa": (-8.82, 118.38, "Hu'u"),
+        "spot_yoyos": (-8.98, 116.73, "Sekongkang"),
+    }
+    for spot_id, (latitude, longitude, area) in references.items():
+        spot = store.get_spot(spot_id)
+        assert (spot.latitude, spot.longitude, spot.area) == (latitude, longitude, area)
+        assert "Approximate forecast-area position" in spot.summary

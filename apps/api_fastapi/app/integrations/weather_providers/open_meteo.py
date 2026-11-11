@@ -28,7 +28,7 @@ FREE_MARINE_BASE_URL = "https://marine-api.open-meteo.com/v1"
 FREE_FORECAST_BASE_URL = "https://api.open-meteo.com/v1"
 CUSTOMER_MARINE_BASE_URL = "https://customer-marine-api.open-meteo.com/v1"
 CUSTOMER_FORECAST_BASE_URL = "https://customer-api.open-meteo.com/v1"
-CACHE_PREFIX = "open-meteo:v2"
+CACHE_PREFIX = "open-meteo:v3"
 MARINE_VARIABLES = (
     "wave_height", "wave_period", "wave_direction",
     "swell_wave_height", "swell_wave_period", "swell_wave_peak_period",
@@ -83,20 +83,21 @@ class OpenMeteoMarineProvider:
         *,
         max_cache_age: timedelta = FRESH_FORECAST_MAX_AGE,
     ) -> list[ForecastEntry]:
+        identity = self._cache_identity(spot)
         with self._locks_guard:
-            lock = self._spot_locks.setdefault(spot.id, RLock())
+            lock = self._spot_locks.setdefault(identity, RLock())
         # A simultaneous chart, daily forecast and surf-window request must share
         # one upstream fetch rather than consume three lots of API credits.
         with lock:
             now = datetime.now(UTC)
-            cached = self._cache.get(spot.id)
+            cached = self._cache.get(identity)
             if cached and self._cache_is_current(cached, now, max_cache_age):
                 return self._current_entries(cached, now)
-            persistent = self._read_persistent_cache(spot.id, max_cache_age)
+            persistent = self._read_persistent_cache(identity, max_cache_age)
             if persistent is not None and self._cache_is_current(persistent, now, max_cache_age):
-                self._cache[spot.id] = persistent
+                self._cache[identity] = persistent
                 return self._current_entries(persistent, now)
-            if self._retry_after.get(spot.id, now) > now:
+            if self._retry_after.get(identity, now) > now:
                 raise RuntimeError("Forecast provider is temporarily backing off")
             try:
                 self._reserve_upstream_budget()
@@ -105,12 +106,19 @@ class OpenMeteoMarineProvider:
                 # Never turn absent observations into zero or hit the provider
                 # repeatedly while it is unavailable/rate limited.
                 status = getattr(getattr(error, "response", None), "status_code", None)
-                self._retry_after[spot.id] = now + timedelta(minutes=5 if status == 429 else 1)
+                self._retry_after[identity] = now + timedelta(minutes=5 if status == 429 else 1)
                 raise
-            self._cache[spot.id] = item
-            self._retry_after.pop(spot.id, None)
-            self._write_persistent_cache(spot.id, item)
+            self._cache[identity] = item
+            self._retry_after.pop(identity, None)
+            self._write_persistent_cache(identity, item)
             return self._current_entries(item, now)
+
+    @staticmethod
+    def _cache_identity(spot: Spot) -> str:
+        # Coordinates are part of identity, not just the public spot ID. A
+        # catalog correction must never reuse forecasts for the old location.
+        # repr preserves the exact catalog float rather than grouping cells.
+        return f"{spot.id}:{spot.latitude!r}:{spot.longitude!r}"
 
     def _fetch_cache_item(self, spot: Spot, now: datetime) -> _CacheItem:
         marine_response = self._marine_client.get(
@@ -202,7 +210,7 @@ class OpenMeteoMarineProvider:
 
     def fetch_spot_detail(self, spot: Spot) -> DetailedSpotForecast:
         self.fetch_spot_forecast(spot)
-        cached = self._cache[spot.id]
+        cached = self._cache[self._cache_identity(spot)]
         local_day = datetime.now(UTC).astimezone(_zone(cached.timezone)).date()
         hours = [
             _detail_hour(row, cached.timezone)
@@ -224,7 +232,7 @@ class OpenMeteoMarineProvider:
         max_cache_age: timedelta = FRESH_FORECAST_MAX_AGE,
     ) -> SurfWindowForecast:
         self.fetch_spot_forecast(spot, max_cache_age=max_cache_age)
-        cached = self._cache.get(spot.id)
+        cached = self._cache.get(self._cache_identity(spot))
         if cached is None:
             return SurfWindowForecast(
                 spot_id=spot.id,

@@ -276,6 +276,33 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('selected wind metric preserves sub-knot values', (tester) async {
+    const forecast = DetailedForecastModel(
+      spotId: 'light-wind',
+      available: true,
+      hours: [
+        HourlyForecastModel(
+          time: '2036-01-01T00:00:00Z',
+          localDate: '2036-01-01',
+          localTime: '08:00',
+          windKts: .4,
+          windGustsKts: 1.2,
+        ),
+      ],
+    );
+    await _show(tester, forecast);
+    final metric = find.byKey(const ValueKey('selected-wind-metric'));
+    expect(
+      find.descendant(of: metric, matching: find.text('0.4 kt')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: metric, matching: find.text('0 kt')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('only supplied tide samples produce a curve with datum', (
     tester,
   ) async {

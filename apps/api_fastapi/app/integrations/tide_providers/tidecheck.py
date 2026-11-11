@@ -39,15 +39,17 @@ class TideCheckProvider:
         self._negative_cache: dict[str, _CacheItem] = {}
 
     def fetch_spot_tides(self, spot: Spot, start_day: date, days: int = 3) -> TideForecast:
+        identity = self._cache_identity(spot)
         with self._locks_guard:
-            lock = self._spot_locks.setdefault(spot.id, RLock())
+            lock = self._spot_locks.setdefault(identity, RLock())
         # Concurrent chart refreshes share the station lookup and tide fetch.
         with lock:
             return self._fetch_spot_tides_locked(spot, start_day, days)
 
     def _fetch_spot_tides_locked(self, spot: Spot, start_day: date, days: int) -> TideForecast:
         now = datetime.now(UTC)
-        cache_key = f"{spot.id}:{start_day.isoformat()}:{days}"
+        identity = self._cache_identity(spot)
+        cache_key = f"{identity}:{start_day.isoformat()}:{days}"
         cached = self._tide_cache.get(cache_key)
         if cached and cached.expires_at > now and self._valid_forecast_time(cached.data, now):
             return cached.data
@@ -61,7 +63,7 @@ class TideCheckProvider:
             )
             return forecast
 
-        negative = self._negative_cache.get(spot.id)
+        negative = self._negative_cache.get(identity)
         if negative and negative.expires_at > now:
             return negative.data
 
@@ -71,7 +73,7 @@ class TideCheckProvider:
                 available=False,
                 note="Tide provider is not configured yet.",
             )
-            self._negative_cache[spot.id] = _CacheItem(now + timedelta(minutes=5), forecast)
+            self._negative_cache[identity] = _CacheItem(now + timedelta(minutes=5), forecast)
             return forecast
 
         retry_minutes = 1
@@ -129,21 +131,27 @@ class TideCheckProvider:
             )
 
         if forecast.available:
-            self._negative_cache.pop(spot.id, None)
+            self._negative_cache.pop(identity, None)
             self._tide_cache[cache_key] = _CacheItem(
                 expires_at=now + timedelta(hours=12),
                 data=forecast,
             )
             self._write_persistent(
-                f"tidecheck:v2:tides:{cache_key}",
+                f"tidecheck:v3:tides:{cache_key}",
                 forecast.model_dump(mode="json"),
             )
         else:
-            self._negative_cache[spot.id] = _CacheItem(
+            self._negative_cache[identity] = _CacheItem(
                 expires_at=now + timedelta(minutes=retry_minutes),
                 data=forecast,
             )
         return forecast
+
+    @staticmethod
+    def _cache_identity(spot: Spot) -> str:
+        # Station and prediction caches must follow coordinate corrections even
+        # when the public spot ID, favorites and shared links remain unchanged.
+        return f"{spot.id}:{spot.latitude!r}:{spot.longitude!r}"
 
     @staticmethod
     def _reserve_upstream_request() -> None:
@@ -171,14 +179,15 @@ class TideCheckProvider:
 
     def _nearest_station(self, spot: Spot) -> dict[str, Any]:
         now = datetime.now(UTC)
-        cached = self._station_cache.get(spot.id)
+        identity = self._cache_identity(spot)
+        cached = self._station_cache.get(identity)
         if cached and cached.expires_at > now:
             return cached.data
 
-        persistent = self._read_persistent_station(spot.id)
+        persistent = self._read_persistent_station(identity)
         if persistent is not None:
             station, updated_at = persistent
-            self._station_cache[spot.id] = _CacheItem(
+            self._station_cache[identity] = _CacheItem(
                 expires_at=updated_at + timedelta(days=30),
                 data=station,
             )
@@ -196,11 +205,11 @@ class TideCheckProvider:
             raise ValueError("No TideCheck station found")
 
         station = stations[0]
-        self._station_cache[spot.id] = _CacheItem(
+        self._station_cache[identity] = _CacheItem(
             expires_at=now + timedelta(days=30),
             data=station,
         )
-        self._write_persistent(f"tidecheck:station:{spot.id}", station)
+        self._write_persistent(f"tidecheck:v3:station:{identity}", station)
         return station
 
     def _read_persistent_tides(
@@ -208,7 +217,7 @@ class TideCheckProvider:
         cache_key: str,
     ) -> tuple[TideForecast, datetime] | None:
         cached = self._read_persistent(
-            f"tidecheck:v2:tides:{cache_key}",
+            f"tidecheck:v3:tides:{cache_key}",
             timedelta(hours=12),
         )
         if cached is None:
@@ -225,7 +234,7 @@ class TideCheckProvider:
         spot_id: str,
     ) -> tuple[dict[str, Any], datetime] | None:
         return self._read_persistent(
-            f"tidecheck:station:{spot_id}",
+            f"tidecheck:v3:station:{spot_id}",
             timedelta(days=30),
         )
 

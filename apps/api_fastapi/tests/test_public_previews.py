@@ -135,7 +135,10 @@ def test_guest_spot_catalog_only_adds_public_map_coordinates():
     for item in response.json():
         assert -90 <= item['latitude'] <= 90 and -180 <= item['longitude'] <= 180
     for secret in ['wave_height', 'water_temp', 'image_url', 'forecast']:
-        assert secret not in response.text
+        # Check the data contract, not harmless words in a public guide such as
+        # "approximate forecast-area position". No private forecast fields may
+        # appear on any catalog item.
+        assert all(not any(secret in key for key in item) for item in response.json())
 
 
 @pytest.mark.parametrize('token', [None, 'host-token', 'viewer-token'])
