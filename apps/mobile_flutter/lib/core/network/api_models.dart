@@ -164,6 +164,8 @@ class AdminReport {
     required this.reportedHandle,
     required this.reportedDisplayName,
     required this.targetAvailable,
+    this.status = 'open',
+    this.dismissedAt,
   });
 
   final String id;
@@ -178,6 +180,27 @@ class AdminReport {
   final String reportedHandle;
   final String reportedDisplayName;
   final bool targetAvailable;
+  final String status;
+  final DateTime? dismissedAt;
+
+  bool get isDismissed => status == 'dismissed';
+
+  AdminReport withDismissed(bool dismissed) => AdminReport(
+    id: id,
+    reporterUserId: reporterUserId,
+    targetType: targetType,
+    targetId: targetId,
+    reason: reason,
+    createdAt: createdAt,
+    reporterHandle: reporterHandle,
+    reporterDisplayName: reporterDisplayName,
+    reportedUserId: reportedUserId,
+    reportedHandle: reportedHandle,
+    reportedDisplayName: reportedDisplayName,
+    targetAvailable: targetAvailable,
+    status: dismissed ? 'dismissed' : 'open',
+    dismissedAt: dismissed ? dismissedAt : null,
+  );
 
   factory AdminReport.fromJson(Map<String, dynamic> json) => AdminReport(
     id: json['id'] as String? ?? '',
@@ -192,6 +215,8 @@ class AdminReport {
     reportedHandle: json['reported_handle'] as String? ?? '',
     reportedDisplayName: json['reported_display_name'] as String? ?? '',
     targetAvailable: json['target_available'] as bool? ?? false,
+    status: json['status'] as String? ?? 'open',
+    dismissedAt: _parseOptionalDateTime(json['dismissed_at']),
   );
 }
 

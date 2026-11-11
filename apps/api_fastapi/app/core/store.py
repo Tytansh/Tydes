@@ -2010,14 +2010,54 @@ class DemoStore:
         self._save_state()
         return report
 
-    def list_social_reports(self) -> list[SocialReport]:
+    def list_social_reports(self, *, include_dismissed: bool = False) -> list[SocialReport]:
         if self.postgres_social is not None:
-            return self.postgres_social.list_reports()
+            return self.postgres_social.list_reports(include_dismissed=include_dismissed)
         return sorted(
-            self.social_reports,
+            (
+                report for report in self.social_reports
+                if include_dismissed or report.status == "open"
+            ),
             key=lambda report: report.created_at,
             reverse=True,
         )
+
+    def set_social_report_status(
+        self,
+        report_id: str,
+        status: Literal["open", "dismissed"],
+        *,
+        admin_user_id: str,
+    ) -> SocialReport | None:
+        if status not in {"open", "dismissed"}:
+            raise ValueError("Unsupported report status.")
+        if self.postgres_social is not None:
+            return self.postgres_social.set_report_status(report_id, status, admin_user_id)
+        with self._state_lock:
+            report = next(
+                (item for item in self.social_reports if item.id == report_id), None,
+            )
+            if report is None or report.status == status:
+                return report
+            updated = report.model_copy(
+                update={
+                    "status": status,
+                    "dismissed_at": (
+                        datetime.now(timezone.utc) if status == "dismissed" else None
+                    ),
+                    "dismissed_by_user_id": (
+                        admin_user_id if status == "dismissed" else None
+                    ),
+                }
+            )
+            original = self.social_reports
+            self.social_reports = [updated if item.id == report_id else item for item in original]
+            try:
+                self._save_state()
+            except Exception:
+                self.social_reports = original
+                raise
+            return updated
 
     def _set_follow_notification(self, recipient_user_id: str, active: bool) -> None:
         notification_id = f"notif_follow_{self.user.id}_{recipient_user_id}"

@@ -3,15 +3,54 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/network/api_models.dart';
+import '../../core/network/api_error_message.dart';
 import '../../core/network/surf_repository.dart';
 
 final adminUsersProvider = FutureProvider.autoDispose<List<AdminUserAccount>>(
   (ref) => ref.watch(surfRepositoryProvider).fetchAdminUsers(),
 );
 
-final adminReportsProvider = FutureProvider.autoDispose<List<AdminReport>>(
-  (ref) => ref.watch(surfRepositoryProvider).fetchAdminReports(),
-);
+final adminReportsProvider =
+    AsyncNotifierProvider.autoDispose<
+      AdminReportsController,
+      List<AdminReport>
+    >(AdminReportsController.new);
+
+/// The active queue changes only after the server confirms an admin action.
+class AdminReportsController
+    extends AutoDisposeAsyncNotifier<List<AdminReport>> {
+  int _generation = 0;
+  bool _disposed = false;
+
+  @override
+  Future<List<AdminReport>> build() {
+    _generation++;
+    _disposed = false;
+    ref.onDispose(() => _disposed = true);
+    return ref.watch(surfRepositoryProvider).fetchAdminReports();
+  }
+
+  void _checkGeneration(int generation) {
+    if (_disposed || generation != _generation) {
+      throw StateError('The admin session changed. Refresh and try again.');
+    }
+  }
+
+  Future<void> setDismissed(String reportId, bool dismissed) async {
+    final loaded = future;
+    final generation = _generation;
+    await loaded;
+    _checkGeneration(generation);
+    await ref
+        .read(surfRepositoryProvider)
+        .setAdminReportStatus(reportId: reportId, dismissed: dismissed);
+    _checkGeneration(generation);
+    state = AsyncData([
+      for (final report in state.valueOrNull ?? const <AdminReport>[])
+        report.id == reportId ? report.withDismissed(dismissed) : report,
+    ]);
+  }
+}
 
 class AdminUsersPage extends ConsumerStatefulWidget {
   const AdminUsersPage({super.key});
@@ -22,6 +61,49 @@ class AdminUsersPage extends ConsumerStatefulWidget {
 
 class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
   String _query = '';
+  bool _showDismissedReports = false;
+  final Set<String> _pendingReports = {};
+
+  Future<void> _setReportDismissed(String reportId, bool dismissed) async {
+    if (_pendingReports.contains(reportId)) return;
+    setState(() => _pendingReports.add(reportId));
+    try {
+      await ref
+          .read(adminReportsProvider.notifier)
+          .setDismissed(reportId, dismissed);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            dismissed
+                ? 'Report dismissed. Post and accounts unchanged.'
+                : 'Report restored to active reports.',
+          ),
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () => _setReportDismissed(reportId, !dismissed),
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not ${dismissed ? 'dismiss' : 'restore'} report. ${friendlyErrorMessage(error)}',
+          ),
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: () => _setReportDismissed(reportId, dismissed),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _pendingReports.remove(reportId));
+    }
+  }
 
   Future<void> _updateUser(String userId, {bool? premium, bool? banned}) async {
     try {
@@ -151,8 +233,10 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
                     ),
                     reports.when(
                       data: (items) => Badge(
-                        isLabelVisible: items.isNotEmpty,
-                        label: Text('${items.length}'),
+                        isLabelVisible: items.any((item) => !item.isDismissed),
+                        label: Text(
+                          '${items.where((item) => !item.isDismissed).length}',
+                        ),
                         child: const Icon(Icons.flag_outlined),
                       ),
                       loading: () => const SizedBox.square(
@@ -164,7 +248,30 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
                   ],
                 ),
                 const SizedBox(height: 4),
-                const Text('Newest reports appear first.'),
+                const Text(
+                  'Newest reports appear first. Dismissing a report does not remove its post or ban anyone.',
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ChoiceChip(
+                      key: const ValueKey('report-filter-open'),
+                      label: const Text('Active'),
+                      selected: !_showDismissedReports,
+                      onSelected: (_) =>
+                          setState(() => _showDismissedReports = false),
+                    ),
+                    ChoiceChip(
+                      key: const ValueKey('report-filter-dismissed'),
+                      label: const Text('Dismissed'),
+                      selected: _showDismissedReports,
+                      onSelected: (_) =>
+                          setState(() => _showDismissedReports = true),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 10),
                 reports.when(
                   loading: () => const LinearProgressIndicator(),
@@ -182,43 +289,61 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
                       ),
                     ),
                   ),
-                  data: (items) => items.isEmpty
-                      ? const Card(
-                          child: ListTile(
-                            leading: Icon(Icons.check_circle_outline),
-                            title: Text('No reports yet'),
-                          ),
+                  data: (items) {
+                    final visibleReports = items
+                        .where(
+                          (report) =>
+                              report.isDismissed == _showDismissedReports,
                         )
-                      : Column(
-                          children: items
-                              .map(
-                                (report) => _ReportCard(
-                                  report: report,
-                                  onOpenTarget:
-                                      report.targetType == 'post' &&
-                                          report.targetAvailable
-                                      ? () => context.push(
-                                          '/post/${report.targetId}',
-                                        )
-                                      : null,
-                                  onBanReporter: () => _confirmBan(
-                                    report.reporterUserId,
-                                    report.reporterHandle.isEmpty
-                                        ? 'reporter'
-                                        : '@${report.reporterHandle}',
+                        .toList();
+                    return visibleReports.isEmpty
+                        ? Card(
+                            child: ListTile(
+                              leading: const Icon(Icons.check_circle_outline),
+                              title: Text(
+                                _showDismissedReports
+                                    ? 'No dismissed reports'
+                                    : 'No active reports',
+                              ),
+                            ),
+                          )
+                        : Column(
+                            children: visibleReports
+                                .map(
+                                  (report) => _ReportCard(
+                                    key: ValueKey('report-card-${report.id}'),
+                                    report: report,
+                                    busy: _pendingReports.contains(report.id),
+                                    onSetDismissed: () => _setReportDismissed(
+                                      report.id,
+                                      !report.isDismissed,
+                                    ),
+                                    onOpenTarget:
+                                        report.targetType == 'post' &&
+                                            report.targetAvailable
+                                        ? () => context.push(
+                                            '/post/${report.targetId}',
+                                          )
+                                        : null,
+                                    onBanReporter: () => _confirmBan(
+                                      report.reporterUserId,
+                                      report.reporterHandle.isEmpty
+                                          ? 'reporter'
+                                          : '@${report.reporterHandle}',
+                                    ),
+                                    onBanReported: report.reportedUserId == null
+                                        ? null
+                                        : () => _confirmBan(
+                                            report.reportedUserId!,
+                                            report.reportedHandle.isEmpty
+                                                ? 'reported account'
+                                                : '@${report.reportedHandle}',
+                                          ),
                                   ),
-                                  onBanReported: report.reportedUserId == null
-                                      ? null
-                                      : () => _confirmBan(
-                                          report.reportedUserId!,
-                                          report.reportedHandle.isEmpty
-                                              ? 'reported account'
-                                              : '@${report.reportedHandle}',
-                                        ),
-                                ),
-                              )
-                              .toList(),
-                        ),
+                                )
+                                .toList(),
+                          );
+                  },
                 ),
                 const SizedBox(height: 26),
                 Text(
@@ -286,16 +411,21 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
 
 class _ReportCard extends StatelessWidget {
   const _ReportCard({
+    super.key,
     required this.report,
     required this.onOpenTarget,
     required this.onBanReporter,
     required this.onBanReported,
+    required this.onSetDismissed,
+    required this.busy,
   });
 
   final AdminReport report;
   final VoidCallback? onOpenTarget;
   final VoidCallback onBanReporter;
   final VoidCallback? onBanReported;
+  final VoidCallback onSetDismissed;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
@@ -347,6 +477,23 @@ class _ReportCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
+                OutlinedButton.icon(
+                  key: ValueKey('report-status-${report.id}'),
+                  onPressed: busy ? null : onSetDismissed,
+                  icon: busy
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          report.isDismissed
+                              ? Icons.undo_rounded
+                              : Icons.check_circle_outline,
+                        ),
+                  label: Text(
+                    report.isDismissed ? 'Restore report' : 'Dismiss report',
+                  ),
+                ),
                 if (onOpenTarget != null)
                   FilledButton.tonalIcon(
                     onPressed: onOpenTarget,

@@ -349,6 +349,9 @@ class SocialReport(BaseModel):
     target_id: str
     reason: str = ""
     created_at: datetime
+    status: Literal["open", "dismissed"] = "open"
+    dismissed_at: datetime | None = None
+    dismissed_by_user_id: str | None = None
 
 
 class SocialEngagementState(BaseModel):

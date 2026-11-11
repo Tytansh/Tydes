@@ -916,6 +916,7 @@ class SurfRepository {
     try {
       final response = await _dio.get<Map<String, dynamic>>(
         '/admin/dashboard/reports',
+        queryParameters: {'include_dismissed': true},
       );
       return (response.data?['reports'] as List<dynamic>? ?? const [])
           .map((item) => AdminReport.fromJson(item as Map<String, dynamic>))
@@ -926,6 +927,21 @@ class SurfRepository {
         throw StateError(detail['detail'] as String);
       }
       throw StateError('Could not load reports right now.');
+    }
+  }
+
+  Future<void> setAdminReportStatus({
+    required String reportId,
+    required bool dismissed,
+  }) async {
+    final status = dismissed ? 'dismissed' : 'open';
+    final response = await _dio.patch<Map<String, dynamic>>(
+      '/admin/dashboard/reports/${Uri.encodeComponent(reportId)}',
+      data: {'status': status},
+    );
+    if (response.data?['id'] != reportId ||
+        response.data?['status'] != status) {
+      throw StateError('The report change was not confirmed. Please retry.');
     }
   }
 

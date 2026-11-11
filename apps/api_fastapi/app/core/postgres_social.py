@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 import os
-from typing import Any
+from typing import Any, Literal
 
 from app.core.models import (
     DEMO_SOCIAL_USER_IDS,
@@ -274,12 +274,19 @@ class PostgresSocialRepository:
             for row in rows
         ]
 
-    def list_reports(self) -> list[SocialReport]:
+    def list_reports(self, *, include_dismissed: bool = False) -> list[SocialReport]:
+        status_filter = (
+            "" if include_dismissed
+            else "WHERE COALESCE(payload->>'status', 'open') = 'open'"
+        )
         with self._connect() as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT payload FROM social_reports
-                ORDER BY created_at DESC
+                {status_filter}
+                ORDER BY
+                    CASE WHEN COALESCE(payload->>'status', 'open') = 'open' THEN 0 ELSE 1 END,
+                    created_at DESC
                 LIMIT 500
                 """
             ).fetchall()
@@ -287,6 +294,44 @@ class PostgresSocialRepository:
             SocialReport.model_validate(_payload_dict(row["payload"]))
             for row in rows
         ]
+
+    def set_report_status(
+        self,
+        report_id: str,
+        status: Literal["open", "dismissed"],
+        admin_user_id: str,
+    ) -> SocialReport | None:
+        if status not in {"open", "dismissed"}:
+            raise ValueError("Unsupported report status.")
+        # Lock the exact row: an older report need not be in the dashboard's
+        # bounded listing, and concurrent reviewers must not overwrite audit.
+        with self._connect() as connection:
+            with connection.transaction():
+                row = connection.execute(
+                    "SELECT payload FROM social_reports WHERE id = %s FOR UPDATE",
+                    (report_id,),
+                ).fetchone()
+                if row is None:
+                    return None
+                report = SocialReport.model_validate(_payload_dict(row["payload"]))
+                if report.status == status:
+                    return report
+                updated = report.model_copy(
+                    update={
+                        "status": status,
+                        "dismissed_at": (
+                            datetime.now(timezone.utc) if status == "dismissed" else None
+                        ),
+                        "dismissed_by_user_id": (
+                            admin_user_id if status == "dismissed" else None
+                        ),
+                    }
+                )
+                connection.execute(
+                    "UPDATE social_reports SET payload = %s, updated_at = NOW() WHERE id = %s",
+                    (self._jsonb(updated.model_dump(mode="json")), report_id),
+                )
+                return updated
 
     def save_report(self, report: SocialReport) -> None:
         payload = report.model_dump(mode="json")

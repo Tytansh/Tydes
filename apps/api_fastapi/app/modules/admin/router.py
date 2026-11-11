@@ -1,5 +1,6 @@
 import os
 import secrets
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
@@ -14,6 +15,10 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 class AdminUserAccessUpdate(BaseModel):
     premium: bool | None = None
     banned: bool | None = None
+
+
+class AdminReportStatusUpdate(BaseModel):
+    status: Literal["open", "dismissed"]
 
 
 def require_admin_token(provided_token: str | None):
@@ -58,9 +63,12 @@ def list_dashboard_users(_admin: User = Depends(require_admin_user)):
 
 
 @router.get("/dashboard/reports")
-def list_dashboard_reports(_admin: User = Depends(require_admin_user)):
+def list_dashboard_reports(
+    include_dismissed: bool = False,
+    _admin: User = Depends(require_admin_user),
+):
     reports = []
-    for report in store.list_social_reports():
+    for report in store.list_social_reports(include_dismissed=include_dismissed):
         item = report.model_dump(mode="json")
         reporter = store.get_auth_user_by_id(report.reporter_user_id)
         item["reporter_handle"] = reporter.handle if reporter else ""
@@ -90,6 +98,20 @@ def list_dashboard_reports(_admin: User = Depends(require_admin_user)):
         item["target_available"] = target_available
         reports.append(item)
     return {"count": len(reports), "reports": reports}
+
+
+@router.patch("/dashboard/reports/{report_id}")
+def update_dashboard_report(
+    report_id: str,
+    payload: AdminReportStatusUpdate,
+    admin: User = Depends(require_admin_user),
+):
+    report = store.set_social_report_status(
+        report_id, payload.status, admin_user_id=admin.id,
+    )
+    if report is None:
+        raise HTTPException(status_code=404, detail="Report not found.")
+    return report.model_dump(mode="json")
 
 
 @router.patch("/dashboard/users/{user_id}")
