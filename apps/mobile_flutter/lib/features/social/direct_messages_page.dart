@@ -10,6 +10,7 @@ import '../../core/network/api_models.dart';
 import '../../core/network/demo_persistence.dart';
 import '../../core/network/surf_repository.dart';
 import '../../core/moderation/content_moderation.dart';
+import '../../core/widgets/feed_refresh_indicator.dart';
 import 'social_profile.dart';
 
 final directMessageThreadsProvider =
@@ -400,6 +401,15 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
 
+  Future<void> _refreshInbox() async {
+    // Refresh server-backed inbox discovery without recreating local direct
+    // threads, clearing drafts, or resetting the current search.
+    await Future.wait([
+      ref.refresh(joinedEventChatsProvider.future),
+      ref.refresh(socialRelationshipHydrationProvider.future),
+    ]);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -490,72 +500,80 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-        children: [
-          _SearchField(
-            controller: _searchController,
-            onChanged: (value) => setState(() => _query = value),
-          ),
-          const SizedBox(height: 18),
-          if (eventChats.isLoading)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 16),
-              child: LinearProgressIndicator(minHeight: 2),
+      body: FeedRefreshIndicator(
+        onRefresh: _refreshInbox,
+        child: ListView(
+          key: const PageStorageKey('messages-inbox'),
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          children: [
+            _SearchField(
+              controller: _searchController,
+              onChanged: (value) => setState(() => _query = value),
             ),
-          if (eventChats.hasError)
-            ListTile(
-              title: const Text('Could not load event chats'),
-              trailing: TextButton(
-                onPressed: () => ref.invalidate(joinedEventChatsProvider),
-                child: const Text('Retry'),
+            const SizedBox(height: 18),
+            if (eventChats.isLoading && !eventChats.hasValue)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 16),
+                child: LinearProgressIndicator(minHeight: 2),
               ),
-            ),
-          if (filteredEventChats.isNotEmpty) ...[
-            Text('Event chats', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 6),
-            ...filteredEventChats.map(
-              (chat) => _EventChatThreadTile(
-                chat: chat,
-                onTap: () => context.push('/event/${chat.postId}/chat'),
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
-          Row(
-            children: [
-              Text('Primary', style: Theme.of(context).textTheme.titleLarge),
-              const Spacer(),
-              TextButton(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) =>
-                        _MessageRequestsPage(requestThreads: requestThreads),
-                  ),
-                ),
-                child: Text(
-                  requestThreads.isEmpty
-                      ? 'Requests'
-                      : 'Requests ${requestThreads.length}',
+            if (eventChats.hasError)
+              ListTile(
+                title: const Text('Could not load event chats'),
+                trailing: TextButton(
+                  onPressed: () => ref.invalidate(joinedEventChatsProvider),
+                  child: const Text('Retry'),
                 ),
               ),
+            if (filteredEventChats.isNotEmpty) ...[
+              Text(
+                'Event chats',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 6),
+              ...filteredEventChats.map(
+                (chat) => _EventChatThreadTile(
+                  chat: chat,
+                  onTap: () => context.push('/event/${chat.postId}/chat'),
+                ),
+              ),
+              const SizedBox(height: 12),
             ],
-          ),
-          const SizedBox(height: 6),
-          if (filteredThreads.isEmpty)
-            const _EmptyMessagesCard()
-          else
-            ...filteredThreads.map(
-              (thread) => _MessageThreadTile(
-                thread: thread,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => _DirectChatPage(threadId: thread.id),
+            Row(
+              children: [
+                Text('Primary', style: Theme.of(context).textTheme.titleLarge),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          _MessageRequestsPage(requestThreads: requestThreads),
+                    ),
+                  ),
+                  child: Text(
+                    requestThreads.isEmpty
+                        ? 'Requests'
+                        : 'Requests ${requestThreads.length}',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            if (filteredThreads.isEmpty)
+              const _EmptyMessagesCard()
+            else
+              ...filteredThreads.map(
+                (thread) => _MessageThreadTile(
+                  thread: thread,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => _DirectChatPage(threadId: thread.id),
+                    ),
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

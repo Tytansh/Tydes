@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
+import '../../core/widgets/feed_refresh_indicator.dart';
 import 'social_profile.dart';
 
 final socialNotificationsProvider = FutureProvider((ref) {
@@ -19,9 +20,11 @@ class SocialNotificationsPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Notifications')),
-      body: RefreshIndicator.adaptive(
+      body: FeedRefreshIndicator(
         onRefresh: () => ref.refresh(socialNotificationsProvider.future),
         child: notifications.when(
+          skipLoadingOnRefresh: true,
+          skipError: notifications.hasValue,
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (_, _) => const _NotificationsMessage(
             title: 'Could not load notifications.',
@@ -36,12 +39,17 @@ class SocialNotificationsPage extends ConsumerWidget {
               );
             }
             return ListView.separated(
+              key: const PageStorageKey('notifications-list'),
+              physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               itemCount: items.length,
               separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
                 final item = _notificationFromModel(items[index]);
-                return _NotificationTile(item: item);
+                return _NotificationTile(
+                  key: ValueKey(items[index].id),
+                  item: item,
+                );
               },
             );
           },
@@ -99,7 +107,7 @@ class _NotificationsMessage extends StatelessWidget {
 }
 
 class _NotificationTile extends StatelessWidget {
-  const _NotificationTile({required this.item});
+  const _NotificationTile({super.key, required this.item});
 
   final _SocialNotification item;
 
