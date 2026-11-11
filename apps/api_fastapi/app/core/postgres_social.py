@@ -274,6 +274,56 @@ class PostgresSocialRepository:
             for row in rows
         ]
 
+    def unread_notification_count(
+        self, recipient_user_id: str, blocked_user_ids: set[str],
+    ) -> int:
+        # Count the full unread queue, not just the latest 80 visible rows.
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*) AS count FROM social_notifications
+                WHERE recipient_user_id = %s
+                  AND payload->>'read_at' IS NULL
+                  AND NOT (actor_user_id = ANY(%s))
+                """,
+                (recipient_user_id, list(blocked_user_ids)),
+            ).fetchone()
+        return int(row["count"])
+
+    def mark_notifications_read(
+        self,
+        recipient_user_id: str,
+        notification_ids: list[str],
+        blocked_user_ids: set[str],
+    ) -> list[str]:
+        if not notification_ids:
+            return []
+        # Lock only the explicitly displayed, owned notifications. A new
+        # arrival after this snapshot must remain unread.
+        with self._connect() as connection:
+            with connection.transaction():
+                rows = connection.execute(
+                    """
+                    SELECT id, payload FROM social_notifications
+                    WHERE recipient_user_id = %s AND id = ANY(%s)
+                      AND NOT (actor_user_id = ANY(%s))
+                    FOR UPDATE
+                    """,
+                    (recipient_user_id, notification_ids, list(blocked_user_ids)),
+                ).fetchall()
+                now = datetime.now(timezone.utc).isoformat()
+                for row in rows:
+                    payload = _payload_dict(row["payload"])
+                    if payload.get("read_at") is not None:
+                        continue
+                    payload["read_at"] = now
+                    connection.execute(
+                        "UPDATE social_notifications SET payload = %s, updated_at = NOW() "
+                        "WHERE id = %s AND recipient_user_id = %s",
+                        (self._jsonb(payload), row["id"], recipient_user_id),
+                    )
+                return [str(row["id"]) for row in rows]
+
     def list_reports(self, *, include_dismissed: bool = False) -> list[SocialReport]:
         status_filter = (
             "" if include_dismissed

@@ -340,6 +340,7 @@ class SocialNotification(BaseModel):
     post_id: str | None = None
     preview: str | None = None
     created_at: datetime
+    read_at: datetime | None = None
 
 
 class SocialReport(BaseModel):

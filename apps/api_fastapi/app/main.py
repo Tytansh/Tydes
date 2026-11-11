@@ -22,6 +22,7 @@ from app.modules.alerts.router import router as alerts_router
 from app.modules.auth.router import router as auth_router
 from app.modules.billing.router import router as billing_router
 from app.modules.forecasts.router import router as forecasts_router
+from app.modules.messages.router import router as messages_router
 from app.modules.social.router import router as social_router
 from app.modules.spots.router import router as spots_router
 from app.modules.public.router import router as public_router
@@ -238,6 +239,7 @@ app.include_router(spots_router, prefix="/api/v1")
 app.include_router(public_router, prefix="/api/v1")
 app.include_router(forecasts_router, prefix="/api/v1")
 app.include_router(social_router, prefix="/api/v1")
+app.include_router(messages_router, prefix="/api/v1")
 app.include_router(trips_router, prefix="/api/v1")
 app.include_router(alerts_router, prefix="/api/v1")
 app.include_router(billing_router, prefix="/api/v1")

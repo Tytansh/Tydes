@@ -443,6 +443,10 @@ class DemoStore:
     def delete_current_account(self) -> User:
         normalized_email = self.user.email.strip().lower()
         user_id = self.user.id
+        # Remove private conversation bodies before deleting account identity.
+        # A storage failure aborts deletion rather than leaving orphaned DMs.
+        from app.core.direct_messages import delete_direct_messages_for_user
+        delete_direct_messages_for_user(user_id)
         if self.postgres_social is not None:
             self.postgres_social.delete_user_social(user_id)
         if self.postgres_planning is not None:
@@ -1494,6 +1498,49 @@ class DemoStore:
             reverse=True,
         )[:80]
 
+    def unread_social_notification_count(self) -> int:
+        owner_id = self.user.id
+        blocked = self._blocked_user_ids_for(owner_id)
+        if self.postgres_social is not None:
+            return self.postgres_social.unread_notification_count(owner_id, blocked)
+        return sum(
+            item.recipient_user_id == owner_id
+            and item.actor_user_id not in blocked
+            and item.read_at is None
+            for item in self.social_notifications
+        )
+
+    def mark_social_notifications_read(self, notification_ids: list[str]) -> list[str]:
+        owner_id = self.user.id
+        blocked = self._blocked_user_ids_for(owner_id)
+        ids = set(notification_ids)
+        if self.postgres_social is not None:
+            return self.postgres_social.mark_notifications_read(
+                owner_id, list(ids), blocked,
+            )
+        with self._state_lock:
+            owned = [
+                item for item in self.social_notifications
+                if item.id in ids and item.recipient_user_id == owner_id
+                and item.actor_user_id not in blocked
+            ]
+            unread_ids = {item.id for item in owned if item.read_at is None}
+            if not unread_ids:
+                return [item.id for item in owned]
+            now = datetime.now(timezone.utc)
+            original = self.social_notifications
+            self.social_notifications = [
+                item.model_copy(update={"read_at": now})
+                if item.id in unread_ids and item.recipient_user_id == owner_id else item
+                for item in original
+            ]
+            try:
+                self._save_state()
+            except Exception:
+                self.social_notifications = original
+                raise
+            return [item.id for item in owned]
+
     def set_user_follow(self, followed_user_id: str, following: bool) -> dict[str, list[str]]:
         normalized_user_id = followed_user_id.strip()
         if not normalized_user_id or normalized_user_id == self.user.id:
@@ -1520,6 +1567,10 @@ class DemoStore:
         if self.postgres_social is not None:
             self.postgres_social.set_block(self.user.id, normalized_user_id, blocked)
             return self.social_relationship_state()
+        # The JSON demo relationship sets predate account-scoped inboxes.
+        # Keep private messaging block decisions durable for each account.
+        from app.core.direct_messages import record_direct_message_block
+        record_direct_message_block(self.user.id, normalized_user_id, blocked)
         if blocked:
             self.blocked_user_ids.add(normalized_user_id)
             self.followed_user_ids.discard(normalized_user_id)

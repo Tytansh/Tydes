@@ -90,6 +90,17 @@ class SocialReportCreateRequest(BaseModel):
     reason: str = Field(default="", max_length=500)
 
 
+class NotificationsReadRequest(BaseModel):
+    notification_ids: list[str] = Field(min_length=1, max_length=500)
+
+    @field_validator("notification_ids")
+    @classmethod
+    def validate_notification_ids(cls, value: list[str]) -> list[str]:
+        if any(not item.strip() or len(item) > 120 for item in value):
+            raise ValueError("Invalid notification identifier")
+        return list(dict.fromkeys(value))
+
+
 class DirectMediaUploadCreateRequest(BaseModel):
     media_type: Literal["photo", "video"]
     content_type: str = Field(min_length=1, max_length=80)
@@ -183,6 +194,26 @@ def get_blocked_profiles(_user=Depends(require_authenticated_user)):
 @router.get("/notifications")
 def get_notifications(_user=Depends(require_authenticated_user)):
     return list(store.list_social_notifications())
+
+
+@router.get("/notifications/unread-count")
+def get_notification_unread_count(request: Request, user=Depends(require_authenticated_user)):
+    _limit_public_read(request, "notification-unread", limit=120)
+    return {"user_id": user.id, "unread_count": store.unread_social_notification_count()}
+
+
+@router.post("/notifications/read")
+def mark_notifications_read(
+    payload: NotificationsReadRequest,
+    user=Depends(require_authenticated_user),
+):
+    _limit_user_action(user.id, "notification-read", 120, window_seconds=5 * 60)
+    read_ids = store.mark_social_notifications_read(payload.notification_ids)
+    return {
+        "user_id": user.id,
+        "read_ids": read_ids,
+        "unread_count": store.unread_social_notification_count(),
+    }
 
 
 @router.post("/follows/{user_id}")
