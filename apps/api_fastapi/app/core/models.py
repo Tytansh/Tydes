@@ -98,6 +98,51 @@ class ForecastEntry(BaseModel):
     confidence_note: str | None = None
 
 
+class DetailedForecastHour(BaseModel):
+    time: datetime
+    local_date: date
+    local_time: str
+    is_day: bool | None = None
+    wave_height_m: float | None = None
+    wave_period_s: float | None = None
+    wave_direction_deg: float | None = None
+    swell_height_m: float | None = None
+    swell_period_s: float | None = None
+    swell_peak_period_s: float | None = None
+    swell_direction_deg: float | None = None
+    secondary_swell_height_m: float | None = None
+    secondary_swell_period_s: float | None = None
+    secondary_swell_direction_deg: float | None = None
+    wind_wave_height_m: float | None = None
+    wind_wave_period_s: float | None = None
+    wind_wave_direction_deg: float | None = None
+    wind_kts: float | None = None
+    wind_gusts_kts: float | None = None
+    wind_direction_deg: float | None = None
+    sea_surface_temperature_c: float | None = None
+
+
+class ForecastDaylight(BaseModel):
+    day: date
+    sunrise: str | None = None
+    sunset: str | None = None
+
+
+class DetailedSpotForecast(BaseModel):
+    spot_id: str
+    available: bool
+    source: str = "open-meteo"
+    marine_model: str = "Best Match (automatic)"
+    weather_model: str = "Best Match (automatic)"
+    timezone: str = "UTC"
+    utc_offset_seconds: int = 0
+    fetched_at: datetime | None = None
+    local_date: date | None = None
+    note: str | None = None
+    hours: list[DetailedForecastHour] = Field(default_factory=list)
+    days: list[ForecastDaylight] = Field(default_factory=list)
+
+
 class SurfWindowHour(BaseModel):
     time: str
     label: str
@@ -152,6 +197,13 @@ class TideEvent(BaseModel):
     height_m: float | None = None
 
 
+class TideSample(BaseModel):
+    time: datetime
+    height_m: float
+    local_date: date | None = None
+    local_time: str | None = None
+
+
 class TideForecast(BaseModel):
     spot_id: str
     available: bool
@@ -160,6 +212,10 @@ class TideForecast(BaseModel):
     source: str = "unavailable"
     events: list[TideEvent] = Field(default_factory=list)
     note: str | None = None
+    samples: list[TideSample] = Field(default_factory=list)
+    timezone: str | None = None
+    datum: str | None = None
+    fetched_at: datetime | None = None
 
 
 class Trip(BaseModel):
@@ -4724,9 +4780,11 @@ def build_seed() -> dict[str, list[BaseModel] | User]:
             name="Premium",
             price_usd_monthly=3.99,
             features=[
-                "Live data on every spot",
-                "Best Time Today windows",
-                "Tide-aware planning",
+                "5-day hourly forecasts at every spot",
+                "Swell direction, period & components",
+                "Wind and gust charts",
+                "Tide curves where available",
+                "Surf alerts",
                 "Ad-free experience",
             ],
         ),

@@ -21,6 +21,7 @@ from app.core.models import (
     Alert,
     BillingPlan,
     Dashboard,
+    DetailedSpotForecast,
     EventAttendee,
     EventChatMessage,
     ForecastEntry,
@@ -52,7 +53,7 @@ from app.core.runtime import (
     uses_local_media_storage,
 )
 from app.integrations.tide_providers.tidecheck import TideCheckProvider
-from app.integrations.weather_providers.open_meteo import FREE_FORECAST_MAX_AGE, FRESH_FORECAST_MAX_AGE, OpenMeteoMarineProvider, PREVIEW_FORECAST_MAX_AGE
+from app.integrations.weather_providers.open_meteo import FREE_FORECAST_MAX_AGE, FRESH_FORECAST_MAX_AGE, OpenMeteoMarineProvider, PREVIEW_FORECAST_MAX_AGE, spot_local_date
 
 ForecastFreshness = Literal["fresh", "preview"]
 
@@ -805,8 +806,8 @@ class DemoStore:
                 for spot in self.spots
                 for forecast in (
                     self._list_forecasts_for_spot(spot, freshness=freshness)
-                    if self.user.premium or spot.id == live_spot_id
-                    else [item for item in self.forecasts if item.spot_id == spot.id]
+                    if spot.id == live_spot_id
+                    else build_estimated_forecasts(spot, spot_local_date(spot))
                 )
             ]
         spot = self.get_spot(spot_id)
@@ -845,7 +846,26 @@ class DemoStore:
             # Never reuse startup-time forecast dates here. A long-running
             # process can otherwise surface estimates from days or months ago
             # whenever the live provider has a temporary outage.
-            return build_estimated_forecasts(spot, date.today())
+            return build_estimated_forecasts(spot, spot_local_date(spot))
+
+    def get_detailed_forecast(self, spot_id: str) -> DetailedSpotForecast:
+        spot = self.get_spot(spot_id)
+        if spot is None:
+            return DetailedSpotForecast(spot_id=spot_id, available=False, note="Spot not found.")
+        if not self._can_access_live_forecast(spot_id):
+            return DetailedSpotForecast(
+                spot_id=spot_id, available=False,
+                note="Premium unlocks detailed hourly forecasts at every spot. You can also choose one live spot on the free plan.",
+            )
+        try:
+            return self.weather_provider.fetch_spot_detail(spot)
+        except Exception as error:
+            logger.warning("Detailed forecast unavailable for %s (%s)", spot.id, type(error).__name__)
+            return DetailedSpotForecast(
+                spot_id=spot_id, available=False,
+                local_date=spot_local_date(spot),
+                note="The forecast model is unavailable right now. No estimated chart has been substituted; please try again shortly.",
+            )
 
     def _locked_free_forecast_estimate(self, forecast: ForecastEntry) -> ForecastEntry:
         wave_height = (
@@ -902,8 +922,8 @@ class DemoStore:
         try:
             return self.tide_provider.fetch_spot_tides(
                 spot,
-                start_day or date.today(),
-                days=3,
+                start_day or spot_local_date(spot),
+                days=5,
             )
         except Exception as error:
             logger.warning("Live tide data unavailable for %s: %s", spot.id, error)

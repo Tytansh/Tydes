@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from app.core.auth import require_authenticated_user
+from app.core.models import DetailedSpotForecast, User
 
 from app.core.rate_limit import (
     RateLimitRule,
@@ -24,6 +27,17 @@ def list_forecasts(
 def get_tides(spot_id: str, request: Request):
     _limit_forecast_request(request, "tides", limit=60)
     return store.get_tides(spot_id)
+
+
+@router.get("/detail", response_model=DetailedSpotForecast)
+def get_detailed_forecast(
+    spot_id: str, request: Request,
+    _user: User = Depends(require_authenticated_user),
+):
+    _limit_forecast_request(request, "detail", limit=60)
+    if store.get_spot(spot_id) is None:
+        raise HTTPException(status_code=404, detail="Spot not found")
+    return store.get_detailed_forecast(spot_id)
 
 
 @router.get("/surf-window")

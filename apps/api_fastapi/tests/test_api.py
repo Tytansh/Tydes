@@ -1103,7 +1103,7 @@ def test_open_meteo_uses_restart_safe_cached_forecast():
 
     assert forecasts == [cached_forecast]
     assert requested == {
-        "cache_key": f"open-meteo:{spot.id}",
+        "cache_key": f"open-meteo:v2:{spot.id}",
         "max_age": timedelta(hours=3),
     }
 
@@ -1126,7 +1126,7 @@ def test_tidecheck_uses_restart_safe_cached_tides(monkeypatch):
             payload=cached_forecast.model_dump(mode="json"),
             updated_at=datetime.now(timezone.utc),
         )
-        if cache_key == f"tidecheck:tides:{spot.id}:{start_day.isoformat()}:3"
+        if cache_key == f"tidecheck:v2:tides:{spot.id}:{start_day.isoformat()}:3"
         and max_age == timedelta(hours=12)
         else None
     )

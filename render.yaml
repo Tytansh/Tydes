@@ -101,6 +101,13 @@ services:
         sync: false
       - key: OPEN_METEO_API_KEY
         sync: false
+      - key: OPEN_METEO_DAILY_CREDIT_BUDGET
+        # App-side rolling 24h budget. Includes expanded-variable call weights.
+        # Not a provider-account billing cap or a substitute for its licence.
+        value: '3000'
+      - key: TIDECHECK_DAILY_REQUEST_BUDGET
+        # Counts nearest-station and prediction HTTP attempts; cache hits are free.
+        value: '500'
       - key: REVENUECAT_ENTITLEMENT_ID
         value: premium
       - key: REVENUECAT_SECRET_API_KEY

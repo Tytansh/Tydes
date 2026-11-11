@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 import logging
 import math
 import os
+from threading import RLock
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
-from app.core.models import ForecastEntry, Spot, SurfWindowForecast, SurfWindowHour
+from app.core.models import (
+    DetailedForecastHour, DetailedSpotForecast, ForecastDaylight, ForecastEntry,
+    Spot, SurfWindowForecast, SurfWindowHour,
+)
 from app.core.persistent_cache import PostgresJsonCache
+from app.core.rate_limit import RateLimitRule, api_rate_limiter
 
 
 logger = logging.getLogger(__name__)
@@ -22,6 +28,16 @@ FREE_MARINE_BASE_URL = "https://marine-api.open-meteo.com/v1"
 FREE_FORECAST_BASE_URL = "https://api.open-meteo.com/v1"
 CUSTOMER_MARINE_BASE_URL = "https://customer-marine-api.open-meteo.com/v1"
 CUSTOMER_FORECAST_BASE_URL = "https://customer-api.open-meteo.com/v1"
+CACHE_PREFIX = "open-meteo:v2"
+MARINE_VARIABLES = (
+    "wave_height", "wave_period", "wave_direction",
+    "swell_wave_height", "swell_wave_period", "swell_wave_peak_period",
+    "swell_wave_direction", "secondary_swell_wave_height",
+    "secondary_swell_wave_period", "secondary_swell_wave_direction",
+    "wind_wave_height", "wind_wave_period", "wind_wave_direction",
+    "sea_surface_temperature",
+)
+WEATHER_VARIABLES = ("wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "is_day")
 
 
 @dataclass
@@ -29,6 +45,9 @@ class _CacheItem:
     fetched_at: datetime
     data: list[ForecastEntry]
     hourly_rows: list[dict[str, float | str | None]]
+    timezone: str = "UTC"
+    utc_offset_seconds: int = 0
+    days: list[ForecastDaylight] | None = None
 
 
 class OpenMeteoMarineProvider:
@@ -54,6 +73,9 @@ class OpenMeteoMarineProvider:
         )
         self._cache: dict[str, _CacheItem] = {}
         self._persistent_cache = PostgresJsonCache.from_env()
+        self._locks_guard = RLock()
+        self._spot_locks: dict[str, RLock] = {}
+        self._retry_after: dict[str, datetime] = {}
 
     def fetch_spot_forecast(
         self,
@@ -61,35 +83,46 @@ class OpenMeteoMarineProvider:
         *,
         max_cache_age: timedelta = FRESH_FORECAST_MAX_AGE,
     ) -> list[ForecastEntry]:
-        now = datetime.now(UTC)
-        cached = self._cache.get(spot.id)
-        if cached and now - cached.fetched_at <= max_cache_age:
-            return cached.data
+        with self._locks_guard:
+            lock = self._spot_locks.setdefault(spot.id, RLock())
+        # A simultaneous chart, daily forecast and surf-window request must share
+        # one upstream fetch rather than consume three lots of API credits.
+        with lock:
+            now = datetime.now(UTC)
+            cached = self._cache.get(spot.id)
+            if cached and self._cache_is_current(cached, now, max_cache_age):
+                return self._current_entries(cached, now)
+            persistent = self._read_persistent_cache(spot.id, max_cache_age)
+            if persistent is not None and self._cache_is_current(persistent, now, max_cache_age):
+                self._cache[spot.id] = persistent
+                return self._current_entries(persistent, now)
+            if self._retry_after.get(spot.id, now) > now:
+                raise RuntimeError("Forecast provider is temporarily backing off")
+            try:
+                self._reserve_upstream_budget()
+                item = self._fetch_cache_item(spot, now)
+            except Exception as error:
+                # Never turn absent observations into zero or hit the provider
+                # repeatedly while it is unavailable/rate limited.
+                status = getattr(getattr(error, "response", None), "status_code", None)
+                self._retry_after[spot.id] = now + timedelta(minutes=5 if status == 429 else 1)
+                raise
+            self._cache[spot.id] = item
+            self._retry_after.pop(spot.id, None)
+            self._write_persistent_cache(spot.id, item)
+            return self._current_entries(item, now)
 
-        persistent = self._read_persistent_cache(spot.id, max_cache_age)
-        if persistent is not None:
-            self._cache[spot.id] = persistent
-            return persistent.data
-
+    def _fetch_cache_item(self, spot: Spot, now: datetime) -> _CacheItem:
         marine_response = self._marine_client.get(
             "/marine",
             params=self._with_api_key(
                 {
                     "latitude": spot.latitude,
                     "longitude": spot.longitude,
-                    "hourly": ",".join(
-                        [
-                            "wave_height",
-                            "wave_period",
-                            "wave_direction",
-                            "wind_wave_height",
-                            "swell_wave_height",
-                            "swell_wave_direction",
-                            "sea_surface_temperature",
-                        ]
-                    ),
+                    "hourly": ",".join(MARINE_VARIABLES),
                     "forecast_days": 5,
                     "timezone": "auto",
+                    "timeformat": "unixtime",
                     "cell_selection": "sea",
                 }
             ),
@@ -102,9 +135,11 @@ class OpenMeteoMarineProvider:
                 {
                     "latitude": spot.latitude,
                     "longitude": spot.longitude,
-                    "hourly": "wind_speed_10m",
+                    "hourly": ",".join(WEATHER_VARIABLES),
+                    "daily": "sunrise,sunset",
                     "forecast_days": 5,
                     "timezone": "auto",
+                    "timeformat": "unixtime",
                     "wind_speed_unit": "kn",
                     "cell_selection": "sea",
                 }
@@ -114,22 +149,73 @@ class OpenMeteoMarineProvider:
 
         marine_payload = marine_response.json()
         weather_payload = weather_response.json()
-        entries = self._to_daily_forecasts(
-            spot,
-            marine_payload,
-            weather_payload,
-        )
-        cache_item = _CacheItem(
+        if not marine_payload.get("timezone"):
+            marine_payload = {**marine_payload, "timezone": spot_timezone_name(spot)}
+        rows = self._to_hourly_rows(marine_payload, weather_payload)
+        if not any(row.get("wave_height") is not None for row in rows):
+            raise ValueError("Marine model returned no wave data")
+        timezone_name = str(marine_payload.get("timezone") or spot_timezone_name(spot))
+        return _CacheItem(
             fetched_at=now,
-            data=entries,
-            hourly_rows=self._to_hourly_rows(
-                marine_payload,
-                weather_payload,
+            data=self._to_daily_forecasts_from_rows(spot, rows),
+            hourly_rows=rows,
+            timezone=timezone_name,
+            utc_offset_seconds=(
+                int(marine_payload["utc_offset_seconds"])
+                if marine_payload.get("utc_offset_seconds") is not None
+                else int(now.astimezone(_zone(timezone_name)).utcoffset().total_seconds())
             ),
+            days=_daylight_days(weather_payload, timezone_name),
         )
-        self._cache[spot.id] = cache_item
-        self._write_persistent_cache(spot.id, cache_item)
-        return entries
+
+    @staticmethod
+    def _reserve_upstream_budget() -> None:
+        # Open-Meteo counts >10 variables fractionally. Reserve a conservative
+        # rounded-up unit count for both requests BEFORE either starts. This is
+        # an application guardrail, not a provider-account spending guarantee.
+        try:
+            limit = max(1, min(int(os.getenv("OPEN_METEO_DAILY_CREDIT_BUDGET", "3000")), 100_000))
+        except ValueError:
+            limit = 3000
+        units = math.ceil(len(MARINE_VARIABLES) / 10) + math.ceil((len(WEATHER_VARIABLES) + 2) / 10)
+        for _ in range(units):
+            api_rate_limiter.enforce(RateLimitRule(
+                scope="upstream:open-meteo-credit-budget",
+                key="all-forecast-requests",
+                limit=limit,
+                window_seconds=24 * 60 * 60,
+            ))
+
+    @staticmethod
+    def _cache_is_current(item: _CacheItem, now: datetime, max_age: timedelta) -> bool:
+        local_day = now.astimezone(_zone(item.timezone)).date()
+        return (
+            -timedelta(minutes=1) <= now - item.fetched_at <= max_age
+            and bool(item.data)
+            and min(entry.day for entry in item.data) == local_day
+        )
+
+    @staticmethod
+    def _current_entries(item: _CacheItem, now: datetime) -> list[ForecastEntry]:
+        local_day = now.astimezone(_zone(item.timezone)).date()
+        return [entry for entry in item.data if entry.day >= local_day]
+
+    def fetch_spot_detail(self, spot: Spot) -> DetailedSpotForecast:
+        self.fetch_spot_forecast(spot)
+        cached = self._cache[spot.id]
+        local_day = datetime.now(UTC).astimezone(_zone(cached.timezone)).date()
+        hours = [
+            _detail_hour(row, cached.timezone)
+            for row in cached.hourly_rows
+            if date.fromisoformat(str(row["day"])) >= local_day
+        ]
+        return DetailedSpotForecast(
+            spot_id=spot.id, available=bool(hours), timezone=cached.timezone,
+            utc_offset_seconds=cached.utc_offset_seconds,
+            fetched_at=cached.fetched_at, local_date=local_day, hours=hours,
+            days=[day for day in (cached.days or []) if day.day >= local_day],
+            note=("Numerical model forecast, not an observed surf report. Wave height is significant combined sea height, not breaking-wave face height. Secondary swell may be unavailable for the automatically selected model."),
+        )
 
     def fetch_spot_surf_window(
         self,
@@ -145,7 +231,7 @@ class OpenMeteoMarineProvider:
                 available=False,
                 note="Hourly forecast is unavailable right now.",
             )
-        return _best_surf_window(spot, cached.hourly_rows)
+        return _best_surf_window(spot, cached.hourly_rows, timezone_name=cached.timezone)
 
     def _with_api_key(self, params: dict[str, Any]) -> dict[str, Any]:
         if not self._api_key:
@@ -161,7 +247,7 @@ class OpenMeteoMarineProvider:
             return None
         try:
             cached = self._persistent_cache.get(
-                f"open-meteo:{spot_id}",
+                f"{CACHE_PREFIX}:{spot_id}",
                 max_cache_age,
             )
             if cached is None:
@@ -179,6 +265,9 @@ class OpenMeteoMarineProvider:
                 fetched_at=cached.updated_at,
                 data=forecasts,
                 hourly_rows=hourly_rows,
+                timezone=str(cached.payload.get("timezone") or "UTC"),
+                utc_offset_seconds=int(cached.payload.get("utc_offset_seconds") or 0),
+                days=[ForecastDaylight.model_validate(day) for day in cached.payload.get("days", [])],
             )
         except Exception:
             logger.exception("Could not read cached Open-Meteo forecast for %s", spot_id)
@@ -193,12 +282,15 @@ class OpenMeteoMarineProvider:
             return
         try:
             self._persistent_cache.set(
-                f"open-meteo:{spot_id}",
+                f"{CACHE_PREFIX}:{spot_id}",
                 {
                     "forecasts": [
                         item.model_dump(mode="json") for item in cache_item.data
                     ],
                     "hourly_rows": cache_item.hourly_rows,
+                    "timezone": cache_item.timezone,
+                    "utc_offset_seconds": cache_item.utc_offset_seconds,
+                    "days": [day.model_dump(mode="json") for day in (cache_item.days or [])],
                 },
             )
         except Exception:
@@ -219,66 +311,45 @@ class OpenMeteoMarineProvider:
         weather_payload: dict[str, Any],
     ) -> list[dict[str, float | str | None]]:
         hourly = marine_payload.get("hourly", {})
-        times = hourly.get("time", [])
-        wave_heights = hourly.get("wave_height", [])
-        wave_periods = hourly.get("wave_period", [])
-        wave_directions = hourly.get("wave_direction", [])
-        wind_wave_heights = hourly.get("wind_wave_height", [])
-        swell_wave_heights = hourly.get("swell_wave_height", [])
-        swell_wave_directions = hourly.get("swell_wave_direction", [])
-        sea_surface_temps = hourly.get("sea_surface_temperature", [])
+        timezone_name = str(marine_payload.get("timezone") or "UTC")
+        weather_zone = str(weather_payload.get("timezone") or timezone_name)
         weather_hourly = weather_payload.get("hourly", {})
-        wind_speeds_by_time = {
-            stamp: float(speed)
-            for stamp, speed in zip(
-                weather_hourly.get("time", []),
-                weather_hourly.get("wind_speed_10m", []),
-                strict=False,
-            )
-            if speed is not None
-        }
-
-        return [
-            {
-                "time": stamp,
-                "day": stamp.split("T")[0],
-                "wave_height": _safe_value(wave_heights, index),
-                "wave_period": _safe_value(wave_periods, index),
-                "wave_direction": _optional_value(wave_directions, index),
-                "wind_wave_height": _safe_value(wind_wave_heights, index),
-                "swell_wave_height": _safe_value(swell_wave_heights, index),
-                "swell_wave_direction": _optional_value(
-                    swell_wave_directions,
-                    index,
-                ),
-                "sea_surface_temperature": _safe_value(sea_surface_temps, index),
-                "wind_speed": wind_speeds_by_time.get(stamp, 0.0),
+        weather_rows = {
+            _utc_stamp(stamp, weather_zone): {
+                name: _optional_value(weather_hourly.get(name, []), index)
+                for name in WEATHER_VARIABLES
             }
-            for index, stamp in enumerate(times)
-        ]
+            for index, stamp in enumerate(weather_hourly.get("time", []))
+        }
+        rows = []
+        for index, stamp in enumerate(hourly.get("time", [])):
+            utc_time = _utc_stamp(stamp, timezone_name)
+            local_time = utc_time.astimezone(_zone(timezone_name))
+            row = {
+                "time": local_time.isoformat(),
+                "time_utc": utc_time.isoformat(),
+                "day": local_time.date().isoformat(),
+                **{name: _optional_value(hourly.get(name, []), index) for name in MARINE_VARIABLES},
+            }
+            weather = weather_rows.get(utc_time, {})
+            row.update({
+                "wind_speed": weather.get("wind_speed_10m"),
+                "wind_gusts": weather.get("wind_gusts_10m"),
+                "wind_direction": weather.get("wind_direction_10m"),
+                "is_day": weather.get("is_day"),
+            })
+            rows.append(row)
+        return rows
 
     def _to_daily_forecasts_from_rows(
         self,
         spot: Spot,
         hourly_rows: list[dict[str, float | str | None]],
     ) -> list[ForecastEntry]:
-        grouped: dict[str, list[dict[str, float | None]]] = {}
+        grouped: dict[str, list[dict[str, Any]]] = {}
         for row in hourly_rows:
             day_key = str(row["day"])
-            grouped.setdefault(day_key, []).append(
-                {
-                    "wave_height": float(row["wave_height"]),
-                    "wave_period": float(row["wave_period"]),
-                    "wave_direction": _direction_value(row["wave_direction"]),
-                    "wind_wave_height": float(row["wind_wave_height"]),
-                    "swell_wave_height": float(row["swell_wave_height"]),
-                    "swell_wave_direction": _direction_value(
-                        row["swell_wave_direction"],
-                    ),
-                    "sea_surface_temperature": float(row["sea_surface_temperature"]),
-                    "wind_speed": float(row["wind_speed"]),
-                }
-            )
+            grouped.setdefault(day_key, []).append(row)
 
         forecasts: list[ForecastEntry] = []
         for index, (day_key, rows) in enumerate(grouped.items(), start=1):
@@ -300,30 +371,21 @@ class OpenMeteoMarineProvider:
                     id=f"live_{spot.id}_{index}",
                     spot_id=spot.id,
                     day=datetime.strptime(day_key, "%Y-%m-%d").date(),
-                    wave_height_m=round(avg_wave, 1),
-                    period_s=max(1, round(avg_period)),
-                    wind_kts=max(0, round(avg_wind_speed, 1)),
+                    wave_height_m=_round_optional(avg_wave),
+                    period_s=round(avg_period) if avg_period is not None else None,
+                    wind_kts=_round_optional(avg_wind_speed),
                     quality=_quality_for(avg_wave, avg_period),
-                    swell_wave_height_m=round(avg_swell_wave, 1),
+                    swell_wave_height_m=_round_optional(avg_swell_wave),
                     swell_wave_direction_deg=avg_swell_direction,
-                    wind_wave_height_m=round(avg_wind_wave, 1),
+                    wind_wave_height_m=_round_optional(avg_wind_wave),
                     wave_direction_deg=avg_wave_direction,
-                    sea_surface_temperature_c=round(avg_temp, 1),
+                    sea_surface_temperature_c=_round_optional(avg_temp),
                     source="open-meteo",
                     confidence="live",
+                    confidence_note="Numerical model forecast. Significant sea height is not breaking-wave face height; the legacy quality label is not an observed surf rating.",
                 )
             )
         return forecasts
-
-
-def _safe_value(values: list[Any], index: int) -> float:
-    try:
-        value = values[index]
-    except IndexError:
-        return 0.0
-    if value is None:
-        return 0.0
-    return float(value)
 
 
 def _optional_value(values: list[Any], index: int) -> float | None:
@@ -333,7 +395,11 @@ def _optional_value(values: list[Any], index: int) -> float | None:
         return None
     if value is None:
         return None
-    return float(value)
+    try:
+        numeric = float(value)
+    except (ValueError, TypeError):
+        return None
+    return numeric if math.isfinite(numeric) else None
 
 
 def _direction_value(value: Any) -> float | None:
@@ -342,10 +408,91 @@ def _direction_value(value: Any) -> float | None:
     return float(value) % 360
 
 
-def _average(values: Any) -> float:
-    data = list(values)
+def _round_optional(value: float | None, digits: int = 1) -> float | None:
+    return round(value, digits) if value is not None else None
+
+
+def _zone(name: str) -> ZoneInfo:
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return ZoneInfo("UTC")
+
+
+def spot_timezone_name(spot: Spot) -> str:
+    """Regional IANA fallback only; provider timezone takes precedence."""
+    if spot.country == "Australia":
+        return {
+            "Western Australia": "Australia/Perth",
+            "South Australia": "Australia/Adelaide",
+            "Northern Territory": "Australia/Darwin",
+            "Queensland": "Australia/Brisbane",
+            "Tasmania": "Australia/Hobart",
+            "Victoria": "Australia/Melbourne",
+        }.get(spot.region, "Australia/Sydney")
+    if spot.country == "Indonesia":
+        return "Asia/Jakarta" if spot.region in {"Java", "Sumatra", "Mentawai", "Banyak Islands", "Nias"} else "Asia/Makassar"
+    return {
+        "Taiwan": "Asia/Taipei", "Philippines": "Asia/Manila",
+        "Sri Lanka": "Asia/Colombo", "Thailand": "Asia/Bangkok",
+        "Vietnam": "Asia/Ho_Chi_Minh", "Malaysia": "Asia/Kuala_Lumpur",
+        "Myanmar": "Asia/Yangon", "Timor-Leste": "Asia/Dili",
+    }.get(spot.country, "UTC")
+
+
+def spot_local_date(spot: Spot) -> date:
+    return datetime.now(UTC).astimezone(_zone(spot_timezone_name(spot))).date()
+
+
+def _utc_stamp(value: Any, timezone_name: str = "UTC") -> datetime:
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value, UTC)
+    stamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=_zone(timezone_name))
+    return stamp.astimezone(UTC)
+
+
+def _daylight_days(payload: dict[str, Any], timezone_name: str) -> list[ForecastDaylight]:
+    daily = payload.get("daily", {})
+    zone = _zone(timezone_name)
+    days = []
+    for index, value in enumerate(daily.get("time", [])):
+        stamp = _utc_stamp(value, timezone_name) if not (isinstance(value, str) and len(value) == 10) else None
+        day = stamp.astimezone(zone).date() if stamp else date.fromisoformat(value)
+        def daylight(name: str) -> str | None:
+            values = daily.get(name, [])
+            if index >= len(values) or values[index] is None:
+                return None
+            return _utc_stamp(values[index], timezone_name).astimezone(zone).isoformat()
+        days.append(ForecastDaylight(day=day, sunrise=daylight("sunrise"), sunset=daylight("sunset")))
+    return days
+
+
+def _detail_hour(row: dict[str, Any], timezone_name: str) -> DetailedForecastHour:
+    stamp = _utc_stamp(row.get("time_utc") or row["time"], timezone_name)
+    local = stamp.astimezone(_zone(timezone_name))
+    return DetailedForecastHour(
+        time=stamp, local_date=local.date(), local_time=local.strftime("%H:%M"),
+        is_day=bool(row["is_day"]) if row.get("is_day") is not None else None,
+        wave_height_m=row.get("wave_height"), wave_period_s=row.get("wave_period"),
+        wave_direction_deg=row.get("wave_direction"),
+        swell_height_m=row.get("swell_wave_height"), swell_period_s=row.get("swell_wave_period"),
+        swell_peak_period_s=row.get("swell_wave_peak_period"), swell_direction_deg=row.get("swell_wave_direction"),
+        secondary_swell_height_m=row.get("secondary_swell_wave_height"),
+        secondary_swell_period_s=row.get("secondary_swell_wave_period"),
+        secondary_swell_direction_deg=row.get("secondary_swell_wave_direction"),
+        wind_wave_height_m=row.get("wind_wave_height"), wind_wave_period_s=row.get("wind_wave_period"),
+        wind_wave_direction_deg=row.get("wind_wave_direction"), wind_kts=row.get("wind_speed"),
+        wind_gusts_kts=row.get("wind_gusts"), wind_direction_deg=row.get("wind_direction"),
+        sea_surface_temperature_c=row.get("sea_surface_temperature"),
+    )
+
+
+def _average(values: Any) -> float | None:
+    data = [float(value) for value in values if value is not None and math.isfinite(float(value))]
     if not data:
-        return 0.0
+        return None
     return sum(data) / len(data)
 
 
@@ -363,7 +510,9 @@ def _average_direction(values: Any) -> int | None:
     return 0 if degrees == 360 else degrees
 
 
-def _quality_for(wave_height_m: float, period_s: float) -> str:
+def _quality_for(wave_height_m: float | None, period_s: float | None) -> str:
+    if wave_height_m is None or period_s is None:
+        return "poor"
     score = wave_height_m + (period_s / 10)
     if score >= 3.2:
         return "epic"
@@ -377,6 +526,9 @@ def _quality_for(wave_height_m: float, period_s: float) -> str:
 def _best_surf_window(
     spot: Spot,
     hourly_rows: list[dict[str, float | str]],
+    *,
+    timezone_name: str = "UTC",
+    now: datetime | None = None,
 ) -> SurfWindowForecast:
     if not hourly_rows:
         return SurfWindowForecast(
@@ -385,11 +537,14 @@ def _best_surf_window(
             note="Hourly forecast is unavailable right now.",
         )
 
-    day_key = str(hourly_rows[0]["day"])
+    local_now = (now or datetime.now(UTC)).astimezone(_zone(timezone_name))
+    day_key = local_now.date().isoformat()
     today_rows = [
         row
         for row in hourly_rows
-        if row["day"] == day_key and 5 <= _hour_from_stamp(str(row["time"])) <= 18
+        if row["day"] == day_key
+        and (bool(row["is_day"]) if row.get("is_day") is not None else 5 <= _hour_from_stamp(str(row["time"])) <= 18)
+        and all(row.get(key) is not None for key in ("wave_height", "wave_period", "wind_speed"))
     ]
     if len(today_rows) < 3:
         return SurfWindowForecast(
@@ -409,8 +564,16 @@ def _best_surf_window(
         }
         for row in today_rows
     ]
+    slices = [
+        scored_rows[index : index + 3]
+        for index in range(len(scored_rows) - 2)
+        if _utc_stamp(scored_rows[index]["time"], timezone_name) >= local_now.replace(minute=0, second=0, microsecond=0)
+        and _utc_stamp(scored_rows[index + 2]["time"], timezone_name) - _utc_stamp(scored_rows[index]["time"], timezone_name) == timedelta(hours=2)
+    ]
+    if not slices:
+        return SurfWindowForecast(spot_id=spot.id, available=False, day=local_now.date(), note="Not enough remaining daylight data for a three-hour planning window today.")
     best_slice = max(
-        (scored_rows[index : index + 3] for index in range(len(scored_rows) - 2)),
+        slices,
         key=lambda rows: _average(row["score"] for row in rows),
     )
     avg_score = _average(row["score"] for row in best_slice)
@@ -431,7 +594,7 @@ def _best_surf_window(
         rating=rating,
         summary=(
             f"Best window: {start_label} - {end_label}. "
-            f"Average {avg_wave:.1f}m surf, {round(avg_period)}s period, "
+            f"Average {avg_wave:.1f}m significant sea height, {round(avg_period)}s period, "
             f"{avg_wind:.1f}kts wind."
         ),
         hours=[
@@ -445,6 +608,7 @@ def _best_surf_window(
             )
             for row in scored_rows
         ],
+        note="Simple model-based wave, period and wind planning index, not an observed or spot-calibrated surf rating. Check local conditions and hazards.",
     )
 
 

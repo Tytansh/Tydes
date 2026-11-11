@@ -3,15 +3,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 import logging
+import math
 import os
 from pathlib import Path
+from threading import RLock
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
 
-from app.core.models import Spot, TideEvent, TideForecast
+from app.core.models import Spot, TideEvent, TideForecast, TideSample
 from app.core.persistent_cache import PostgresJsonCache
+from app.core.rate_limit import RateLimitRule, api_rate_limiter
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +34,22 @@ class TideCheckProvider:
         self._station_cache: dict[str, _CacheItem] = {}
         self._tide_cache: dict[str, _CacheItem] = {}
         self._persistent_cache = PostgresJsonCache.from_env()
+        self._locks_guard = RLock()
+        self._spot_locks: dict[str, RLock] = {}
+        self._negative_cache: dict[str, _CacheItem] = {}
 
     def fetch_spot_tides(self, spot: Spot, start_day: date, days: int = 3) -> TideForecast:
+        with self._locks_guard:
+            lock = self._spot_locks.setdefault(spot.id, RLock())
+        # Concurrent chart refreshes share the station lookup and tide fetch.
+        with lock:
+            return self._fetch_spot_tides_locked(spot, start_day, days)
+
+    def _fetch_spot_tides_locked(self, spot: Spot, start_day: date, days: int) -> TideForecast:
         now = datetime.now(UTC)
         cache_key = f"{spot.id}:{start_day.isoformat()}:{days}"
         cached = self._tide_cache.get(cache_key)
-        if cached and cached.expires_at > now:
+        if cached and cached.expires_at > now and self._valid_forecast_time(cached.data, now):
             return cached.data
 
         persistent = self._read_persistent_tides(cache_key)
@@ -48,38 +61,50 @@ class TideCheckProvider:
             )
             return forecast
 
+        negative = self._negative_cache.get(spot.id)
+        if negative and negative.expires_at > now:
+            return negative.data
+
         if not self._api_key:
-            return TideForecast(
+            forecast = TideForecast(
                 spot_id=spot.id,
                 available=False,
                 note="Tide provider is not configured yet.",
             )
+            self._negative_cache[spot.id] = _CacheItem(now + timedelta(minutes=5), forecast)
+            return forecast
 
+        retry_minutes = 1
         try:
             station = self._nearest_station(spot)
+            self._reserve_upstream_request()
             response = self._client.get(
                 f"/api/station/{station['id']}/tides",
                 headers={"X-API-Key": self._api_key},
                 params={
                     "datum": "LAT",
-                    "days": max(1, min(days, 7)),
+                    # Include the last local day when UTC coverage ends early.
+                    "days": max(1, min(days + 1, 7)),
                     "start": start_day.isoformat(),
                 },
             )
             response.raise_for_status()
-            forecast = self._to_tide_forecast(spot, station, response.json())
+            forecast = self._to_tide_forecast(spot, station, response.json(), start_day=start_day, days=days)
         except httpx.HTTPStatusError as error:
             status_code = error.response.status_code
             if status_code == 429:
+                retry_minutes = 5
                 internal_note = "TideCheck daily limit reached."
                 user_note = (
                     "TideCheck daily rate limit exceeded. Live tides will work "
                     "again when the plan resets or the TideCheck plan is upgraded."
                 )
             elif status_code == 401:
+                retry_minutes = 5
                 internal_note = "TideCheck API key is invalid."
                 user_note = "TideCheck API key is invalid."
             elif status_code == 403:
+                retry_minutes = 5
                 internal_note = "TideCheck plan does not allow this request."
                 user_note = "TideCheck plan does not allow this tide request."
             else:
@@ -93,7 +118,9 @@ class TideCheckProvider:
                 note=user_note,
             )
         except Exception as error:
-            logger.warning("Tide data unavailable for %s: %s", spot.id, error)
+            if getattr(error, "status_code", None) == 429:
+                retry_minutes = 5
+            logger.warning("Tide data unavailable for %s (%s)", spot.id, type(error).__name__)
             forecast = TideForecast(
                 spot_id=spot.id,
                 available=False,
@@ -102,15 +129,45 @@ class TideCheckProvider:
             )
 
         if forecast.available:
+            self._negative_cache.pop(spot.id, None)
             self._tide_cache[cache_key] = _CacheItem(
                 expires_at=now + timedelta(hours=12),
                 data=forecast,
             )
             self._write_persistent(
-                f"tidecheck:tides:{cache_key}",
+                f"tidecheck:v2:tides:{cache_key}",
                 forecast.model_dump(mode="json"),
             )
+        else:
+            self._negative_cache[spot.id] = _CacheItem(
+                expires_at=now + timedelta(minutes=retry_minutes),
+                data=forecast,
+            )
         return forecast
+
+    @staticmethod
+    def _reserve_upstream_request() -> None:
+        # This bounds Tydes' HTTP attempts, not provider credits from other apps
+        # or the account's final bill. The limiter persists across workers when
+        # its existing PostgreSQL backend is configured.
+        try:
+            limit = max(1, min(int(os.getenv("TIDECHECK_DAILY_REQUEST_BUDGET", "500")), 100_000))
+        except ValueError:
+            limit = 500
+        api_rate_limiter.enforce(RateLimitRule(
+            scope="upstream:tidecheck-request-budget",
+            key="all-tide-requests",
+            limit=limit,
+            window_seconds=24 * 60 * 60,
+        ))
+
+    @staticmethod
+    def _valid_forecast_time(forecast: TideForecast, now: datetime) -> bool:
+        if forecast.fetched_at is not None and forecast.fetched_at.tzinfo is None:
+            return False
+        return forecast.fetched_at is None or (
+            -timedelta(minutes=1) <= now - forecast.fetched_at <= timedelta(hours=12)
+        )
 
     def _nearest_station(self, spot: Spot) -> dict[str, Any]:
         now = datetime.now(UTC)
@@ -127,6 +184,7 @@ class TideCheckProvider:
             )
             return station
 
+        self._reserve_upstream_request()
         response = self._client.get(
             "/api/stations/nearest",
             headers={"X-API-Key": self._api_key},
@@ -150,13 +208,17 @@ class TideCheckProvider:
         cache_key: str,
     ) -> tuple[TideForecast, datetime] | None:
         cached = self._read_persistent(
-            f"tidecheck:tides:{cache_key}",
+            f"tidecheck:v2:tides:{cache_key}",
             timedelta(hours=12),
         )
         if cached is None:
             return None
         payload, updated_at = cached
-        return TideForecast.model_validate(payload), updated_at
+        forecast = TideForecast.model_validate(payload)
+        now = datetime.now(UTC)
+        if updated_at > now + timedelta(minutes=1) or not self._valid_forecast_time(forecast, now):
+            return None
+        return forecast, updated_at
 
     def _read_persistent_station(
         self,
@@ -200,6 +262,9 @@ class TideCheckProvider:
         spot: Spot,
         station: dict[str, Any],
         payload: dict[str, Any],
+        *,
+        start_day: date | None = None,
+        days: int = 3,
     ) -> TideForecast:
         station_payload = payload.get("station", {})
         timezone_name = station_payload.get("timezone") or "UTC"
@@ -209,17 +274,40 @@ class TideCheckProvider:
             for item in payload.get("extremes", [])
             if item.get("type") in {"high", "low"}
         ]
+        samples = []
+        for item in payload.get("timeSeries", []):
+            try:
+                stamp = datetime.fromisoformat(str(item["time"]).replace("Z", "+00:00"))
+                height = _as_float(item.get("height"), digits=3)
+                if stamp.tzinfo is None or height is None:
+                    continue
+                local_stamp = stamp.astimezone(timezone)
+                samples.append(TideSample(
+                    time=stamp.astimezone(UTC), height_m=height,
+                    local_date=local_stamp.date(), local_time=local_stamp.strftime("%H:%M"),
+                ))
+            except (ValueError, KeyError, TypeError):
+                continue
+        if start_day is not None:
+            end_day = start_day + timedelta(days=days)
+            events = [event for event in events if start_day <= event.local_date < end_day]
+            samples = [sample for sample in samples if start_day <= sample.local_date < end_day]
+        samples = sorted({sample.time: sample for sample in samples}.values(), key=lambda sample: sample.time)
 
         return TideForecast(
             spot_id=spot.id,
-            available=bool(events),
+            available=bool(events or samples),
             station_name=station_payload.get("name") or station.get("name"),
             station_distance_km=_as_float(station.get("distanceKm")),
             source="tidecheck",
-            events=events[:16],
+            events=events[:28],
+            samples=samples[:7 * 24 * 4 + 1],
+            timezone=timezone_name,
+            datum=str(payload["datum"]) if payload.get("datum") else None,
+            fetched_at=datetime.now(UTC),
             note=(
                 "Tide times are estimates for surf planning, not navigation."
-                if events
+                if events or samples
                 else "Tide data is unavailable right now."
             ),
         )
@@ -236,10 +324,14 @@ class TideCheckProvider:
         )
 
 
-def _as_float(value: Any) -> float | None:
+def _as_float(value: Any, *, digits: int = 1) -> float | None:
     if value is None:
         return None
-    return round(float(value), 1)
+    try:
+        numeric = float(value)
+    except (ValueError, TypeError):
+        return None
+    return round(numeric, digits) if math.isfinite(numeric) else None
 
 
 def _load_api_key() -> str:
