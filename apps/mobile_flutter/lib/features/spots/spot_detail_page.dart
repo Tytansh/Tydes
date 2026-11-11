@@ -4,16 +4,17 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
+import '../../core/network/detailed_forecast_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../alerts/create_alert_sheet.dart';
-import '../home/home_page.dart';
-import 'spots_page.dart';
 import '../auth/auth_return_path.dart';
+import '../home/home_page.dart';
 import '../public_previews/public_link_button.dart';
+import 'pro_forecast_panel.dart';
+import 'spots_page.dart';
 
 const _favoriteAccent = Color(0xFF2AA7A1);
-const _surfSafetyDisclaimer =
-    'Check local hazards and tide before paddling out.';
+const _ink = Color(0xFF173B40);
 
 final spotDetailProvider = FutureProvider.autoDispose.family((
   ref,
@@ -22,6 +23,7 @@ final spotDetailProvider = FutureProvider.autoDispose.family((
   return ref.watch(surfRepositoryProvider).fetchSpot(spotId);
 });
 
+// Retained for callers that invalidate daily forecast cards after billing.
 final spotForecastProvider = FutureProvider.autoDispose.family((
   ref,
   String spotId,
@@ -33,13 +35,43 @@ final spotForecastProvider = FutureProvider.autoDispose.family((
   return forecasts;
 });
 
+final spotDetailedForecastProvider = FutureProvider.autoDispose.family((
+  ref,
+  String spotId,
+) async {
+  final repository = ref.watch(surfRepositoryProvider);
+  final profile = await ref.watch(meProvider.future);
+  if (!profile.canAccessLiveForecast(spotId)) {
+    return DetailedForecastModel.unavailable(
+      spotId,
+      note:
+          'Choose this as your free forecast spot, or unlock every break with Premium.',
+    );
+  }
+  try {
+    return await repository.fetchDetailedForecast(spotId);
+  } catch (error) {
+    return DetailedForecastModel.unavailable(
+      spotId,
+      note: friendlyLoadErrorMessage(error, label: 'the hourly forecast'),
+    );
+  }
+});
+
 final spotTideProvider = FutureProvider.autoDispose.family((
   ref,
   String spotId,
-) {
-  return ref.watch(surfRepositoryProvider).fetchTides(spotId);
+) async {
+  final repository = ref.watch(surfRepositoryProvider);
+  final profile = await ref.watch(meProvider.future);
+  if (!profile.canAccessLiveForecast(spotId)) {
+    return TideForecastModel.unavailable(spotId);
+  }
+  return repository.fetchTides(spotId);
 });
 
+// Existing invalidation API remains available. The forecast desk intentionally
+// does not fetch or display the former heuristic "Best Time" quality score.
 final spotSurfWindowProvider = FutureProvider.autoDispose.family((
   ref,
   String spotId,
@@ -47,26 +79,22 @@ final spotSurfWindowProvider = FutureProvider.autoDispose.family((
   return ref.watch(surfRepositoryProvider).fetchSurfWindow(spotId);
 });
 
-final unlockingLiveSpotProvider = StateProvider.family<bool, String>((
-  ref,
-  spotId,
-) {
-  return false;
-});
+final unlockingLiveSpotProvider = StateProvider.family<bool, String>(
+  (ref, spotId) => false,
+);
 
 final spotDetailBundleProvider = FutureProvider.autoDispose.family((
   ref,
   String spotId,
 ) async {
-  final repository = ref.watch(surfRepositoryProvider);
   final results = await Future.wait<Object>([
-    repository.fetchSpot(spotId),
-    ref.watch(spotForecastProvider(spotId).future),
-    repository.fetchTides(spotId),
+    ref.watch(spotDetailProvider(spotId).future),
+    ref.watch(spotDetailedForecastProvider(spotId).future),
+    ref.watch(spotTideProvider(spotId).future),
   ]);
   return _SpotDetailBundle(
     spot: results[0] as SpotModel,
-    forecasts: results[1] as List<ForecastModel>,
+    forecast: results[1] as DetailedForecastModel,
     tide: results[2] as TideForecastModel,
   );
 });
@@ -74,103 +102,75 @@ final spotDetailBundleProvider = FutureProvider.autoDispose.family((
 class _SpotDetailBundle {
   const _SpotDetailBundle({
     required this.spot,
-    required this.forecasts,
+    required this.forecast,
     required this.tide,
   });
-
   final SpotModel spot;
-  final List<ForecastModel> forecasts;
+  final DetailedForecastModel forecast;
   final TideForecastModel tide;
 }
 
 class SpotDetailPage extends ConsumerWidget {
   const SpotDetailPage({super.key, required this.spotId});
-
   final String spotId;
+
+  void _refresh(WidgetRef ref) {
+    ref.invalidate(spotDetailedForecastProvider(spotId));
+    ref.invalidate(spotTideProvider(spotId));
+    ref.invalidate(spotDetailBundleProvider(spotId));
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final detail = ref.watch(spotDetailBundleProvider(spotId));
     final me = ref.watch(meProvider);
-    final favoriteSpotIds = ref.watch(favoriteSpotIdsProvider);
-    final surfWindow = ref.watch(spotSurfWindowProvider(spotId));
-
+    final favorites = ref.watch(favoriteSpotIdsProvider);
+    final profile = me.valueOrNull;
     return Scaffold(
+      backgroundColor: const Color(0xFFF8F7F2),
       appBar: AppBar(
         leading: IconButton(
           tooltip: 'Back to Tydes',
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.canPop() ? context.pop() : context.go('/'),
         ),
-        title: const Text('Spot detail'),
+        title: const Text('Surf forecast'),
         actions: [
           CopyPublicLinkButton(url: publicSpotLink(spotId)),
           IconButton(
+            tooltip: 'Open on map',
             onPressed: () => context.push('/spots-map?spotId=$spotId'),
             icon: const Icon(Icons.map_outlined),
-            tooltip: 'Open on map',
           ),
           IconButton(
+            tooltip: favorites.contains(spotId) ? 'Unsave spot' : 'Save spot',
             onPressed: () =>
                 ref.read(favoriteSpotIdsProvider.notifier).toggle(spotId),
             icon: Icon(
-              favoriteSpotIds.contains(spotId)
+              favorites.contains(spotId)
                   ? Icons.favorite
                   : Icons.favorite_border,
-              color: favoriteSpotIds.contains(spotId) ? _favoriteAccent : null,
+              color: favorites.contains(spotId) ? _favoriteAccent : null,
             ),
           ),
+          const SizedBox(width: 8),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: detail.when(
-          data: (bundle) {
-            final item = bundle.spot;
-            final forecastRows = bundle.forecasts;
-            final currentForecast = forecastRows.isEmpty
-                ? null
-                : forecastRows.first;
-            final waveValue =
-                currentForecast?.waveDisplay ?? '${item.waveHeightM}m';
-            final waveLevelValue = _waveLevelLabel(
-              currentForecast?.waveLevel ?? item.waveLevel,
-            );
-            final waterValue = currentForecast?.seaSurfaceTemperatureC != null
-                ? '${currentForecast!.seaSurfaceTemperatureC!.toStringAsFixed(1)}C'
-                : '${item.waterTempC}C';
-
-            return ListView(
+      body: detail.when(
+        data: (bundle) => Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1280),
+            child: ListView(
+              key: PageStorageKey('forecast-desk-$spotId'),
+              padding: EdgeInsets.all(
+                MediaQuery.sizeOf(context).width < 600 ? 12 : 24,
+              ),
               children: [
-                Text(
-                  item.name,
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-                const SizedBox(height: 8),
-                Text('${item.area}, ${item.region}, ${item.country}'),
-                const SizedBox(height: 14),
-                Text(item.summary),
-                const SizedBox(height: 12),
-                const _SurfSafetyDisclaimer(),
+                _SpotHero(spot: bundle.spot),
                 const SizedBox(height: 16),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    _StatChip(label: 'Wave level', value: waveLevelValue),
-                    _StatChip(label: 'Wave', value: waveValue),
-                    if (currentForecast?.swellDirectionDisplay != null)
-                      _StatChip(
-                        label: 'Swell',
-                        value:
-                            '${currentForecast!.swellDirectionDisplay!} swell',
-                      ),
-                    _StatChip(label: 'Water', value: waterValue),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                me.when(
-                  data: (profile) => _LiveDataUnlockCard(
+                if (profile != null && !profile.premium) ...[
+                  _ForecastUnlockCard(
                     profile: profile,
                     spotId: spotId,
                     onUnlocked: () {
@@ -180,809 +180,337 @@ class SpotDetailPage extends ConsumerWidget {
                       ref.invalidate(spotCardForecastProvider(spotId));
                       ref.invalidate(spotForecastProvider(spotId));
                       ref.invalidate(spotSurfWindowProvider(spotId));
-                      ref.invalidate(spotDetailBundleProvider(spotId));
+                      _refresh(ref);
                     },
                   ),
-                  loading: () => const SizedBox.shrink(),
-                  error: (_, _) => const SizedBox.shrink(),
-                ),
-                const SizedBox(height: 12),
-                FilledButton.tonalIcon(
-                  onPressed: () => showModalBottomSheet<void>(
-                    context: context,
-                    isScrollControlled: true,
-                    builder: (context) => CreateAlertSheet(spots: [item]),
-                  ),
-                  icon: const Icon(Icons.add_alert_outlined),
-                  label: const Text('Create alert'),
-                ),
-                const SizedBox(height: 24),
-                _TideCard(tide: bundle.tide),
-                const SizedBox(height: 24),
-                _BestSurfWindowCard(window: surfWindow),
-                const SizedBox(height: 24),
-                Text(
-                  'Forecast window',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 10),
-                me.when(
-                  data: (profile) => Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: bundle.forecasts
-                        .map((row) => _ForecastCard(row: row))
-                        .toList(),
-                  ),
-                  loading: () =>
-                      const Center(child: CircularProgressIndicator()),
-                  error: (_, _) => Column(
-                    children: bundle.forecasts
-                        .map((row) => _ForecastCard(row: row))
-                        .toList(),
-                  ),
-                ),
-              ],
-            );
-          },
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => Center(
-            child: Text(friendlyLoadErrorMessage(error, label: 'spot details')),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ForecastCard extends StatelessWidget {
-  const _ForecastCard({required this.row});
-
-  final ForecastModel row;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(row.day, style: Theme.of(context).textTheme.titleMedium),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: row.isLive
-                        ? const Color(0xFFDDF5EA)
-                        : const Color(0xFFEDE8DA),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    row.isLive ? 'Live' : 'Estimated',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _ForecastSummary(row: row),
-            const SizedBox(height: 12),
-            Text(
-              _qualityLabel(row.waveLevel),
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 8),
-            _ForecastDetails(row: row),
-            if (row.confidenceNote != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                row.confidenceNote!,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _BestSurfWindowCard extends StatelessWidget {
-  const _BestSurfWindowCard({required this.window});
-
-  final AsyncValue<SurfWindowModel> window;
-
-  @override
-  Widget build(BuildContext context) {
-    return window.when(
-      loading: () => const Card(
-        child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Center(child: CircularProgressIndicator()),
-        ),
-      ),
-      error: (_, _) => const Card(
-        child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Text('Best Time Today is unavailable right now.'),
-        ),
-      ),
-      data: (data) {
-        if (!data.available) {
-          return Card(
-            color: const Color(0xFFFFF4E4),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(data.note ?? 'Premium unlocks Best Time Today.'),
-            ),
-          );
-        }
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      'Best Time Today',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const Spacer(),
-                    _WindowRatingChip(rating: data.rating),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '${data.bestStartLabel} - ${data.bestEndLabel}',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                if (data.summary != null) ...[
-                  const SizedBox(height: 8),
-                  Text(data.summary!),
+                  const SizedBox(height: 16),
                 ],
-                const SizedBox(height: 14),
-                _HourlySurfGraph(hours: data.hours),
-                if (data.note != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    data.note!,
-                    style: Theme.of(context).textTheme.bodySmall,
+                if (profile?.canAccessLiveForecast(spotId) == true ||
+                    bundle.forecast.available) ...[
+                  ProForecastPanel(
+                    forecast: bundle.forecast,
+                    tide: bundle.tide,
                   ),
-                ],
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _SurfSafetyDisclaimer extends StatelessWidget {
-  const _SurfSafetyDisclaimer();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF4E4),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.warning_amber_rounded, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              _surfSafetyDisclaimer,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HourlySurfGraph extends StatelessWidget {
-  const _HourlySurfGraph({required this.hours});
-
-  final List<SurfWindowHourModel> hours;
-
-  @override
-  Widget build(BuildContext context) {
-    if (hours.isEmpty) return const SizedBox.shrink();
-    final maxScore = hours
-        .map((hour) => hour.score)
-        .reduce((value, next) => value > next ? value : next)
-        .clamp(0.1, 1.25);
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          for (final hour in hours)
-            Padding(
-              padding: const EdgeInsets.only(right: 10),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '${hour.waveHeightM.toStringAsFixed(1)}m',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 5),
-                  Container(
-                    width: 24,
-                    height: 18 + ((hour.score / maxScore) * 54),
-                    decoration: BoxDecoration(
-                      color: _windowScoreColor(hour.score),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    hour.label,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _WindowRatingChip extends StatelessWidget {
-  const _WindowRatingChip({required this.rating});
-
-  final String rating;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = _windowRatingColor(rating);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        _windowRatingLabel(rating),
-        style: TextStyle(
-          color: color,
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
-  }
-}
-
-class _TideCard extends StatelessWidget {
-  const _TideCard({required this.tide});
-
-  final TideForecastModel tide;
-
-  @override
-  Widget build(BuildContext context) {
-    final groupedEvents = _groupTideEventsByDay(tide.events);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text('Tides', style: Theme.of(context).textTheme.titleLarge),
-                const Spacer(),
-                if (tide.available)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFDDF5EA),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: const Text(
-                      'Live',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
+                  if (!bundle.forecast.available ||
+                      bundle.forecast.hours.isEmpty) ...[
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed: () => _refresh(ref),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Retry forecast'),
                       ),
                     ),
-                  ),
+                  ],
+                ],
+                const SizedBox(height: 18),
+                _SpotGuide(spot: bundle.spot),
+                const SizedBox(height: 24),
               ],
             ),
-            if (tide.stationName != null) ...[
-              const SizedBox(height: 6),
-              Text(
-                tide.stationDistanceKm == null
-                    ? 'Station: ${tide.stationName}'
-                    : 'Station: ${tide.stationName} • ${tide.stationDistanceKm!.toStringAsFixed(1)}km away',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-            const SizedBox(height: 12),
-            if (groupedEvents.isEmpty)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Tide unavailable'),
-                  if (tide.note != null) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      tide.note!,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ],
-              )
-            else
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (
-                    var index = 0;
-                    index < groupedEvents.length;
-                    index++
-                  ) ...[
-                    Expanded(child: _TideDayGroup(group: groupedEvents[index])),
-                    if (index != groupedEvents.length - 1)
-                      const SizedBox(width: 16),
-                  ],
-                ],
-              ),
-            if (groupedEvents.isNotEmpty && tide.note != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                _safeTideNote(tide),
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ],
+          ),
+        ),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, _) => Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.cloud_off_outlined, color: _ink, size: 32),
+                const SizedBox(height: 12),
+                Text(
+                  friendlyLoadErrorMessage(error, label: 'spot details'),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 14),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    ref.invalidate(spotDetailProvider(spotId));
+                    ref.invalidate(meProvider);
+                    _refresh(ref);
+                  },
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Try again'),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-class _TideDayGroup extends StatelessWidget {
-  const _TideDayGroup({required this.group});
-
-  final _TideDayEvents group;
+class _SpotHero extends StatelessWidget {
+  const _SpotHero({required this.spot});
+  final SpotModel spot;
 
   @override
-  Widget build(BuildContext context) {
-    return Column(
+  Widget build(BuildContext context) => Container(
+    padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 600 ? 22 : 30),
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(
+        colors: [Color(0xFF0D5365), Color(0xFF079F9D)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+      borderRadius: BorderRadius.circular(24),
+    ),
+    child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const Text(
+          'TYDES  /  SURF OUTLOOK',
+          style: TextStyle(
+            color: Color(0xFFB8E6E2),
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.5,
+          ),
+        ),
+        const SizedBox(height: 14),
         Text(
-          group.label,
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 6),
-        ...group.events.map(
-          (event) => Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Row(
-              children: [
-                Flexible(
-                  flex: 0,
-                  child: Text(
-                    event.label,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Flexible(child: Text(event.localTime)),
-              ],
-            ),
+          spot.name,
+          style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -.8,
           ),
         ),
-      ],
-    );
-  }
-}
-
-List<_TideDayEvents> _groupTideEventsByDay(List<TideEventModel> events) {
-  if (events.isEmpty) return const [];
-
-  final sortedEvents = [...events]
-    ..sort((a, b) => DateTime.parse(a.time).compareTo(DateTime.parse(b.time)));
-  final today = DateTime.now();
-  final tomorrow = today.add(const Duration(days: 1));
-  final wantedDates = [_dateKey(today), _dateKey(tomorrow)];
-
-  return wantedDates
-      .map((dateKey) {
-        final eventDate = DateTime.parse(dateKey);
-        return _TideDayEvents(
-          label: _tideDayLabel(eventDate, today, tomorrow),
-          events: sortedEvents
-              .where((event) => event.localDate == dateKey)
-              .toList(),
-        );
-      })
-      .where((group) => group.events.isNotEmpty)
-      .toList();
-}
-
-String _tideDayLabel(DateTime date, DateTime today, DateTime tomorrow) {
-  if (_sameDay(date, today)) return 'Today';
-  if (_sameDay(date, tomorrow)) return 'Tomorrow';
-  return '${date.month}/${date.day}';
-}
-
-bool _sameDay(DateTime a, DateTime b) {
-  return a.year == b.year && a.month == b.month && a.day == b.day;
-}
-
-String _dateKey(DateTime date) {
-  final month = date.month.toString().padLeft(2, '0');
-  final day = date.day.toString().padLeft(2, '0');
-  return '${date.year}-$month-$day';
-}
-
-class _TideDayEvents {
-  const _TideDayEvents({required this.label, required this.events});
-
-  final String label;
-  final List<TideEventModel> events;
-}
-
-String _safeTideNote(TideForecastModel tide) {
-  if (tide.available) {
-    return 'Tide times are estimates for surf planning, not navigation.';
-  }
-  return 'Tide data is unavailable right now.';
-}
-
-class _ForecastDetails extends StatelessWidget {
-  const _ForecastDetails({required this.row});
-
-  final ForecastModel row;
-
-  @override
-  Widget build(BuildContext context) {
-    return ExpansionTile(
-      tilePadding: EdgeInsets.zero,
-      childrenPadding: EdgeInsets.zero,
-      dense: true,
-      title: const Text('Learn what this means'),
-      children: [
-        _DetailLine(
-          label: 'Wave',
-          value: row.waveDisplay,
-          help: 'The expected surf height for this day.',
+        const SizedBox(height: 9),
+        Text(
+          '${spot.area} · ${spot.region} · ${spot.country}',
+          style: const TextStyle(
+            color: Color(0xFFD5EFEC),
+            fontSize: 14,
+            height: 1.5,
+          ),
         ),
-        if (row.windDisplay != null)
-          _DetailLine(
-            label: 'Wind',
-            value: row.windDisplay!,
-            help:
-                'Knots are the normal marine wind unit. Lower wind is usually cleaner surf.',
-          ),
-        if (row.periodS != null)
-          _DetailLine(
-            label: 'Period',
-            value: '${row.periodS}s',
-            help:
-                'Seconds between swell waves. Higher period usually means more push and power.',
-          ),
-        if (row.swellDirectionDisplay != null)
-          _DetailLine(
-            label: 'Swell direction',
-            value: '${row.swellDirectionDisplay!} swell',
-            help:
-                'The direction the main swell is coming from. Best direction depends on each break.',
-          ),
-        if (row.seaSurfaceTemperatureC != null)
-          _DetailLine(
-            label: 'Water temp',
-            value: '${row.seaSurfaceTemperatureC!.toStringAsFixed(1)}C',
-            help: 'Approximate sea temperature.',
-          ),
-      ],
-    );
-  }
-}
-
-class _DetailLine extends StatelessWidget {
-  const _DetailLine({
-    required this.label,
-    required this.value,
-    required this.help,
-  });
-
-  final String label;
-  final String value;
-  final String help;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: SizedBox(
-        width: double.infinity,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        const SizedBox(height: 20),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Text(
-              '$label: $value',
-              style: const TextStyle(fontWeight: FontWeight.w700),
+            FilledButton.tonalIcon(
+              onPressed: () => showModalBottomSheet<void>(
+                context: context,
+                isScrollControlled: true,
+                builder: (_) => CreateAlertSheet(spots: [spot]),
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFE4F7F3),
+                foregroundColor: _ink,
+              ),
+              icon: const Icon(Icons.add_alert_outlined, size: 18),
+              label: const Text('Create alert'),
             ),
-            const SizedBox(height: 3),
-            Text(help, style: Theme.of(context).textTheme.bodySmall),
+            const Text(
+              'Model forecasts, not beach observations',
+              style: TextStyle(color: Color(0xFFCEEEEA), fontSize: 11),
+            ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ForecastSummary extends StatelessWidget {
-  const _ForecastSummary({required this.row});
-
-  final ForecastModel row;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        _StatChip(label: 'Wave', value: row.waveDisplay),
-        if (row.windDisplay != null)
-          _StatChip(label: 'Wind', value: _friendlyWind(row)),
-        if (row.seaSurfaceTemperatureC != null)
-          _StatChip(
-            label: 'Water',
-            value: '${row.seaSurfaceTemperatureC!.toStringAsFixed(1)}C',
-          ),
-        if (row.periodS != null)
-          _StatChip(label: 'Power', value: _friendlyPeriod(row.periodS!)),
-        if (row.swellDirectionDisplay != null)
-          _StatChip(
-            label: 'Swell',
-            value: '${row.swellDirectionDisplay!} swell',
-          ),
       ],
-    );
-  }
+    ),
+  );
 }
 
-class _LiveDataUnlockCard extends ConsumerWidget {
-  const _LiveDataUnlockCard({
+class _SpotGuide extends StatelessWidget {
+  const _SpotGuide({required this.spot});
+  final SpotModel spot;
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(22),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(22),
+      border: Border.all(color: const Color(0xFFE0E9E7)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'BREAK GUIDE',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.5,
+            color: Color(0xFF087F89),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          spot.summary,
+          style: const TextStyle(fontSize: 15, color: _ink, height: 1.6),
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            Chip(label: Text('Typical level: ${_difficulty(spot.difficulty)}')),
+            if (spot.bestMonths.isNotEmpty)
+              Chip(
+                label: Text('Typical season: ${spot.bestMonths.join(', ')}'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        const Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.warning_amber_rounded,
+              color: Color(0xFF987233),
+              size: 18,
+            ),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Local reef, currents, swell exposure and tide can change conditions dramatically. Check hazards and the beach before paddling out. This guide is not a current safety assessment.',
+                style: TextStyle(
+                  color: Color(0xFF617779),
+                  fontSize: 12,
+                  height: 1.6,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
+class _ForecastUnlockCard extends ConsumerWidget {
+  const _ForecastUnlockCard({
     required this.profile,
     required this.spotId,
     required this.onUnlocked,
   });
-
   final UserProfile profile;
   final String spotId;
   final VoidCallback onUnlocked;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (profile.premium) {
-      return const SizedBox.shrink();
-    }
+    final unlocked = profile.freeLiveSpotId == spotId;
+    final remaining = profile.freeLiveSpotChangeRemaining(DateTime.now());
+    final canSelect = !unlocked && remaining == null;
+    final saving = ref.watch(unlockingLiveSpotProvider(spotId));
 
-    final isUnlockedSpot = profile.freeLiveSpotId == spotId;
-    final hasChosenAnotherSpot =
-        profile.freeLiveSpotId != null && !isUnlockedSpot;
-    final isSaving = ref.watch(unlockingLiveSpotProvider(spotId));
-    final remainingChangeTime = profile.freeLiveSpotChangeRemaining(
-      DateTime.now(),
-    );
-    final canChangeToThisSpot = remainingChangeTime == null;
-
-    Future<void> unlockSpot() async {
-      ref.read(unlockingLiveSpotProvider(spotId).notifier).state = true;
+    Future<void> selectSpot() async {
+      final savingState = ref.read(unlockingLiveSpotProvider(spotId).notifier);
+      savingState.state = true;
       try {
         await ref.read(surfRepositoryProvider).setFreeLiveSpot(spotId);
-        onUnlocked();
+        if (context.mounted) onUnlocked();
       } catch (error) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(error.toString().replaceFirst('Bad state: ', '')),
+              content: Text(
+                friendlyErrorMessage(
+                  error,
+                  fallback:
+                      'Could not select this forecast spot. Please try again.',
+                ),
+              ),
             ),
           );
         }
       } finally {
-        ref.read(unlockingLiveSpotProvider(spotId).notifier).state = false;
+        savingState.state = false;
       }
     }
 
-    final title = isUnlockedSpot
-        ? 'Live data unlocked'
-        : hasChosenAnotherSpot
-        ? canChangeToThisSpot
-              ? 'Change free live spot?'
-              : 'Free live spot already selected'
-        : 'Unlock more data';
-    final subtitle = isUnlockedSpot
-        ? 'This is your free live-data spot for wave, wind, period, and tide updates.'
-        : hasChosenAnotherSpot
-        ? canChangeToThisSpot
-              ? 'Switch your free live-data spot to this break. You can change it again after 24 hours.'
-              : 'You can change your free spot again in ${_friendlyCooldown(remainingChangeTime)}. Premium unlocks live data on every spot.'
-        : 'Free users can unlock one spot for live wave and tide data. You can change it once every 24 hours.';
-
     return Container(
-      padding: const EdgeInsets.all(16),
+      key: const ValueKey('forecast-unlock-card'),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: isUnlockedSpot
-            ? const Color(0xFFDDF5EA)
-            : const Color(0xFFF6F2E8),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: isUnlockedSpot
-              ? const Color(0xFF9CD8B8)
-              : const Color(0xFFE4DCCD),
-        ),
+        color: unlocked ? const Color(0xFFE4F3EC) : const Color(0xFFF1F2E9),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFCFDFD6)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Text(
+            unlocked
+                ? 'Your free forecast spot'
+                : 'One break free. Every break with Premium.',
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 18,
+              color: _ink,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            unlocked
+                ? 'Explore the full hourly desk here. Premium lets you compare conditions at every mapped break, without changing your free spot.'
+                : remaining != null
+                ? 'Your free spot is already selected. You can switch in ${_cooldown(remaining)}. Premium opens the hourly forecast desk at every break.'
+                : 'Choose this as your free spot for hourly wave, swell and wind model forecasts, plus available tide predictions. You can switch your free spot once every 24 hours.',
+            style: const TextStyle(
+              color: Color(0xFF526B65),
+              fontSize: 13,
+              height: 1.6,
+            ),
+          ),
+          const SizedBox(height: 15),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 6),
-                    Text(subtitle),
-                  ],
+              if (!unlocked)
+                FilledButton.icon(
+                  key: const ValueKey('select-free-forecast-spot'),
+                  onPressed: canSelect && !saving ? selectSpot : null,
+                  icon: saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.waves_outlined, size: 18),
+                  label: Text(
+                    saving
+                        ? 'Selecting…'
+                        : profile.freeLiveSpotId == null
+                        ? 'Use my free spot here'
+                        : 'Switch my free spot here',
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              IgnorePointer(
-                ignoring:
-                    isUnlockedSpot ||
-                    (hasChosenAnotherSpot && !canChangeToThisSpot) ||
-                    isSaving,
-                child: Switch.adaptive(
-                  value: isUnlockedSpot || isSaving,
-                  onChanged:
-                      (!isUnlockedSpot &&
-                          (!hasChosenAnotherSpot || canChangeToThisSpot) &&
-                          !isSaving)
-                      ? (_) => unlockSpot()
-                      : null,
-                ),
+              OutlinedButton.icon(
+                onPressed: () => context.push('/paywall'),
+                icon: const Icon(Icons.workspace_premium_outlined, size: 18),
+                label: const Text('Explore Premium'),
               ),
             ],
           ),
-          if (hasChosenAnotherSpot && !canChangeToThisSpot) ...[
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
-                onPressed: () => context.push('/paywall'),
-                icon: const Icon(Icons.lock_outline),
-                label: const Text('Premium subscription'),
-              ),
-            ),
-          ],
         ],
       ),
     );
   }
 }
 
-String _friendlyWind(ForecastModel row) {
-  final wind = row.windKts;
-  if (wind == null) return row.windDisplay ?? 'Unknown';
-  final kmh = (wind * 1.852).toStringAsFixed(1);
-  final speed = '${_formatSpeed(wind)}kts / ${kmh}km/h';
-  if (wind <= 5) return 'light ($speed)';
-  if (wind <= 12) return 'manageable ($speed)';
-  if (wind <= 18) return 'windy ($speed)';
-  return 'strong ($speed)';
-}
+String _difficulty(String value) => switch (value) {
+  'beginner' => 'Beginner',
+  'advanced' => 'Advanced',
+  _ => 'Intermediate',
+};
 
-String _formatSpeed(double value) {
-  if (value == value.roundToDouble()) {
-    return value.toStringAsFixed(0);
-  }
-  return value.toStringAsFixed(1);
-}
-
-String _friendlyCooldown(Duration duration) {
-  final totalMinutes = duration.inMinutes <= 0 ? 1 : duration.inMinutes;
-  final hours = totalMinutes ~/ 60;
-  final minutes = totalMinutes % 60;
-  if (hours <= 0) return '${minutes}m';
-  if (minutes <= 0) return '${hours}h';
-  return '${hours}h ${minutes}m';
-}
-
-String _friendlyPeriod(int periodS) {
-  if (periodS < 7) return 'weak (${periodS}s)';
-  if (periodS < 11) return 'fun (${periodS}s)';
-  return 'strong (${periodS}s)';
-}
-
-String _qualityLabel(String? waveLevel) {
-  if (waveLevel == null) return 'Quality: unavailable';
-  return 'Quality: ${_waveLevelLabel(waveLevel)}';
-}
-
-String _waveLevelLabel(String waveLevel) {
-  return switch (waveLevel) {
-    'beginner' => 'Beginner',
-    'advanced' => 'Advanced',
-    _ => 'Intermediate',
-  };
-}
-
-String _windowRatingLabel(String rating) {
-  return switch (rating) {
-    'epic' => 'Epic',
-    'good' => 'Good',
-    'fair' => 'Fair',
-    _ => 'Poor',
-  };
-}
-
-Color _windowRatingColor(String rating) {
-  return switch (rating) {
-    'epic' => const Color(0xFF0F8F75),
-    'good' => const Color(0xFF2E8FE8),
-    'fair' => const Color(0xFFE29A2D),
-    _ => const Color(0xFF8A6F63),
-  };
-}
-
-Color _windowScoreColor(double score) {
-  if (score >= 0.95) return const Color(0xFF0F8F75);
-  if (score >= 0.78) return const Color(0xFF2E8FE8);
-  if (score >= 0.58) return const Color(0xFFE29A2D);
-  return const Color(0xFFB8AAA2);
-}
-
-class _StatChip extends StatelessWidget {
-  const _StatChip({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text('$label: $value'),
-    );
-  }
+String _cooldown(Duration value) {
+  final minutes = value.inMinutes < 1 ? 1 : value.inMinutes;
+  final hours = minutes ~/ 60;
+  final remainder = minutes % 60;
+  return hours == 0
+      ? '${minutes}m'
+      : remainder == 0
+      ? '${hours}h'
+      : '${hours}h ${remainder}m';
 }

@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import '../moderation/content_moderation.dart';
 import 'api_config.dart';
 import 'api_models.dart';
+import 'detailed_forecast_models.dart';
 import 'public_preview_models.dart';
 import 'demo_persistence.dart';
 import 'demo_seed.dart';
@@ -474,22 +475,9 @@ class SurfRepository {
       }
       throw StateError('Could not unlock live data right now.');
     } catch (_) {
-      if (!DemoSeed.me.premium &&
-          DemoSeed.me.freeLiveSpotId != null &&
-          DemoSeed.me.freeLiveSpotId != spotId &&
-          !DemoSeed.me.canChangeFreeLiveSpot(DateTime.now())) {
-        final remaining = DemoSeed.me.freeLiveSpotChangeRemaining(
-          DateTime.now(),
-        );
-        throw StateError(
-          'You can change your free premium break again in ${_friendlyDuration(remaining)}.',
-        );
-      }
-      DemoSeed.me = DemoSeed.me.copyWith(
-        freeLiveSpotId: spotId,
-        freeLiveSpotChangedAt: DateTime.now(),
+      throw StateError(
+        'Could not unlock the forecast right now. Please try again.',
       );
-      return DemoSeed.me;
     }
   }
 
@@ -597,6 +585,15 @@ class SurfRepository {
     } catch (_) {
       return TideForecastModel.unavailable(spotId);
     }
+  }
+
+  Future<DetailedForecastModel> fetchDetailedForecast(String spotId) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/forecasts/detail',
+      queryParameters: {'spot_id': spotId},
+      options: Options(receiveTimeout: const Duration(seconds: 40)),
+    );
+    return DetailedForecastModel.fromJson(response.data!);
   }
 
   Future<SurfWindowModel> fetchSurfWindow(String spotId) async {
@@ -1546,16 +1543,6 @@ class SurfRepository {
       return favoriteSpotIds;
     }
   }
-}
-
-String _friendlyDuration(Duration? duration) {
-  if (duration == null || duration.isNegative) return 'a few minutes';
-  final totalMinutes = duration.inMinutes <= 0 ? 1 : duration.inMinutes;
-  final hours = totalMinutes ~/ 60;
-  final minutes = totalMinutes % 60;
-  if (hours <= 0) return '${minutes}m';
-  if (minutes <= 0) return '${hours}h';
-  return '${hours}h ${minutes}m';
 }
 
 class FavoriteSpotIdsNotifier extends StateNotifier<Set<String>> {

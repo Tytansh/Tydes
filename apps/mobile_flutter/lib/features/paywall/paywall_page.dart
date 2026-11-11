@@ -263,9 +263,11 @@ class _PaywallPageState extends ConsumerState<PaywallPage>
         name: 'Premium',
         priceUsdMonthly: 3.99,
         features: const [
-          'Live data on every spot',
-          'Best Time Today windows',
-          'Tide-aware planning',
+          '5-day hourly forecasts at every spot',
+          'Swell direction, period & components',
+          'Wind and gust charts',
+          'Tide curves where available',
+          'Surf alerts',
           'Ad-free experience',
         ],
       ),
@@ -280,9 +282,11 @@ class _PaywallPageState extends ConsumerState<PaywallPage>
     final features =
         premiumPlan?.features ??
         const [
-          'Live data on every spot',
-          'Best Time Today windows',
-          'Tide-aware planning',
+          '5-day hourly forecasts at every spot',
+          'Swell direction, period & components',
+          'Wind and gust charts',
+          'Tide curves where available',
+          'Surf alerts',
           'Ad-free experience',
         ];
 
@@ -443,8 +447,8 @@ class _HeroCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             isPremium
-                ? 'You have live forecasts, tides, and Best Time Today across more breaks.'
-                : 'Premium gives you fresh live wave, wind, tide, and best-window tools across Tydes.',
+                ? 'Your forecast desk is unlocked at every break: hourly swell, wind, gusts, daylight and tides where available.'
+                : 'Read the swell, compare the next five days and time your session. Get the hourly forecast desk at every break.',
             style: TextStyle(color: scheme.onPrimaryContainer),
           ),
           const SizedBox(height: 16),

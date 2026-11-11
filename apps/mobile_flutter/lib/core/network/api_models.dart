@@ -486,6 +486,10 @@ class TideForecastModel {
     required this.source,
     required this.events,
     required this.note,
+    this.samples = const [],
+    this.timezone,
+    this.datum,
+    this.fetchedAt,
   });
 
   final String spotId;
@@ -495,6 +499,10 @@ class TideForecastModel {
   final String source;
   final List<TideEventModel> events;
   final String? note;
+  final List<TideSampleModel> samples;
+  final String? timezone;
+  final String? datum;
+  final DateTime? fetchedAt;
 
   factory TideForecastModel.unavailable(String spotId) => TideForecastModel(
     spotId: spotId,
@@ -519,6 +527,41 @@ class TideForecastModel {
             )
             .toList(),
         note: json['note'] as String?,
+        samples: (json['samples'] as List<dynamic>? ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .where(
+              (item) =>
+                  item['height_m'] is num &&
+                  (item['height_m'] as num).toDouble().isFinite &&
+                  DateTime.tryParse(item['time'] as String? ?? '') != null,
+            )
+            .map(TideSampleModel.fromJson)
+            .toList(growable: false),
+        timezone: json['timezone'] as String?,
+        datum: json['datum'] as String?,
+        fetchedAt: DateTime.tryParse(json['fetched_at'] as String? ?? ''),
+      );
+}
+
+class TideSampleModel {
+  const TideSampleModel({
+    required this.time,
+    required this.heightM,
+    this.localDate,
+    this.localTime,
+  });
+
+  final String time;
+  final double heightM;
+  final String? localDate;
+  final String? localTime;
+
+  factory TideSampleModel.fromJson(Map<String, dynamic> json) =>
+      TideSampleModel(
+        time: json['time'] as String,
+        heightM: (json['height_m'] as num).toDouble(),
+        localDate: json['local_date'] as String?,
+        localTime: json['local_time'] as String?,
       );
 }
 
