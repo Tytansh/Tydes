@@ -33,7 +33,10 @@ void main() {
             ),
           ),
         ],
-        child: const SurfTravelApp(enableAlertMonitor: false),
+        child: const SurfTravelApp(
+          enableAlertMonitor: false,
+          enableInboxPolling: false,
+        ),
       ),
     );
     await tester.pump();

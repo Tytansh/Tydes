@@ -68,8 +68,14 @@ Future<ProviderContainer> _show(
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
+  final fixtureThreads = (await memory.loadDirectMessageThreadPayloads())
+      .map(DirectMessageThread.fromJson)
+      .toList();
   final container = ProviderContainer(
     overrides: [
+      directMessageThreadsProvider.overrideWith(
+        (_) => DirectMessageThreadsNotifier.testing(fixtureThreads),
+      ),
       demoPersistenceProvider.overrideWithValue(memory),
       joinedEventChatsProvider.overrideWith((_) => events()),
       socialRelationshipHydrationProvider.overrideWith((_) => relationships()),

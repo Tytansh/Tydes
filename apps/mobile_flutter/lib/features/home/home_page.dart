@@ -8,6 +8,7 @@ import '../../core/network/surf_repository.dart';
 import '../../core/widgets/feed_refresh_indicator.dart';
 import '../social/social_feed.dart';
 import '../social/social_profile.dart';
+import '../social/inbox_badges.dart';
 
 final dashboardProvider = FutureProvider(
   (ref) => ref.watch(surfRepositoryProvider).fetchDashboard(),
@@ -42,6 +43,7 @@ class HomePage extends ConsumerWidget {
     final spots = ref.watch(travelFeedSpotsProvider);
     final spotItems = spots.valueOrNull ?? const [];
     final sessionExpired = user.hasError && _isSessionExpiredError(user.error);
+    final inboxCounts = watchInboxCounts(ref, user.valueOrNull?.id);
 
     ref.listen<AsyncValue<UserProfile>>(meProvider, (_, next) {
       if (!next.hasError || !_isSessionExpiredError(next.error)) {
@@ -69,18 +71,35 @@ class HomePage extends ConsumerWidget {
         backgroundColor: Theme.of(context).colorScheme.surface,
         surfaceTintColor: Theme.of(context).colorScheme.surface,
         actions: [
-          user.maybeWhen(
-            data: (profile) => _ProfileHeaderChip(
-              name: profile.displayName.split(' ').first,
-              onTap: () => ref.read(currentTabProvider.notifier).state = 4,
-            ),
-            orElse: () => _ProfileHeaderChip(
-              name: sessionExpired ? 'Sign in' : 'Profile',
-              onTap: () => sessionExpired
-                  ? context.go('/login')
-                  : ref.read(currentTabProvider.notifier).state = 4,
+          InboxUnreadBadge(
+            count: inboxCounts.messages,
+            child: IconButton(
+              tooltip: 'Messages',
+              onPressed: () => context.push('/messages'),
+              icon: const Icon(Icons.mail_outline_rounded),
             ),
           ),
+          InboxUnreadBadge(
+            count: inboxCounts.notifications,
+            child: IconButton(
+              tooltip: 'Notifications',
+              onPressed: () => context.push('/notifications'),
+              icon: const Icon(Icons.notifications_none_rounded),
+            ),
+          ),
+          if (MediaQuery.sizeOf(context).width >= 600)
+            user.maybeWhen(
+              data: (profile) => _ProfileHeaderChip(
+                name: profile.displayName.split(' ').first,
+                onTap: () => ref.read(currentTabProvider.notifier).state = 4,
+              ),
+              orElse: () => _ProfileHeaderChip(
+                name: sessionExpired ? 'Sign in' : 'Profile',
+                onTap: () => sessionExpired
+                    ? context.go('/login')
+                    : ref.read(currentTabProvider.notifier).state = 4,
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: FilledButton(
@@ -204,37 +223,45 @@ class _FeedSearchPill extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(999),
         onTap: onTap,
-        child: Container(
-          height: 42,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: scheme.outline.withValues(alpha: 0.18)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 14,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.search_rounded, color: scheme.primary, size: 20),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  'Search surfers',
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w700,
-                  ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 120;
+            return Container(
+              height: 42,
+              padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 14),
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: scheme.outline.withValues(alpha: 0.18),
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 14,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
               ),
-            ],
-          ),
+              child: Row(
+                children: [
+                  Icon(Icons.search_rounded, color: scheme.primary, size: 20),
+                  if (!compact) const SizedBox(width: 9),
+                  if (!compact)
+                    Expanded(
+                      child: Text(
+                        'Search surfers',
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );

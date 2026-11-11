@@ -9,6 +9,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          directMessageThreadsProvider.overrideWith(
+            (_) => DirectMessageThreadsNotifier.testing([]),
+          ),
           joinedEventChatsProvider.overrideWith(
             (_) async => [
               JoinedEventChatSummary(

@@ -3,14 +3,15 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 import '../../core/network/api_models.dart';
-import '../../core/network/demo_persistence.dart';
 import '../../core/network/surf_repository.dart';
 import '../../core/moderation/content_moderation.dart';
 import '../../core/widgets/feed_refresh_indicator.dart';
+import '../../core/network/api_error_message.dart';
+import '../home/home_page.dart' show meProvider;
+import 'direct_message_api.dart';
+import 'inbox_badges.dart';
 import 'social_profile.dart';
 
 final directMessageThreadsProvider =
@@ -18,8 +19,19 @@ final directMessageThreadsProvider =
       DirectMessageThreadsNotifier,
       List<DirectMessageThread>
     >(
-      (ref) => DirectMessageThreadsNotifier(ref.watch(demoPersistenceProvider)),
+      (ref) => DirectMessageThreadsNotifier(
+        api: ref.watch(directMessageApiProvider),
+        ownerId: ref.watch(meProvider.select((value) => value.valueOrNull?.id)),
+        onStatus: (status) =>
+            ref.read(dmInboxStatusProvider.notifier).state = status,
+        onCountsChanged: () =>
+            ref.read(inboxCountsRefreshKeyProvider.notifier).state++,
+      ),
     );
+
+final dmInboxStatusProvider = StateProvider<AsyncValue<void>>(
+  (ref) => const AsyncData(null),
+);
 
 final unreadDirectMessageThreadCountProvider = Provider<int>((ref) {
   final blockedUserIds = ref.watch(blockedUserIdsProvider);
@@ -28,10 +40,9 @@ final unreadDirectMessageThreadCountProvider = Provider<int>((ref) {
       .where(
         (thread) =>
             !thread.requestDeclined &&
-            thread.unreadCount > 0 &&
             !_isBlockedThread(thread, blockedUserIds),
       )
-      .length;
+      .fold(0, (count, thread) => count + thread.unreadCount);
 });
 
 final dmSharedEventRsvpProvider = StateProvider<Set<String>>((ref) => {});
@@ -80,311 +91,290 @@ class JoinedEventChatSummary {
 
 class DirectMessageThreadsNotifier
     extends StateNotifier<List<DirectMessageThread>> {
-  DirectMessageThreadsNotifier(this._persistence) : super(_seedThreads) {
-    unawaited(_loadSavedThreads());
+  DirectMessageThreadsNotifier({
+    required DirectMessageApi api,
+    required this.ownerId,
+    required void Function(AsyncValue<void>) onStatus,
+    required VoidCallback onCountsChanged,
+  }) : _api = api,
+       _onStatus = onStatus,
+       _onCountsChanged = onCountsChanged,
+       super(const []) {
+    if (ownerId != null) {
+      Future.microtask(() => refresh().catchError((Object _) {}));
+    }
   }
 
-  final DemoPersistence _persistence;
+  @visibleForTesting
+  DirectMessageThreadsNotifier.testing(super.threads)
+    : _api = null,
+      ownerId = 'test-owner',
+      _onStatus = null,
+      _onCountsChanged = null;
 
-  Future<void> _loadSavedThreads() async {
-    final savedPayloads = await _persistence.loadDirectMessageThreadPayloads();
-    final saved = <DirectMessageThread>[];
-    for (final payload in savedPayloads) {
-      try {
-        final thread = DirectMessageThread.fromJson(payload);
-        if (!_legacyDemoThreadIds.contains(thread.id)) saved.add(thread);
-      } catch (_) {
-        // Ignore stale/corrupt demo DM rows instead of breaking the inbox.
-      }
+  final DirectMessageApi? _api;
+  final String? ownerId;
+  final void Function(AsyncValue<void>)? _onStatus;
+  final VoidCallback? _onCountsChanged;
+  Future<DirectMessageSession>? _session;
+  bool _disposed = false;
+  bool _refreshing = false;
+  int _revision = 0;
+  final Map<String, String> _sendKeys = {};
+  final Set<String> _sending = {};
+
+  Future<DirectMessageSession> _connected() {
+    if (_disposed || ownerId == null || _api == null) {
+      throw StateError('Please sign in to use messages.');
     }
-    if (saved.isEmpty) {
-      final result = _applyDemoIncomingMessages(state);
-      if (!result.changed) return;
-      state = result.threads;
-      _sortThreads();
-      _persist();
-      return;
-    }
-    final merged = {for (final thread in _seedThreads) thread.id: thread};
-    for (final thread in saved) {
-      merged[thread.id] = thread;
-    }
-    state = merged.values.toList();
-    final result = _applyDemoIncomingMessages(state);
-    if (result.changed) {
-      state = result.threads;
-    }
-    _sortThreads();
-    if (result.changed) _persist();
+    return _session ??= _api.openSession(ownerId!).catchError((Object error) {
+      _session = null;
+      throw error;
+    });
   }
 
-  void markRead(String threadId) {
-    var changed = false;
-    state = [
-      for (final thread in state)
-        if (thread.id == threadId && thread.unreadCount > 0)
-          (() {
-            changed = true;
-            return thread.copyWith(unreadCount: 0);
-          })()
-        else
-          thread,
-    ];
-    if (changed) _persist();
+  void _check() {
+    if (_disposed) throw StateError('Your account changed. Reopen Messages.');
   }
 
-  void sendMessage(String threadId, String text) {
-    final trimmed = text.trim();
-    if (trimmed.isEmpty) return;
-    final message = DirectChatMessage(text: trimmed, time: 'Now', isMe: true);
-    state = [
-      for (final thread in state)
-        if (thread.id == threadId)
-          thread.copyWith(
-            preview: trimmed,
-            time: 'Now',
-            unreadCount: 0,
-            messages: [...thread.messages, message],
-          )
-        else
-          thread,
-    ];
-    _sortThreads();
-    _persist();
-  }
-
-  void sendAttachment({
-    required String threadId,
-    required String path,
-    required String type,
-  }) {
-    final isVideo = type == 'video';
-    final message = DirectChatMessage(
-      text: '',
-      time: 'Now',
-      isMe: true,
-      mediaPath: path,
-      mediaType: type,
+  DirectMessageThread _fromServer(Map<String, dynamic> json) {
+    final id = json['id'];
+    final peerId = json['peer_user_id'];
+    if (id is! String ||
+        id.isEmpty ||
+        peerId is! String ||
+        peerId.isEmpty ||
+        peerId == ownerId) {
+      throw StateError('The conversation response was incomplete.');
+    }
+    final previous = threadByIdOrHandle(id);
+    final name = json['peer_name'] as String? ?? 'Tydes surfer';
+    return DirectMessageThread(
+      id: id,
+      profileUserId: peerId,
+      name: name,
+      handle: json['peer_handle'] as String? ?? '',
+      initial: _initialFor(name),
+      location: 'Tydes',
+      preview: json['preview'] as String? ?? '',
+      time: _messageTime(json['updated_at'] as String?),
+      updatedAt: DateTime.tryParse(json['updated_at'] as String? ?? ''),
+      unreadCount: (json['unread_count'] as num?)?.toInt() ?? 0,
+      avatarUrl: json['peer_avatar_url'] as String?,
+      premium: json['peer_premium'] as bool? ?? false,
+      online: false,
+      requestAccepted: json['request_accepted'] as bool? ?? false,
+      requestDeclined: json['request_declined'] as bool? ?? false,
+      messages: json['messages'] is List
+          ? (json['messages'] as List)
+                .map(
+                  (raw) => DirectChatMessage.fromServer(
+                    Map<String, dynamic>.from(raw as Map),
+                    ownerId!,
+                  ),
+                )
+                .toList()
+          : previous?.messages ?? const [],
     );
-    state = [
-      for (final thread in state)
-        if (thread.id == threadId)
-          thread.copyWith(
-            preview: isVideo ? 'Sent a video' : 'Sent a photo',
-            time: 'Now',
-            unreadCount: 0,
-            messages: [...thread.messages, message],
-          )
-        else
-          thread,
-    ];
-    _sortThreads();
-    _persist();
   }
 
-  void sendSharedPost({
+  void _accept(DirectMessageThread thread) {
+    _check();
+    state = [thread, ...state.where((item) => item.id != thread.id)]
+      ..sort(
+        (a, b) => (b.updatedAt ?? DateTime(1970)).compareTo(
+          a.updatedAt ?? DateTime(1970),
+        ),
+      );
+    _revision++;
+  }
+
+  Future<void> refresh() async {
+    if (_api == null) return; // Explicit widget-test fixture only.
+    if (_refreshing) return;
+    _refreshing = true;
+    _onStatus?.call(const AsyncLoading());
+    final revision = _revision;
+    try {
+      final items = await (await _connected()).threads();
+      _check();
+      // A slower inbox response must not overwrite a just-confirmed send/read.
+      if (revision == _revision) state = items.map(_fromServer).toList();
+      _onStatus?.call(const AsyncData(null));
+      _onCountsChanged?.call();
+    } catch (error, stack) {
+      if (!_disposed) _onStatus?.call(AsyncError(error, stack));
+      rethrow;
+    } finally {
+      _refreshing = false;
+    }
+  }
+
+  Future<DirectMessageThread> ensureThreadForProfile(
+    PublicProfilePreview profile,
+  ) async {
+    final result = await (await _connected()).ensureThread(profile.userId);
+    _check();
+    final thread = _fromServer(result);
+    if (thread.profileUserId != profile.userId) {
+      throw StateError('The server returned a different conversation.');
+    }
+    _accept(thread);
+    _onCountsChanged?.call();
+    return thread;
+  }
+
+  Future<DirectMessageThread> loadThread(String threadId) async {
+    final revision = _revision;
+    final result = await (await _connected()).thread(threadId);
+    _check();
+    if (revision != _revision) {
+      final current = threadByIdOrHandle(threadId);
+      if (current != null) return current;
+    }
+    final thread = _fromServer(result);
+    _accept(thread);
+    return thread;
+  }
+
+  Future<void> markRead(String threadId) async {
+    final thread = threadByIdOrHandle(threadId);
+    if (thread == null) return;
+    final incoming = thread.messages.where(
+      (message) => !message.isMe && message.id != null,
+    );
+    if (incoming.isEmpty) return;
+    final marker = incoming.last.id!;
+    final remaining = await (await _connected()).markRead(thread.id, marker);
+    _check();
+    final latest = threadByIdOrHandle(thread.id);
+    final latestMarker = latest?.messages
+        .where((message) => !message.isMe && message.id != null)
+        .lastOrNull
+        ?.id;
+    if (latest != null && latestMarker == marker) {
+      _accept(latest.copyWith(unreadCount: remaining));
+    }
+    _onCountsChanged?.call();
+  }
+
+  Future<void> sendMessage(String threadId, String text) =>
+      _send(threadId, text.trim());
+
+  Future<void> sendSharedPost({
     required String threadId,
     required SocialPostModel post,
     required String? spotName,
     required String? note,
-  }) {
-    final isEvent =
-        post.postType == 'surf_plan' || post.postType == 'looking_for_buddy';
-    final preview = isEvent
-        ? 'Sent an event from ${post.authorName}'
-        : 'Sent a post from ${post.authorName}';
-    final message = DirectChatMessage(
-      text: note?.trim() ?? '',
-      time: 'Now',
-      isMe: true,
-      sharedPostId: post.id,
-      sharedPostAuthorUserId: post.userId,
-      sharedPostAuthor: post.authorName,
-      sharedPostAuthorHandle: post.authorHandle,
-      sharedPostAuthorAvatarUrl: post.authorAvatarUrl,
-      sharedPostAuthorPremium: post.authorPremium,
-      sharedPostBody: post.body,
-      sharedPostSpotId: post.spotId,
-      sharedPostSpotName: spotName,
-      sharedPostType: isEvent ? 'event' : 'post',
-      sharedPostMediaUrl: _sharedPostMediaUrl(post),
-    );
-    state = [
-      for (final thread in state)
-        if (thread.id == threadId)
-          thread.copyWith(
-            preview: preview,
-            time: 'Now',
-            unreadCount: 0,
-            messages: [...thread.messages, message],
-          )
-        else
-          thread,
-    ];
-    _sortThreads();
-    _persist();
-  }
+  }) => _send(threadId, note?.trim() ?? '', sharedPostId: post.id);
 
-  void acceptRequest(String threadId) {
-    state = [
-      for (final thread in state)
-        if (thread.id == threadId)
-          thread.copyWith(requestAccepted: true, unreadCount: 0)
-        else
-          thread,
-    ];
-    _sortThreads();
-    _persist();
-  }
-
-  void hideThread(String threadId) {
-    state = [
-      for (final thread in state)
-        if (thread.id == threadId)
-          thread.copyWith(requestDeclined: true, unreadCount: 0)
-        else
-          thread,
-    ];
-    _persist();
-  }
-
-  void declineRequest(String threadId) {
-    state = [
-      for (final thread in state)
-        if (thread.id == threadId)
-          thread.copyWith(requestDeclined: true, unreadCount: 0)
-        else
-          thread,
-    ];
-    _persist();
-  }
-
-  DirectMessageThread ensureThreadForProfile(PublicProfilePreview profile) {
-    final threadId = _normalizeThreadId(
-      profile.handle?.isNotEmpty == true ? profile.handle! : profile.userId,
-    );
-    final existing = threadByIdOrHandle(threadId);
-    if (existing != null) {
-      final revived = existing.copyWith(
-        profileUserId: profile.userId,
-        requestAccepted: true,
-        requestDeclined: false,
-        unreadCount: 0,
-      );
-      state = [
-        for (final thread in state)
-          if (thread.id == existing.id) revived else thread,
-      ];
-      _sortThreads();
-      _persist();
-      return revived;
+  Future<void> _send(
+    String threadId,
+    String text, {
+    String? sharedPostId,
+  }) async {
+    if (text.isEmpty && sharedPostId == null) return;
+    if (text.length > 1600) {
+      throw StateError('Messages can be up to 1600 characters.');
     }
-
-    final handle = (profile.handle?.trim().isNotEmpty ?? false)
-        ? profile.handle!.trim().replaceFirst('@', '')
-        : threadId;
-    final thread = DirectMessageThread(
-      id: threadId,
-      profileUserId: profile.userId,
-      name: profile.displayName,
-      handle: handle,
-      initial: _initialFor(profile.displayName),
-      location: profile.location ?? 'Tydes',
-      preview: 'Start a private chat.',
-      time: 'Now',
-      unreadCount: 0,
-      online: false,
-      requestAccepted: true,
-      messages: [
-        DirectChatMessage(
-          text: 'This is the start of your chat with ${profile.displayName}.',
-          time: 'Now',
-          isMe: false,
-        ),
-      ],
+    if (_sending.contains(threadId)) {
+      throw StateError('This message is still sending.');
+    }
+    final fingerprint = '$threadId\u0000$text\u0000${sharedPostId ?? ''}';
+    final key = _sendKeys.putIfAbsent(
+      fingerprint,
+      () => 'dm_${DateTime.now().microsecondsSinceEpoch}_${_sendKeys.length}',
     );
-    state = [thread, ...state];
-    _persist();
-    return thread;
+    _sending.add(threadId);
+    try {
+      final ack = await (await _connected()).send(
+        threadId: threadId,
+        text: text,
+        clientMessageId: key,
+        sharedPostId: sharedPostId,
+      );
+      _check();
+      final current = threadByIdOrHandle(threadId);
+      if (current == null) {
+        throw StateError('Reopen this conversation and try again.');
+      }
+      final message = DirectChatMessage.fromServer(ack, ownerId!);
+      _accept(
+        current.copyWith(
+          preview: message.text.isNotEmpty ? message.text : 'Shared a post',
+          time: _messageTime(ack['created_at'] as String?),
+          updatedAt: DateTime.tryParse(ack['created_at'] as String? ?? ''),
+          messages: [
+            ...current.messages.where((item) => item.id != message.id),
+            message,
+          ],
+        ),
+      );
+      _sendKeys.remove(fingerprint);
+      _onCountsChanged?.call();
+    } finally {
+      _sending.remove(threadId);
+    }
+  }
+
+  Future<void> sendAttachment({
+    required String threadId,
+    required String path,
+    required String type,
+  }) async {
+    throw StateError(
+      'Private photo and video messages are not available yet. You can send text or share a post.',
+    );
+  }
+
+  Future<void> acceptRequest(String threadId) =>
+      _requestStatus(threadId, accepted: true);
+  Future<void> declineRequest(String threadId) =>
+      _requestStatus(threadId, declined: true);
+  Future<void> hideThread(String threadId) => declineRequest(threadId);
+
+  Future<void> _requestStatus(
+    String threadId, {
+    bool? accepted,
+    bool? declined,
+  }) async {
+    final result = await (await _connected()).requestStatus(
+      threadId,
+      accepted: accepted,
+      declined: declined,
+    );
+    _check();
+    _accept(_fromServer(result));
+    _onCountsChanged?.call();
   }
 
   DirectMessageThread? threadByIdOrHandle(String value) {
     final normalized = _normalizeThreadId(value);
-    for (final thread in state) {
-      if (thread.id == normalized || thread.handle == normalized) {
-        return thread;
-      }
-    }
-    return null;
+    return state
+        .where(
+          (thread) =>
+              thread.id == value ||
+              thread.profileUserId == value ||
+              _normalizeThreadId(thread.handle) == normalized,
+        )
+        .firstOrNull;
   }
 
-  void _sortThreads() {
-    state = [...state]
-      ..sort((a, b) {
-        if (a.time == 'Now' && b.time != 'Now') return -1;
-        if (b.time == 'Now' && a.time != 'Now') return 1;
-        return 0;
-      });
-  }
-
-  void _persist() {
-    unawaited(
-      _persistence.saveDirectMessageThreadPayloads(
-        state.map((thread) => thread.toJson()).toList(),
-      ),
-    );
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }
 
-_ThreadPatchResult _applyDemoIncomingMessages(
-  List<DirectMessageThread> threads,
-) {
-  final updated = <DirectMessageThread>[];
-  var changed = false;
-
-  for (final thread in threads) {
-    final incoming = _demoIncomingMessages[thread.id] ?? const [];
-    var messages = thread.messages;
-    var addedUnread = 0;
-    DirectChatMessage? latestAdded;
-
-    for (final message in incoming) {
-      final alreadyExists = messages.any(
-        (existing) =>
-            existing.text == message.text &&
-            existing.time == message.time &&
-            existing.isMe == message.isMe,
-      );
-      if (alreadyExists) continue;
-      messages = [...messages, message];
-      latestAdded = message;
-      addedUnread += 1;
-    }
-
-    if (latestAdded == null) {
-      updated.add(thread);
-      continue;
-    }
-
-    changed = true;
-    updated.add(
-      thread.copyWith(
-        preview: latestAdded.text,
-        time: latestAdded.time,
-        unreadCount: thread.unreadCount + addedUnread,
-        messages: messages,
-      ),
-    );
-  }
-
-  return _ThreadPatchResult(threads: updated, changed: changed);
-}
-
-class _ThreadPatchResult {
-  const _ThreadPatchResult({required this.threads, required this.changed});
-
-  final List<DirectMessageThread> threads;
-  final bool changed;
+String _messageTime(String? value) {
+  final parsed = DateTime.tryParse(value ?? '')?.toLocal();
+  if (parsed == null) return '';
+  final diff = DateTime.now().difference(parsed);
+  if (diff.inMinutes < 1) return 'Now';
+  if (diff.inHours < 1) return '${diff.inMinutes}m';
+  if (diff.inDays < 1) return '${diff.inHours}h';
+  return '${parsed.day}/${parsed.month}';
 }
 
 class DirectMessagesPage extends ConsumerStatefulWidget {
@@ -397,14 +387,21 @@ class DirectMessagesPage extends ConsumerStatefulWidget {
   ConsumerState<DirectMessagesPage> createState() => _DirectMessagesPageState();
 }
 
-class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage> {
+class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage>
+    with WidgetsBindingObserver {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
+  Timer? _poll;
+  bool _foreground = true;
+  bool _openingInitial = false;
+  String? _openedInitialId;
+  Object? _initialError;
 
   Future<void> _refreshInbox() async {
     // Refresh server-backed inbox discovery without recreating local direct
     // threads, clearing drafts, or resetting the current search.
     await Future.wait([
+      ref.read(directMessageThreadsProvider.notifier).refresh(),
       ref.refresh(joinedEventChatsProvider.future),
       ref.refresh(socialRelationshipHydrationProvider.future),
     ]);
@@ -413,20 +410,58 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage> {
   @override
   void initState() {
     super.initState();
-    final initialThreadId = widget.initialThreadId;
-    final seedProfile = widget.seedProfile;
-    if (initialThreadId != null && seedProfile != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
+    WidgetsBinding.instance.addObserver(this);
+    _poll = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (!mounted ||
+          !_foreground ||
+          widget.initialThreadId != null ||
+          ModalRoute.of(context)?.isCurrent != true) {
+        return;
+      }
+      unawaited(
         ref
             .read(directMessageThreadsProvider.notifier)
-            .ensureThreadForProfile(seedProfile);
+            .refresh()
+            .catchError((Object _) {}),
+      );
+    });
+    if (widget.initialThreadId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _openInitialConversation();
       });
     }
   }
 
+  Future<void> _openInitialConversation() async {
+    if (_openingInitial) return;
+    setState(() {
+      _openingInitial = true;
+      _initialError = null;
+    });
+    try {
+      await ref.read(meProvider.future);
+      if (!mounted) return;
+      final controller = ref.read(directMessageThreadsProvider.notifier);
+      final profile = widget.seedProfile;
+      final thread = profile == null
+          ? await controller.loadThread(widget.initialThreadId!)
+          : await controller.ensureThreadForProfile(profile);
+      if (mounted) setState(() => _openedInitialId = thread.id);
+    } catch (error) {
+      if (mounted) setState(() => _initialError = error);
+    } finally {
+      if (mounted) setState(() => _openingInitial = false);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) =>
+      _foreground = state == AppLifecycleState.resumed;
+
   @override
   void dispose() {
+    _poll?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _searchController.dispose();
     super.dispose();
   }
@@ -434,13 +469,43 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage> {
   @override
   Widget build(BuildContext context) {
     final threads = ref.watch(directMessageThreadsProvider);
+    final inboxStatus = ref.watch(dmInboxStatusProvider);
     final eventChats = ref.watch(joinedEventChatsProvider);
     final followedUserIds = ref.watch(followedUserIdsProvider);
     final hiddenFollowingUserIds = ref.watch(hiddenFollowingUserIdsProvider);
     final blockedUserIds = ref.watch(blockedUserIdsProvider);
     final initialThreadId = widget.initialThreadId;
     if (initialThreadId != null && initialThreadId.isNotEmpty) {
-      final thread = _threadByIdOrHandle(threads, initialThreadId);
+      if (_initialError != null) {
+        return Scaffold(
+          appBar: AppBar(title: const Text('Messages')),
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    friendlyLoadErrorMessage(
+                      _initialError,
+                      label: 'this conversation',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton(
+                    onPressed: _openInitialConversation,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+      final thread = _threadByIdOrHandle(
+        threads,
+        _openedInitialId ?? initialThreadId,
+      );
       if (thread == null) {
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
       }
@@ -512,6 +577,23 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage> {
               onChanged: (value) => setState(() => _query = value),
             ),
             const SizedBox(height: 18),
+            if (inboxStatus.isLoading && threads.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 12),
+                child: LinearProgressIndicator(minHeight: 2),
+              ),
+            if (inboxStatus.hasError)
+              ListTile(
+                title: const Text('Could not refresh messages'),
+                subtitle: Text(friendlyErrorMessage(inboxStatus.error)),
+                trailing: TextButton(
+                  onPressed: () => ref
+                      .read(directMessageThreadsProvider.notifier)
+                      .refresh()
+                      .catchError((Object _) {}),
+                  child: const Text('Retry'),
+                ),
+              ),
             if (eventChats.isLoading && !eventChats.hasValue)
               const Padding(
                 padding: EdgeInsets.only(bottom: 16),
@@ -689,7 +771,9 @@ DirectMessageThread? _threadByIdOrHandle(
 ) {
   final normalized = _normalizeThreadId(value);
   for (final thread in threads) {
-    if (thread.id == normalized || thread.handle == normalized) {
+    if (thread.id == value ||
+        thread.id == normalized ||
+        thread.handle == normalized) {
       return thread;
     }
   }
@@ -750,6 +834,8 @@ PublicProfilePreview _profileFromThread(DirectMessageThread thread) {
     handle: thread.handle,
     subtitle: 'Surf traveler on Tydes',
     location: thread.location,
+    avatarUrl: thread.avatarUrl,
+    premium: thread.premium,
   );
 }
 
@@ -762,9 +848,19 @@ Future<void> _openNewMessageSheet(BuildContext context, WidgetRef ref) async {
     builder: (_) => const _NewMessageSheet(),
   );
   if (profile == null || !context.mounted) return;
-  final thread = ref
-      .read(directMessageThreadsProvider.notifier)
-      .ensureThreadForProfile(profile);
+  DirectMessageThread thread;
+  try {
+    thread = await ref
+        .read(directMessageThreadsProvider.notifier)
+        .ensureThreadForProfile(profile);
+  } catch (error) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
+    }
+    return;
+  }
   if (!context.mounted) return;
   Navigator.of(context).push(
     MaterialPageRoute<void>(
@@ -1168,18 +1264,95 @@ class _DirectChatPage extends ConsumerStatefulWidget {
   ConsumerState<_DirectChatPage> createState() => _DirectChatPageState();
 }
 
-class _DirectChatPageState extends ConsumerState<_DirectChatPage> {
+class _DirectChatPageState extends ConsumerState<_DirectChatPage>
+    with WidgetsBindingObserver {
   final TextEditingController _messageController = TextEditingController();
-  final ImagePicker _imagePicker = ImagePicker();
+  Timer? _poll;
+  bool _foreground = true;
+  bool _loading = true;
+  bool _loadingRequest = false;
+  bool _sending = false;
+  bool _requestBusy = false;
+  bool _readPending = false;
+  String? _lastReadMessageId;
+  Object? _loadError;
+  late final String? _chatOwnerId;
+
+  @override
+  void initState() {
+    super.initState();
+    _chatOwnerId = ref.read(directMessageThreadsProvider.notifier).ownerId;
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadConversation();
+    });
+    _poll = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (_isVisible) _loadConversation();
+    });
+  }
+
+  bool get _isVisible =>
+      mounted &&
+      _foreground &&
+      ref.read(directMessageThreadsProvider.notifier).ownerId == _chatOwnerId &&
+      ModalRoute.of(context)?.isCurrent == true;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
+    if (_foreground && mounted) _loadConversation();
+  }
+
+  Future<void> _loadConversation() async {
+    if (_loadingRequest || !_isVisible) return;
+    _loadingRequest = true;
+    try {
+      await ref
+          .read(directMessageThreadsProvider.notifier)
+          .loadThread(widget.threadId);
+      if (mounted) setState(() => _loadError = null);
+    } catch (error) {
+      if (mounted) setState(() => _loadError = error);
+    } finally {
+      _loadingRequest = false;
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _markVisibleRead(String messageId) async {
+    if (!_isVisible || _readPending || _lastReadMessageId == messageId) return;
+    _readPending = true;
+    try {
+      await ref
+          .read(directMessageThreadsProvider.notifier)
+          .markRead(widget.threadId);
+      if (mounted) _lastReadMessageId = messageId;
+    } catch (_) {
+      // A failed acknowledgement must leave server unread counts intact.
+    } finally {
+      _readPending = false;
+    }
+  }
 
   @override
   void dispose() {
+    _poll?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _messageController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (ref.watch(directMessageThreadsProvider.notifier).ownerId !=
+        _chatOwnerId) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Messages')),
+        body: const Center(
+          child: Text('Your account changed. Reopen Messages to continue.'),
+        ),
+      );
+    }
     final thread = _threadByIdOrHandle(
       ref.watch(directMessageThreadsProvider),
       widget.threadId,
@@ -1187,13 +1360,16 @@ class _DirectChatPageState extends ConsumerState<_DirectChatPage> {
     if (thread == null) {
       return const Scaffold(body: Center(child: Text('Chat not found.')));
     }
-    if (thread.unreadCount > 0) {
+    final incoming = thread.messages.where(
+      (message) => !message.isMe && message.id != null,
+    );
+    if (thread.unreadCount > 0 && incoming.isNotEmpty) {
+      final marker = incoming.last.id!;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        ref.read(directMessageThreadsProvider.notifier).markRead(thread.id);
+        if (mounted) _markVisibleRead(marker);
       });
     }
-    final isRequest = widget.showRequestActions && !thread.requestAccepted;
+    final isRequest = !thread.requestAccepted;
     final profile = _profileFromThread(thread);
     final isBlocked = _isBlockedThread(
       thread,
@@ -1247,37 +1423,43 @@ class _DirectChatPageState extends ConsumerState<_DirectChatPage> {
       body: Column(
         children: [
           Expanded(
-            child: ListView.builder(
-              reverse: true,
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              itemCount: thread.messages.length,
-              itemBuilder: (context, index) {
-                final message =
-                    thread.messages[thread.messages.length - 1 - index];
-                return _MessageBubble(message: message);
-              },
-            ),
+            child: _loading && thread.messages.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : ListView.builder(
+                    reverse: true,
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    itemCount: thread.messages.length,
+                    itemBuilder: (context, index) {
+                      final message =
+                          thread.messages[thread.messages.length - 1 - index];
+                      return _MessageBubble(message: message);
+                    },
+                  ),
           ),
+          if (_loadError != null)
+            ListTile(
+              dense: true,
+              title: Text(
+                friendlyLoadErrorMessage(_loadError, label: 'new messages'),
+              ),
+              trailing: TextButton(
+                onPressed: _loadConversation,
+                child: const Text('Retry'),
+              ),
+            ),
           if (isBlocked)
             _BlockedDirectThreadNotice(profile: profile)
           else if (isRequest)
             _MessageRequestActions(
               thread: thread,
-              onAccept: () {
-                ref
-                    .read(directMessageThreadsProvider.notifier)
-                    .acceptRequest(thread.id);
-              },
-              onDecline: () {
-                ref
-                    .read(directMessageThreadsProvider.notifier)
-                    .declineRequest(thread.id);
-                Navigator.of(context).pop();
-              },
+              busy: _requestBusy,
+              onAccept: () => _changeRequest(thread.id, true),
+              onDecline: () => _changeRequest(thread.id, false),
             )
           else
             _MessageComposer(
               controller: _messageController,
+              sending: _sending,
               onSend: () => _sendMessage(thread.id),
               onAddAttachment: () => _openAttachmentSheet(thread.id),
             ),
@@ -1287,91 +1469,39 @@ class _DirectChatPageState extends ConsumerState<_DirectChatPage> {
   }
 
   Future<void> _openAttachmentSheet(String threadId) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Add attachment',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 10),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.perm_media_outlined),
-                title: const Text('Photo or video'),
-                subtitle: const Text('Choose from your library'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  unawaited(_pickAttachment(threadId));
-                },
-              ),
-            ],
-          ),
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Private photo and video messages are not available yet. Send text or share a post instead.',
         ),
       ),
     );
   }
 
-  Future<void> _pickAttachment(String threadId) async {
+  Future<void> _changeRequest(String threadId, bool accept) async {
+    if (_requestBusy) return;
+    setState(() => _requestBusy = true);
     try {
-      final picked = await _imagePicker.pickMedia(imageQuality: 88);
-      if (picked == null || !mounted) return;
-      final savedPath = await _copyAttachmentToAppStorage(picked);
-      final isVideo = _isVideoAttachment(picked);
-      ref
-          .read(directMessageThreadsProvider.notifier)
-          .sendAttachment(
-            threadId: threadId,
-            path: savedPath,
-            type: isVideo ? 'video' : 'image',
-          );
+      final notifier = ref.read(directMessageThreadsProvider.notifier);
+      if (accept) {
+        await notifier.acceptRequest(threadId);
+      } else {
+        await notifier.declineRequest(threadId);
+        if (mounted) Navigator.of(context).pop();
+      }
     } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not add attachment: $error')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
+      }
+    } finally {
+      if (mounted) setState(() => _requestBusy = false);
     }
   }
 
-  bool _isVideoAttachment(XFile picked) {
-    final mimeType = picked.mimeType?.toLowerCase();
-    if (mimeType != null) return mimeType.startsWith('video/');
-    final path = picked.path.toLowerCase();
-    return path.endsWith('.mov') ||
-        path.endsWith('.mp4') ||
-        path.endsWith('.m4v') ||
-        path.endsWith('.avi') ||
-        path.endsWith('.webm');
-  }
-
-  Future<String> _copyAttachmentToAppStorage(XFile picked) async {
-    final supportDirectory = await getApplicationSupportDirectory();
-    final attachmentDirectory = Directory(
-      '${supportDirectory.path}/dm_attachments',
-    );
-    if (!attachmentDirectory.existsSync()) {
-      attachmentDirectory.createSync(recursive: true);
-    }
-    final originalName = picked.path.split('/').last;
-    final extensionIndex = originalName.lastIndexOf('.');
-    final extension = extensionIndex == -1
-        ? ''
-        : originalName.substring(extensionIndex);
-    final fileName = 'dm_${DateTime.now().microsecondsSinceEpoch}$extension';
-    final savedFile = await File(
-      picked.path,
-    ).copy('${attachmentDirectory.path}/$fileName');
-    return savedFile.path;
-  }
-
-  void _sendMessage(String threadId) {
+  Future<void> _sendMessage(String threadId) async {
+    if (_sending) return;
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
     if (hasBlockedContent(text)) {
@@ -1380,8 +1510,29 @@ class _DirectChatPageState extends ConsumerState<_DirectChatPage> {
       ).showSnackBar(const SnackBar(content: Text(contentBlockedMessage)));
       return;
     }
-    ref.read(directMessageThreadsProvider.notifier).sendMessage(threadId, text);
-    _messageController.clear();
+    setState(() => _sending = true);
+    try {
+      await ref
+          .read(directMessageThreadsProvider.notifier)
+          .sendMessage(threadId, text);
+      if (mounted && _messageController.text.trim() == text) {
+        _messageController.clear();
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Message not sent. ${friendlyErrorMessage(error)}'),
+            action: SnackBarAction(
+              label: 'Retry',
+              onPressed: () => _sendMessage(threadId),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
   }
 }
 
@@ -1478,7 +1629,11 @@ Future<void> _confirmAndBlockDirectProfile(
   );
   if (confirmed != true || !context.mounted) return;
   await blockSocialUser(ref, profile.userId);
-  ref.read(directMessageThreadsProvider.notifier).hideThread(thread.id);
+  // Blocking is enforced by the server and must not invent a local delivery state.
+  await ref
+      .read(directMessageThreadsProvider.notifier)
+      .refresh()
+      .catchError((Object _) {});
   ref.invalidate(dmSocialProfilesProvider);
   if (!context.mounted) return;
   ScaffoldMessenger.of(context).showSnackBar(
@@ -2134,11 +2289,13 @@ class _MessageComposer extends StatelessWidget {
     required this.controller,
     required this.onSend,
     required this.onAddAttachment,
+    this.sending = false,
   });
 
   final TextEditingController controller;
   final VoidCallback onSend;
   final VoidCallback onAddAttachment;
+  final bool sending;
 
   @override
   Widget build(BuildContext context) {
@@ -2157,13 +2314,18 @@ class _MessageComposer extends StatelessWidget {
             ),
             Expanded(
               child: TextField(
+                key: const ValueKey('dm-message-input'),
                 controller: controller,
                 minLines: 1,
                 maxLines: 4,
                 textInputAction: TextInputAction.send,
-                onSubmitted: (_) => onSend(),
+                onSubmitted: (_) {
+                  if (!sending) onSend();
+                },
+                maxLength: 1600,
                 decoration: InputDecoration(
                   hintText: 'Message...',
+                  counterText: '',
                   filled: true,
                   fillColor: Theme.of(context).cardColor,
                   contentPadding: const EdgeInsets.symmetric(
@@ -2179,13 +2341,19 @@ class _MessageComposer extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             FilledButton(
-              onPressed: onSend,
+              key: const ValueKey('dm-send-message'),
+              onPressed: sending ? null : onSend,
               style: FilledButton.styleFrom(
                 minimumSize: const Size(46, 46),
                 padding: EdgeInsets.zero,
                 shape: const CircleBorder(),
               ),
-              child: const Icon(Icons.arrow_upward_rounded),
+              child: sending
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.arrow_upward_rounded),
             ),
           ],
         ),
@@ -2199,11 +2367,13 @@ class _MessageRequestActions extends StatelessWidget {
     required this.thread,
     required this.onAccept,
     required this.onDecline,
+    this.busy = false,
   });
 
   final DirectMessageThread thread;
   final VoidCallback onAccept;
   final VoidCallback onDecline;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
@@ -2235,14 +2405,14 @@ class _MessageRequestActions extends StatelessWidget {
                 children: [
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: onDecline,
+                      onPressed: busy ? null : onDecline,
                       child: const Text('Decline'),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: FilledButton(
-                      onPressed: onAccept,
+                      onPressed: busy ? null : onAccept,
                       child: const Text('Accept request'),
                     ),
                   ),
@@ -2324,9 +2494,7 @@ class _MessageRequestsPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final liveThreads = ref.watch(directMessageThreadsProvider);
     final blockedUserIds = ref.watch(blockedUserIdsProvider);
-    final requests = requestThreads
-        .map((thread) => _threadByIdOrHandle(liveThreads, thread.id))
-        .whereType<DirectMessageThread>()
+    final requests = liveThreads
         .where(
           (thread) =>
               !thread.requestAccepted &&
@@ -2337,36 +2505,41 @@ class _MessageRequestsPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Requests')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-        children: [
-          Text(
-            'Messages from people you don’t follow yet.',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 16),
-          if (requests.isEmpty)
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(18),
-                child: Text('No message requests right now.'),
-              ),
-            )
-          else
-            ...requests.map(
-              (thread) => _MessageThreadTile(
-                thread: thread,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => _DirectChatPage(
-                      threadId: thread.id,
-                      showRequestActions: true,
+      body: FeedRefreshIndicator(
+        onRefresh: () =>
+            ref.read(directMessageThreadsProvider.notifier).refresh(),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          children: [
+            Text(
+              'Messages from people you don’t follow yet.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 16),
+            if (requests.isEmpty)
+              const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(18),
+                  child: Text('No message requests right now.'),
+                ),
+              )
+            else
+              ...requests.map(
+                (thread) => _MessageThreadTile(
+                  thread: thread,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => _DirectChatPage(
+                        threadId: thread.id,
+                        showRequestActions: true,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -2387,6 +2560,9 @@ class DirectMessageThread {
     this.requestAccepted = false,
     this.requestDeclined = false,
     required this.messages,
+    this.avatarUrl,
+    this.premium = false,
+    this.updatedAt,
   });
 
   final String id;
@@ -2402,6 +2578,9 @@ class DirectMessageThread {
   final bool requestAccepted;
   final bool requestDeclined;
   final List<DirectChatMessage> messages;
+  final String? avatarUrl;
+  final bool premium;
+  final DateTime? updatedAt;
 
   DirectMessageThread copyWith({
     String? profileUserId,
@@ -2411,6 +2590,7 @@ class DirectMessageThread {
     bool? requestAccepted,
     bool? requestDeclined,
     List<DirectChatMessage>? messages,
+    DateTime? updatedAt,
   }) {
     return DirectMessageThread(
       id: id,
@@ -2426,6 +2606,9 @@ class DirectMessageThread {
       requestAccepted: requestAccepted ?? this.requestAccepted,
       requestDeclined: requestDeclined ?? this.requestDeclined,
       messages: messages ?? this.messages,
+      avatarUrl: avatarUrl,
+      premium: premium,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
@@ -2448,6 +2631,9 @@ class DirectMessageThread {
             (item) => DirectChatMessage.fromJson(item as Map<String, dynamic>),
           )
           .toList(),
+      avatarUrl: json['avatar_url'] as String?,
+      premium: json['premium'] as bool? ?? false,
+      updatedAt: DateTime.tryParse(json['updated_at'] as String? ?? ''),
     );
   }
 
@@ -2466,6 +2652,9 @@ class DirectMessageThread {
       'request_accepted': requestAccepted,
       'request_declined': requestDeclined,
       'messages': messages.map((message) => message.toJson()).toList(),
+      'avatar_url': avatarUrl,
+      'premium': premium,
+      'updated_at': updatedAt?.toIso8601String(),
     };
   }
 }
@@ -2488,6 +2677,9 @@ class DirectChatMessage {
     this.sharedPostSpotName,
     this.sharedPostType,
     this.sharedPostMediaUrl,
+    this.id,
+    this.senderUserId,
+    this.createdAt,
   });
 
   final String text;
@@ -2506,6 +2698,48 @@ class DirectChatMessage {
   final String? sharedPostSpotName;
   final String? sharedPostType;
   final String? sharedPostMediaUrl;
+  final String? id;
+  final String? senderUserId;
+  final String? createdAt;
+
+  factory DirectChatMessage.fromServer(
+    Map<String, dynamic> json,
+    String ownerId,
+  ) {
+    final id = json['id'];
+    final sender = json['sender_user_id'];
+    if (id is! String || id.isEmpty || sender is! String || sender.isEmpty) {
+      throw StateError('The message response was incomplete.');
+    }
+    final rawPost = json['shared_post'];
+    final post = rawPost is Map
+        ? SocialPostModel.fromJson(Map<String, dynamic>.from(rawPost))
+        : null;
+    return DirectChatMessage(
+      id: id,
+      senderUserId: sender,
+      createdAt: json['created_at'] as String?,
+      text: json['text'] as String? ?? '',
+      time: _messageTime(json['created_at'] as String?),
+      isMe: sender == ownerId,
+      sharedPostId: json['shared_post_id'] as String?,
+      sharedPostAuthorUserId: post?.userId,
+      sharedPostAuthor: post?.authorName,
+      sharedPostAuthorHandle: post?.authorHandle,
+      sharedPostAuthorAvatarUrl: post?.authorAvatarUrl,
+      sharedPostAuthorPremium: post?.authorPremium ?? false,
+      sharedPostBody:
+          post?.body ??
+          (json['shared_post_id'] != null
+              ? 'This post is no longer available.'
+              : null),
+      sharedPostSpotId: post?.spotId,
+      sharedPostType: post == null
+          ? null
+          : (post.postType == 'general' ? 'post' : 'event'),
+      sharedPostMediaUrl: post == null ? null : _sharedPostMediaUrl(post),
+    );
+  }
 
   factory DirectChatMessage.fromJson(Map<String, dynamic> json) {
     return DirectChatMessage(
@@ -2527,6 +2761,9 @@ class DirectChatMessage {
       sharedPostSpotName: json['shared_post_spot_name'] as String?,
       sharedPostType: json['shared_post_type'] as String?,
       sharedPostMediaUrl: json['shared_post_media_url'] as String?,
+      id: json['id'] as String?,
+      senderUserId: json['sender_user_id'] as String?,
+      createdAt: json['created_at'] as String?,
     );
   }
 
@@ -2535,6 +2772,9 @@ class DirectChatMessage {
       'text': text,
       'time': time,
       'is_me': isMe,
+      'id': id,
+      'sender_user_id': senderUserId,
+      'created_at': createdAt,
       if (mediaPath != null) 'media_path': mediaPath,
       if (mediaType != null) 'media_type': mediaType,
       if (sharedPostId != null) 'shared_post_id': sharedPostId,
@@ -2569,18 +2809,3 @@ String? _sharedPostMediaUrl(SocialPostModel post) {
 }
 
 const _messageableProfiles = <PublicProfilePreview>[];
-
-const _seedThreads = <DirectMessageThread>[];
-
-const _demoIncomingMessages = <String, List<DirectChatMessage>>{};
-
-const _legacyDemoThreadIds = {
-  'ari',
-  'lina',
-  'kai',
-  'jo',
-  'maya',
-  'tarasets',
-  'reefmilo',
-  'ellatide',
-};

@@ -10,6 +10,9 @@ import '../../core/network/surf_repository.dart';
 import '../home/home_page.dart';
 import '../alerts/alert_state.dart';
 import '../social/social_profile.dart';
+import '../social/direct_messages_page.dart';
+import '../social/notifications_page.dart';
+import '../social/inbox_badges.dart';
 import '../spots/spot_detail_page.dart';
 import '../spots/spots_page.dart';
 import 'google_sign_in_button.dart';
@@ -80,6 +83,10 @@ class _AuthPageState extends ConsumerState<AuthPage> {
   }
 
   void _refreshAfterAuth() {
+    ref.read(inboxForegroundAccountProvider.notifier).state = null;
+    ref.invalidate(inboxUnreadCountsProvider);
+    ref.invalidate(directMessageThreadsProvider);
+    ref.invalidate(socialNotificationsProvider);
     ref.invalidate(alertsProvider);
     ref.invalidate(authStateProvider);
     ref.invalidate(meProvider);

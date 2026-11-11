@@ -2180,16 +2180,37 @@ class _SharePostSheetState extends ConsumerState<_SharePostSheet> {
     return _noteControllers.putIfAbsent(threadId, TextEditingController.new);
   }
 
-  void _sendToThread(DirectMessageThread thread) {
-    ref
-        .read(directMessageThreadsProvider.notifier)
-        .sendSharedPost(
-          threadId: thread.id,
-          post: widget.post,
-          spotName: widget.spot?.name,
-          note: _noteControllerFor(thread.id).text,
-        );
-    setState(() => _sentThreadIds.add(thread.id));
+  final Set<String> _sendingThreadIds = {};
+
+  Future<void> _sendToThread(DirectMessageThread thread) async {
+    if (_sendingThreadIds.contains(thread.id) ||
+        _sentThreadIds.contains(thread.id)) {
+      return;
+    }
+    setState(() => _sendingThreadIds.add(thread.id));
+    try {
+      await ref
+          .read(directMessageThreadsProvider.notifier)
+          .sendSharedPost(
+            threadId: thread.id,
+            post: widget.post,
+            spotName: widget.spot?.name,
+            note: _noteControllerFor(thread.id).text,
+          );
+      if (!mounted) return;
+      setState(() => _sentThreadIds.add(thread.id));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not send post. ${error.toString().replaceFirst('Bad state: ', '')}',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _sendingThreadIds.remove(thread.id));
+    }
   }
 }
 

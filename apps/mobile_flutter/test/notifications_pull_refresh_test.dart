@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,8 +9,24 @@ import 'package:mobile_flutter/core/network/api_models.dart';
 import 'package:mobile_flutter/core/theme/app_theme.dart';
 import 'package:mobile_flutter/features/home/home_page.dart';
 import 'package:mobile_flutter/features/social/notifications_page.dart';
+import 'package:mobile_flutter/features/social/inbox_badges.dart';
+import 'package:mobile_flutter/features/social/notification_read_state.dart';
 
 final _spinner = find.byKey(const ValueKey('feed-top-refresh-spinner'));
+
+class _QuietReadApi extends NotificationReadApi {
+  _QuietReadApi() : super(Dio());
+
+  @override
+  Future<NotificationReadReceipt> markRead({
+    required String accountId,
+    required Set<String> notificationIds,
+  }) async => NotificationReadReceipt(
+    accountId: accountId,
+    readIds: notificationIds,
+    unreadCount: 0,
+  );
+}
 
 SocialNotificationModel _item(String id, String preview) =>
     SocialNotificationModel.fromJson({
@@ -37,6 +54,8 @@ Future<ProviderContainer> _show(
   final container = ProviderContainer(
     overrides: [
       socialNotificationsProvider.overrideWith((_) => read()),
+      inboxForegroundAccountProvider.overrideWith((_) => 'viewer'),
+      notificationReadApiProvider.overrideWithValue(_QuietReadApi()),
       meProvider.overrideWith(
         (_) => throw StateError('No account refresh allowed'),
       ),

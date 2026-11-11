@@ -8,6 +8,8 @@ import 'package:mobile_flutter/core/network/demo_persistence.dart';
 import 'package:mobile_flutter/core/network/surf_repository.dart';
 import 'package:mobile_flutter/core/theme/app_theme.dart';
 import 'package:mobile_flutter/features/social/direct_messages_page.dart';
+import 'package:mobile_flutter/features/social/inbox_badges.dart';
+import 'package:mobile_flutter/features/social/notification_read_state.dart';
 import 'package:mobile_flutter/features/social/notifications_page.dart';
 import 'package:mobile_flutter/features/social/social_profile.dart';
 
@@ -16,6 +18,14 @@ void main() {
   runApp(
     ProviderScope(
       overrides: [
+        dioProvider.overrideWithValue(_blockedApi()),
+        inboxForegroundAccountProvider.overrideWith((_) => 'sample-me'),
+        notificationReadApiProvider.overrideWithValue(_PreviewReadApi()),
+        directMessageThreadsProvider.overrideWith(
+          (_) => DirectMessageThreadsNotifier.testing(
+            persistence.rows.map(DirectMessageThread.fromJson).toList(),
+          ),
+        ),
         demoPersistenceProvider.overrideWithValue(persistence),
         surfRepositoryProvider.overrideWithValue(
           _PreviewRepository(persistence),
@@ -36,6 +46,20 @@ void main() {
       ],
       child: const _Preview(),
     ),
+  );
+}
+
+class _PreviewReadApi extends NotificationReadApi {
+  _PreviewReadApi() : super(_blockedApi());
+
+  @override
+  Future<NotificationReadReceipt> markRead({
+    required String accountId,
+    required Set<String> notificationIds,
+  }) async => NotificationReadReceipt(
+    accountId: accountId,
+    readIds: notificationIds,
+    unreadCount: 0,
   );
 }
 

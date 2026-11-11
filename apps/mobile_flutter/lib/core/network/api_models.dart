@@ -1152,6 +1152,7 @@ class SocialNotificationModel {
     required this.postId,
     required this.preview,
     required this.createdAt,
+    this.readAt,
   });
 
   final String id;
@@ -1166,6 +1167,7 @@ class SocialNotificationModel {
   final String? postId;
   final String? preview;
   final String createdAt;
+  final String? readAt;
 
   factory SocialNotificationModel.fromJson(Map<String, dynamic> json) =>
       SocialNotificationModel(
@@ -1181,6 +1183,7 @@ class SocialNotificationModel {
         postId: json['post_id'] as String?,
         preview: json['preview'] as String?,
         createdAt: json['created_at'] as String,
+        readAt: json['read_at'] as String?,
       );
 }
 

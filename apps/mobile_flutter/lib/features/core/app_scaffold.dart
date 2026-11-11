@@ -8,6 +8,7 @@ import '../../core/l10n/app_strings.dart';
 import '../../core/network/api_models.dart';
 import '../home/home_page.dart';
 import '../social/social_profile.dart';
+import '../social/inbox_badges.dart';
 import '../alerts/alerts_page.dart';
 import '../settings/settings_page.dart';
 import '../spots/spots_map_page.dart';
@@ -73,6 +74,7 @@ class _AppScaffoldState extends ConsumerState<AppScaffold>
     }
 
     final tab = ref.watch(currentTabProvider);
+    final unreadInboxCount = watchInboxCounts(ref, profile.id).total;
     final pages = ref.watch(shellPagesProvider);
     ref.watch(socialRelationshipHydrationProvider);
     final strings = AppStrings.of(context);
@@ -93,6 +95,7 @@ class _AppScaffoldState extends ConsumerState<AppScaffold>
               children: [
                 _DesktopNavigation(
                   selectedIndex: tab,
+                  unreadInboxCount: unreadInboxCount,
                   strings: strings,
                   onDestinationSelected: (index) =>
                       ref.read(currentTabProvider.notifier).state = index,
@@ -135,8 +138,14 @@ class _AppScaffoldState extends ConsumerState<AppScaffold>
                 label: strings.alerts,
               ),
               NavigationDestination(
-                icon: const Icon(Icons.person_outline),
-                selectedIcon: const Icon(Icons.person),
+                icon: InboxUnreadBadge(
+                  count: unreadInboxCount,
+                  child: const Icon(Icons.person_outline),
+                ),
+                selectedIcon: InboxUnreadBadge(
+                  count: unreadInboxCount,
+                  child: const Icon(Icons.person),
+                ),
                 label: strings.profile,
               ),
             ],
@@ -150,11 +159,13 @@ class _AppScaffoldState extends ConsumerState<AppScaffold>
 class _DesktopNavigation extends StatelessWidget {
   const _DesktopNavigation({
     required this.selectedIndex,
+    required this.unreadInboxCount,
     required this.strings,
     required this.onDestinationSelected,
   });
 
   final int selectedIndex;
+  final int unreadInboxCount;
   final AppStrings strings;
   final ValueChanged<int> onDestinationSelected;
 
@@ -224,8 +235,14 @@ class _DesktopNavigation extends StatelessWidget {
           label: Text(strings.alerts),
         ),
         NavigationRailDestination(
-          icon: const Icon(Icons.person_outline),
-          selectedIcon: const Icon(Icons.person),
+          icon: InboxUnreadBadge(
+            count: unreadInboxCount,
+            child: const Icon(Icons.person_outline),
+          ),
+          selectedIcon: InboxUnreadBadge(
+            count: unreadInboxCount,
+            child: const Icon(Icons.person),
+          ),
           label: Text(strings.profile),
         ),
       ],

@@ -5,23 +5,117 @@ import 'package:go_router/go_router.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../../core/widgets/feed_refresh_indicator.dart';
+import 'inbox_badges.dart';
+import 'notification_read_state.dart';
 import 'social_profile.dart';
 
-final socialNotificationsProvider = FutureProvider((ref) {
-  return ref.watch(surfRepositoryProvider).fetchSocialNotifications();
+final socialNotificationsProvider = FutureProvider((ref) async {
+  final accountId = ref.watch(inboxForegroundAccountProvider);
+  if (accountId == null) return const <SocialNotificationModel>[];
+  final items = await ref
+      .watch(surfRepositoryProvider)
+      .fetchSocialNotifications();
+  return items.where((item) => item.recipientUserId == accountId).toList();
 });
 
-class SocialNotificationsPage extends ConsumerWidget {
+class SocialNotificationsPage extends ConsumerStatefulWidget {
   const SocialNotificationsPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SocialNotificationsPage> createState() =>
+      _SocialNotificationsPageState();
+}
+
+class _SocialNotificationsPageState
+    extends ConsumerState<SocialNotificationsPage> {
+  String? _readAccount;
+  final Set<String> _confirmedReadIds = {};
+  final Set<String> _pendingReadIds = {};
+  String? _markReadError;
+
+  void _scheduleRead(String? accountId, List<SocialNotificationModel> items) {
+    if (_readAccount != accountId) {
+      _readAccount = accountId;
+      _confirmedReadIds.clear();
+      _pendingReadIds.clear();
+      _markReadError = null;
+    }
+    if (accountId == null ||
+        _markReadError != null ||
+        ModalRoute.of(context)?.isCurrent != true) {
+      return;
+    }
+    final ids = items
+        .where(
+          (item) =>
+              item.recipientUserId == accountId &&
+              item.readAt == null &&
+              !_confirmedReadIds.contains(item.id) &&
+              !_pendingReadIds.contains(item.id),
+        )
+        .map((item) => item.id)
+        .toSet();
+    if (ids.isEmpty) return;
+    _pendingReadIds.addAll(ids);
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _markRead(accountId, ids),
+    );
+  }
+
+  Future<void> _markRead(String accountId, Set<String> ids) async {
+    if (!mounted ||
+        ref.read(inboxForegroundAccountProvider) != accountId ||
+        ModalRoute.of(context)?.isCurrent != true) {
+      if (_readAccount == accountId) _pendingReadIds.removeAll(ids);
+      return;
+    }
+    try {
+      final receipt = await ref
+          .read(notificationReadApiProvider)
+          .markRead(accountId: accountId, notificationIds: ids);
+      if (!mounted ||
+          ref.read(inboxForegroundAccountProvider) != accountId ||
+          _readAccount != accountId) {
+        return;
+      }
+      _confirmedReadIds.addAll(receipt.readIds);
+      // An acknowledgement, not opening the page, refreshes the server badge.
+      ref.read(inboxCountsRefreshKeyProvider.notifier).state++;
+      if (!receipt.readIds.containsAll(ids)) {
+        setState(
+          () => _markReadError =
+              'Some notification read updates could not be confirmed.',
+        );
+      }
+    } catch (_) {
+      if (!mounted ||
+          ref.read(inboxForegroundAccountProvider) != accountId ||
+          _readAccount != accountId) {
+        return;
+      }
+      setState(
+        () => _markReadError = 'Could not update notification read status.',
+      );
+    } finally {
+      if (_readAccount == accountId) _pendingReadIds.removeAll(ids);
+    }
+  }
+
+  Future<void> _refresh() async {
+    if (_markReadError != null) setState(() => _markReadError = null);
+    final pending = ref.refresh(socialNotificationsProvider.future);
+    await pending;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accountId = ref.watch(inboxForegroundAccountProvider);
     final notifications = ref.watch(socialNotificationsProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Notifications')),
       body: FeedRefreshIndicator(
-        onRefresh: () => ref.refresh(socialNotificationsProvider.future),
+        onRefresh: _refresh,
         child: notifications.when(
           skipLoadingOnRefresh: true,
           skipError: notifications.hasValue,
@@ -30,7 +124,13 @@ class SocialNotificationsPage extends ConsumerWidget {
             title: 'Could not load notifications.',
             body: 'Pull down to try again.',
           ),
-          data: (items) {
+          data: (loaded) {
+            // AsyncValue may retain the previous account's list during reload.
+            // Never render or mark that account's private notifications.
+            final items = loaded
+                .where((item) => item.recipientUserId == accountId)
+                .toList();
+            _scheduleRead(accountId, items);
             if (items.isEmpty) {
               return const _NotificationsMessage(
                 title: 'No notifications yet.',
@@ -42,9 +142,24 @@ class SocialNotificationsPage extends ConsumerWidget {
               key: const PageStorageKey('notifications-list'),
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-              itemCount: items.length,
+              itemCount: items.length + (_markReadError == null ? 0 : 1),
               separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
+                if (_markReadError != null) {
+                  if (index == 0) {
+                    return Card(
+                      child: ListTile(
+                        title: Text(_markReadError!),
+                        trailing: TextButton(
+                          onPressed: () =>
+                              setState(() => _markReadError = null),
+                          child: const Text('Retry'),
+                        ),
+                      ),
+                    );
+                  }
+                  index--;
+                }
                 final item = _notificationFromModel(items[index]);
                 return _NotificationTile(
                   key: ValueKey(items[index].id),

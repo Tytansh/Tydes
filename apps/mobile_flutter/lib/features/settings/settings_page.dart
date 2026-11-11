@@ -19,6 +19,7 @@ import '../home/home_page.dart';
 import '../alerts/alert_state.dart';
 import '../social/direct_messages_page.dart';
 import '../social/notifications_page.dart';
+import '../social/inbox_badges.dart';
 import '../social/social_feed.dart';
 import '../social/social_profile.dart';
 import '../spots/spot_detail_page.dart';
@@ -39,8 +40,6 @@ final blockedSocialProfilesProvider = FutureProvider((ref) {
   ref.watch(blockedUserIdsProvider);
   return ref.watch(surfRepositoryProvider).fetchBlockedSocialProfiles();
 });
-
-final unreadSocialNotificationsProvider = StateProvider<int>((ref) => 0);
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -103,6 +102,10 @@ class SettingsPage extends ConsumerWidget {
         onLogout: () async {
           await ref.read(surfRepositoryProvider).logout();
           await ref.read(revenueCatServiceProvider).logOut();
+          ref.read(inboxForegroundAccountProvider.notifier).state = null;
+          ref.invalidate(inboxUnreadCountsProvider);
+          ref.invalidate(directMessageThreadsProvider);
+          ref.invalidate(socialNotificationsProvider);
           ref.invalidate(alertsProvider);
           ref.invalidate(meProvider);
           ref.invalidate(dashboardProvider);
@@ -156,6 +159,10 @@ class SettingsPage extends ConsumerWidget {
             return;
           }
           await ref.read(revenueCatServiceProvider).logOut();
+          ref.read(inboxForegroundAccountProvider.notifier).state = null;
+          ref.invalidate(inboxUnreadCountsProvider);
+          ref.invalidate(directMessageThreadsProvider);
+          ref.invalidate(socialNotificationsProvider);
           ref.invalidate(alertsProvider);
           ref.invalidate(meProvider);
           ref.invalidate(dashboardProvider);
@@ -201,10 +208,7 @@ class SettingsPage extends ConsumerWidget {
     final blockedUserIds = ref.watch(blockedUserIdsProvider);
     final hiddenFollowingUserIds = ref.watch(hiddenFollowingUserIdsProvider);
     final hiddenFollowerUserIds = ref.watch(hiddenFollowerUserIdsProvider);
-    final unreadMessageThreads = ref.watch(
-      unreadDirectMessageThreadCountProvider,
-    );
-    final unreadNotifications = ref.watch(unreadSocialNotificationsProvider);
+    final inboxCounts = watchInboxCounts(ref, me.valueOrNull?.id);
     final visibleRepostedPostIds = ref.watch(visibleRepostedPostIdsProvider);
     final visibleRepostActivityTimes = ref.watch(
       visibleRepostActivityTimesProvider,
@@ -256,12 +260,10 @@ class SettingsPage extends ConsumerWidget {
                 onMessagesPressed: () => context.push('/messages'),
                 onNotificationsPressed: () {
                   ref.invalidate(socialNotificationsProvider);
-                  ref.read(unreadSocialNotificationsProvider.notifier).state =
-                      0;
                   context.push('/notifications');
                 },
-                unreadMessageThreads: unreadMessageThreads,
-                unreadNotifications: unreadNotifications,
+                unreadMessageThreads: inboxCounts.messages,
+                unreadNotifications: inboxCounts.notifications,
               ),
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (error, _) => _SignedOutProfileCard(
@@ -615,43 +617,18 @@ class _ProfileHeroIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        IconButton(
-          onPressed: onPressed,
-          tooltip: tooltip,
-          style: IconButton.styleFrom(
-            backgroundColor: Colors.white.withValues(alpha: 0.14),
-            foregroundColor: Colors.white,
-            side: BorderSide(color: Colors.white.withValues(alpha: 0.24)),
-          ),
-          icon: Icon(icon),
+    return InboxUnreadBadge(
+      count: badgeCount ?? 0,
+      child: IconButton(
+        onPressed: onPressed,
+        tooltip: tooltip,
+        style: IconButton.styleFrom(
+          backgroundColor: Colors.white.withValues(alpha: 0.14),
+          foregroundColor: Colors.white,
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.24)),
         ),
-        if (badgeCount != null && badgeCount! > 0)
-          Positioned(
-            top: -2,
-            right: -2,
-            child: Container(
-              width: 18,
-              height: 18,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 1.5),
-              ),
-              child: Text(
-                badgeCount!.toString(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-          ),
-      ],
+        icon: Icon(icon),
+      ),
     );
   }
 }

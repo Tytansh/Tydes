@@ -140,7 +140,12 @@ void main() {
       final repository = _Repository();
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [surfRepositoryProvider.overrideWithValue(repository)],
+          overrides: [
+            surfRepositoryProvider.overrideWithValue(repository),
+            directMessageThreadsProvider.overrideWith(
+              (_) => DirectMessageThreadsNotifier.testing([]),
+            ),
+          ],
           child: const MaterialApp(home: DirectMessagesPage()),
         ),
       );

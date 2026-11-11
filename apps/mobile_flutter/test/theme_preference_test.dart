@@ -218,7 +218,10 @@ void main() {
             appRouterProvider.overrideWithValue(router),
             initialThemeModeProvider.overrideWithValue(ThemeMode.dark),
           ],
-          child: const SurfTravelApp(enableAlertMonitor: false),
+          child: const SurfTravelApp(
+            enableAlertMonitor: false,
+            enableInboxPolling: false,
+          ),
         ),
       );
       await tester.pumpAndSettle();
