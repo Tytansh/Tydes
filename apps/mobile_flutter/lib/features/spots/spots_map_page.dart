@@ -110,19 +110,11 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
             }
           }
 
-          if (items.isEmpty) {
-            return Center(
-              child: Text(
-                _savedOnly
-                    ? 'No saved spots to show on the map yet.'
-                    : 'No spots available yet.',
-              ),
-            );
-          }
-
           const profileForecastBySpotId = <String, ForecastModel?>{};
+          // Saved-only filters beach pins, not event discovery or the location
+          // catalogue. Events still need every spot to resolve their position.
           final locationSpots = _visibleSpotsFor(
-            sourceItems,
+            items,
             profileForecastBySpotId,
             applySearch: false,
           );
@@ -139,14 +131,23 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
           final eventSpotIds = eventGroups
               .map((group) => group.spot.id)
               .toSet();
-          final displayedVisibleSpots = locationSpots
-              .where(
-                (spot) =>
-                    _searchQuery.isEmpty ||
-                    _matchesSpot(spot, _searchQuery, profileForecastBySpotId) ||
-                    eventSpotIds.contains(spot.id),
-              )
-              .toList();
+          final displayedVisibleSpots =
+              _visibleSpotsFor(
+                    sourceItems,
+                    profileForecastBySpotId,
+                    applySearch: false,
+                  )
+                  .where(
+                    (spot) =>
+                        _searchQuery.isEmpty ||
+                        _matchesSpot(
+                          spot,
+                          _searchQuery,
+                          profileForecastBySpotId,
+                        ) ||
+                        eventSpotIds.contains(spot.id),
+                  )
+                  .toList();
           final selectedSpot =
               displayedVisibleSpots
                   .where((spot) => spot.id == _selectedSpotId)
@@ -260,7 +261,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                     ),
                     const SizedBox(height: 10),
                     _LocationPickerField(
-                      sourceItems: sourceItems,
+                      sourceItems: items,
                       forecastBySpotId: profileForecastBySpotId,
                       favoriteSpotIds: favoriteSpotIds,
                       selectedCountry: _selectedCountry,
@@ -276,7 +277,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                         });
                         WidgetsBinding.instance.addPostFrameCallback((_) {
                           final nextVisible = _visibleSpotsFor(
-                            sourceItems,
+                            items,
                             profileForecastBySpotId,
                             applySearch: false,
                           );
@@ -315,7 +316,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                                 _mapBackLabel != 'Back to full map')
                               OutlinedButton.icon(
                                 onPressed: () => _stepBackOnMap(
-                                  sourceItems,
+                                  items,
                                   profileForecastBySpotId,
                                 ),
                                 icon: const Icon(
@@ -364,13 +365,17 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                   child: Card(
                     child: Padding(
                       padding: const EdgeInsets.all(18),
-                      child: const Text(
-                        'No spots match that search in this location. Try another break, another area, or clear the search.',
+                      child: Text(
+                        _savedOnly && favoriteSpotIds.isEmpty
+                            ? 'No saved spots yet. Save a break to see its pin here. Events are shown separately when Show events is on.'
+                            : _savedOnly
+                            ? 'No saved spots match this location or search. Events are shown separately when Show events is on.'
+                            : 'No spots match that search in this location. Try another break, another area, or clear the search.',
                       ),
                     ),
                   ),
-                )
-              else ...[
+                ),
+              ...[
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
                   child: Text(
@@ -379,12 +384,13 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                   ),
                 ),
                 Padding(
+                  key: const ValueKey('main-map-frame'),
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: _ResponsiveMapFrame(
                     child: _MapCanvas(
                       mapController: _mapController,
                       spots: displayedVisibleSpots,
-                      initialCenter: _centerOf(displayedVisibleSpots),
+                      initialCenter: _centerOf(locationSpots),
                       initialZoom:
                           _selectedCountry == _allCountriesLabel &&
                               _selectedRegion == _allRegionsLabel &&
@@ -501,7 +507,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                             context.push('/spot/${selectedSpot.id}'),
                       ),
                     )
-                  else
+                  else if (displayedVisibleSpots.isNotEmpty)
                     const Padding(
                       padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
                       child: Card(
@@ -665,6 +671,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
   }
 
   LatLng _centerOf(List<SpotModel> spots) {
+    if (spots.isEmpty) return const LatLng(-8, 118);
     final lat =
         spots.map((spot) => spot.latitude).reduce((a, b) => a + b) /
         spots.length;
@@ -1160,15 +1167,19 @@ class _MapCanvas extends StatefulWidget {
 class _MapCanvasState extends State<_MapCanvas> {
   late final TileProvider _tiles = widget.tileProviderFactory();
 
-  CameraFit get _fit => CameraFit.bounds(
-    bounds: LatLngBounds.fromPoints(
-      widget.spots
-          .map((spot) => LatLng(spot.latitude, spot.longitude))
-          .toList(),
-    ),
-    padding: const EdgeInsets.all(48),
-    maxZoom: 11,
-  );
+  CameraFit? get _fit {
+    final points = [
+      for (final spot in widget.spots) LatLng(spot.latitude, spot.longitude),
+      for (final group in widget.eventGroups)
+        LatLng(group.spot.latitude, group.spot.longitude),
+    ];
+    if (points.isEmpty) return null;
+    return CameraFit.bounds(
+      bounds: LatLngBounds.fromPoints(points),
+      padding: const EdgeInsets.all(48),
+      maxZoom: 11,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

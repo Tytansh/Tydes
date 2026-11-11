@@ -36,6 +36,16 @@ class _Repository extends SurfRepository {
   int tideCalls = 0;
   int dailyCalls = 0;
   int oldWindowCalls = 0;
+  int alertCalls = 0;
+  List<AlertModel> alerts = [];
+  bool failAlerts = false;
+
+  @override
+  Future<List<AlertModel>> fetchAlerts() async {
+    alertCalls++;
+    if (failAlerts) throw StateError('Alert service unavailable.');
+    return alerts;
+  }
 
   @override
   Future<SpotModel> fetchSpot(String spotId) async => SpotModel(
@@ -154,6 +164,54 @@ Future<ProviderContainer> _show(
 }
 
 void main() {
+  testWidgets('spot page shows only this break\'s confirmed alerts', (
+    tester,
+  ) async {
+    final repo = _Repository(_user(premium: true));
+    final now = DateTime.now().toUtc();
+    AlertModel alert(String id, String spotId) => AlertModel(
+      id: id,
+      spotId: spotId,
+      waveEnabled: true,
+      minWaveHeightM: 1.5,
+      windEnabled: true,
+      maxWindKts: 12,
+      tideEnabled: false,
+      tideType: null,
+      tideOffsetHours: null,
+      enabled: true,
+      status: 'triggered',
+      lastEvaluatedAt: now.toIso8601String(),
+      nextCheckAt: now.add(const Duration(hours: 4)).toIso8601String(),
+    );
+    repo.alerts = [alert('here', 'uluwatu'), alert('elsewhere', 'bondi')];
+    await _show(tester, repo);
+    await tester.ensureVisible(find.byKey(const ValueKey('spot-alert-panel')));
+    expect(find.text('Your surf alert'), findsOneWidget);
+    expect(find.text('Surf alert matched'), findsOneWidget);
+    expect(find.text('Manage alerts'), findsOneWidget);
+    expect(repo.alertCalls, 1);
+    expect(repo.detailCalls, 1);
+    expect(repo.tideCalls, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('failed alert status does not hide a working forecast', (
+    tester,
+  ) async {
+    final repo = _Repository(_user(premium: true))..failAlerts = true;
+    await _show(tester, repo);
+    expect(find.text('Alert status unavailable'), findsOneWidget);
+    expect(find.text('FORECAST DESK'), findsOneWidget);
+    repo.failAlerts = false;
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+    expect(find.text('Alert status unavailable'), findsNothing);
+    expect(repo.alertCalls, 2);
+    expect(repo.detailCalls, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('dark forecast page and locked card use readable dark surfaces', (
     tester,
   ) async {

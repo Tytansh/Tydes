@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/router.dart' show currentTabProvider;
 import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/detailed_forecast_models.dart';
@@ -11,6 +12,7 @@ import '../auth/auth_return_path.dart';
 import '../home/home_page.dart';
 import '../public_previews/public_link_button.dart';
 import 'pro_forecast_panel.dart';
+import 'spot_alert_panel.dart';
 import 'spots_page.dart';
 
 const _favoriteAccent = Color(0xFF2AA7A1);
@@ -169,6 +171,14 @@ class SpotDetailPage extends ConsumerWidget {
               children: [
                 _SpotHero(spot: bundle.spot),
                 const SizedBox(height: 16),
+                if (profile != null)
+                  SpotAlertPanel(
+                    spotId: spotId,
+                    onManage: () {
+                      ref.read(currentTabProvider.notifier).state = 3;
+                      context.go('/');
+                    },
+                  ),
                 if (profile != null && !profile.premium) ...[
                   _ForecastUnlockCard(
                     profile: profile,

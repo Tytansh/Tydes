@@ -92,6 +92,7 @@ Future<ProviderContainer> _pump(
   List<String>? forecasts,
   String? initialSpotId,
   ThemeData? theme,
+  List<SpotModel>? spots,
 }) async {
   tester.view.physicalSize = Size(width, 1100);
   tester.view.devicePixelRatio = 1;
@@ -100,7 +101,7 @@ Future<ProviderContainer> _pump(
   final container = ProviderContainer(
     overrides: [
       surfRepositoryProvider.overrideWithValue(repository),
-      spotsProvider.overrideWith((_) async => _spots),
+      spotsProvider.overrideWith((_) async => spots ?? _spots),
       meProvider.overrideWith((_) async => DemoSeed.me.copyWith(id: 'viewer')),
       blockedUserIdsProvider.overrideWith((_) => {'blocked'}),
       spotsMapTileProviderFactory.overrideWithValue(() => _Tiles()),
@@ -213,7 +214,9 @@ void main() {
     });
   }
 
-  testWidgets('saved-only filters beaches and events together', (tester) async {
+  testWidgets('saved-only filters beaches independently of events', (
+    tester,
+  ) async {
     final container = await _pump(tester, _Repository());
     container.read(favoriteSpotIdsProvider.notifier).replaceAll({'batu'});
     await tester.tap(find.byKey(const ValueKey('main-map-saved-only')));
@@ -223,7 +226,7 @@ void main() {
     expect(find.byKey(const ValueKey('map-event-marker-batu')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('map-event-marker-uluwatu')),
-      findsNothing,
+      findsOneWidget,
     );
     await tester.tap(find.byKey(const ValueKey('main-map-show-events')));
     await tester.pumpAndSettle();
@@ -234,6 +237,107 @@ void main() {
           .value,
       isTrue,
     );
+    expect(tester.takeException(), isNull);
+    await _finish(tester, container);
+  });
+
+  for (final width in [390.0, 1440.0]) {
+    for (final dark in [false, true]) {
+      testWidgets(
+        'no saved beaches keeps map and independent events at $width dark=$dark',
+        (tester) async {
+          final repository = _Repository();
+          final forecasts = <String>[];
+          final container = await _pump(
+            tester,
+            repository,
+            width: width,
+            forecasts: forecasts,
+            theme: dark
+                ? ThemeData.dark(useMaterial3: true)
+                : ThemeData.light(),
+          );
+          container.read(favoriteSpotIdsProvider.notifier).replaceAll({});
+          final mapState = tester.state(find.byType(FlutterMap));
+          final map = tester.widget<FlutterMap>(find.byType(FlutterMap));
+          final center = map.mapController!.camera.center;
+          final zoom = map.mapController!.camera.zoom;
+          await tester.tap(find.byKey(const ValueKey('main-map-saved-only')));
+          await tester.pumpAndSettle();
+          expect(find.byType(FlutterMap), findsOneWidget);
+          expect(tester.state(find.byType(FlutterMap)), same(mapState));
+          expect(map.mapController!.camera.center, center);
+          expect(map.mapController!.camera.zoom, zoom);
+          expect(find.byType(SurfMapSpotPin), findsNothing);
+          expect(find.byType(MapEventMarker), findsNWidgets(2));
+          expect(find.textContaining('No saved spots yet.'), findsOneWidget);
+          final eventToggle = find.byKey(
+            const ValueKey('main-map-show-events'),
+          );
+          await tester.tap(eventToggle);
+          await tester.pumpAndSettle();
+          expect(find.byType(FlutterMap), findsOneWidget);
+          expect(find.byType(MapEventMarker), findsNothing);
+          expect(find.byType(SurfMapSpotPin), findsNothing);
+          await tester.tap(eventToggle);
+          await tester.pumpAndSettle();
+          expect(find.byType(MapEventMarker), findsNWidgets(2));
+          expect(repository.eventLoads, 1);
+          expect(forecasts, isEmpty);
+          expect(tester.takeException(), isNull);
+          await _finish(tester, container);
+        },
+      );
+    }
+  }
+
+  testWidgets('saved-only has full location catalogue and search for events', (
+    tester,
+  ) async {
+    final container = await _pump(tester, _Repository());
+    container.read(favoriteSpotIdsProvider.notifier).replaceAll({});
+    await tester.tap(find.byKey(const ValueKey('main-map-saved-only')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find
+          .ancestor(of: find.text('Location'), matching: find.byType(InkWell))
+          .first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Indonesia').last);
+    await tester.pumpAndSettle();
+    expect(find.text('See all Indonesia'), findsOneWidget);
+    await tester.tap(find.text('Bali').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('See all Bali'));
+    await tester.pumpAndSettle();
+    expect(find.byType(FlutterMap), findsOneWidget);
+    expect(find.byType(MapEventMarker), findsNWidgets(2));
+    expect(find.byType(SurfMapSpotPin), findsNothing);
+    await tester.enterText(find.byType(TextField), 'Uluwatu');
+    await tester.pumpAndSettle();
+    expect(find.byType(MapEventMarker), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('map-event-marker-uluwatu')),
+      findsOneWidget,
+    );
+    expect(find.byType(SurfMapSpotPin), findsNothing);
+    await tester.enterText(find.byType(TextField), 'no matching event');
+    await tester.pumpAndSettle();
+    expect(find.byType(FlutterMap), findsOneWidget);
+    expect(find.byType(MapEventMarker), findsNothing);
+    expect(tester.takeException(), isNull);
+    await _finish(tester, container);
+  });
+
+  testWidgets('empty catalogue still displays a usable empty map', (
+    tester,
+  ) async {
+    final container = await _pump(tester, _Repository(), spots: []);
+    expect(find.byType(FlutterMap), findsOneWidget);
+    expect(find.byType(SurfMapSpotPin), findsNothing);
+    expect(find.byType(MapEventMarker), findsNothing);
+    expect(find.byKey(const ValueKey('main-map-show-events')), findsOneWidget);
     expect(tester.takeException(), isNull);
     await _finish(tester, container);
   });

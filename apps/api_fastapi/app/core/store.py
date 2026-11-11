@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import os
 import secrets
 from threading import RLock
@@ -2371,17 +2372,34 @@ class DemoStore:
 
         unmet: list[str] = []
         waiting: list[str] = []
-        forecast = next(iter(self.list_forecasts(alert.spot_id)), None)
+        forecast = (
+            next(iter(self.list_forecasts(alert.spot_id)), None)
+            if alert.wave_enabled or alert.wind_enabled
+            else None
+        )
+        # The regular spot cards may fall back to a static break-profile
+        # estimate during an outage or for a locked account. Those estimates
+        # must never activate an alert. The forecast must also be for today
+        # at the spot, rather than an expired or future daily row.
+        if forecast is not None and (
+            forecast.confidence != "live"
+            or forecast.source in {"estimated", "seed"}
+            or forecast.day != spot_local_date(spot)
+        ):
+            forecast = None
 
         if alert.wave_enabled:
             wave_value = None
             if forecast is not None:
-                wave_value = (
-                    forecast.wave_height_max_m
-                    or forecast.wave_height_m
-                    or forecast.wave_height_min_m
+                wave_value = next(
+                    (value for value in (
+                        forecast.wave_height_max_m,
+                        forecast.wave_height_m,
+                        forecast.wave_height_min_m,
+                    ) if value is not None),
+                    None,
                 )
-            if wave_value is None:
+            if wave_value is None or not math.isfinite(wave_value):
                 waiting.append("wave data")
             elif alert.min_wave_height_m is not None and wave_value < alert.min_wave_height_m:
                 unmet.append(f"wave below {alert.min_wave_height_m}m")
@@ -2389,12 +2407,15 @@ class DemoStore:
         if alert.wind_enabled:
             wind_value = None
             if forecast is not None:
-                wind_value = (
-                    forecast.wind_kts_max
-                    or forecast.wind_kts
-                    or forecast.wind_kts_min
+                wind_value = next(
+                    (value for value in (
+                        forecast.wind_kts_max,
+                        forecast.wind_kts,
+                        forecast.wind_kts_min,
+                    ) if value is not None),
+                    None,
                 )
-            if wind_value is None:
+            if wind_value is None or not math.isfinite(wind_value):
                 waiting.append("wind data")
             elif alert.max_wind_kts is not None and wind_value > alert.max_wind_kts:
                 unmet.append(f"wind above {alert.max_wind_kts}kts")
@@ -2428,6 +2449,9 @@ class DemoStore:
                         else:
                             unmet.append(f"not {abs(offset or 0)}h after {tide_label}")
 
+        if not (alert.wave_enabled or alert.wind_enabled or alert.tide_enabled):
+            waiting.append("an alert condition to be selected")
+
         if waiting:
             alert.status = "waiting"
             alert.status_reason = f"Waiting on {', '.join(waiting)}."
@@ -2436,7 +2460,10 @@ class DemoStore:
             alert.status_reason = "Watching: " + " • ".join(unmet)
         else:
             alert.status = "triggered"
-            alert.status_reason = "Conditions match your alert right now."
+            alert.status_reason = (
+                "Model forecast values match your alert settings at the last check. "
+                "This is forecast guidance, not an observation or safety rating."
+            )
             if previous_status != "triggered":
                 alert.last_triggered_at = now
 

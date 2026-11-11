@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import 'alert_state.dart';
+import 'alert_status.dart';
 import 'create_alert_sheet.dart';
 import '../spots/spots_page.dart';
 
@@ -22,6 +23,11 @@ class AlertsPage extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Alerts'),
         actions: [
+          IconButton(
+            tooltip: 'Refresh alerts',
+            onPressed: () => ref.invalidate(alertsProvider),
+            icon: const Icon(Icons.refresh),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: _AddAlertButton(
@@ -214,30 +220,20 @@ class _AlertRowState extends ConsumerState<_AlertRow> {
       child: Card(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(18, 14, 12, 14),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _AlertSpotButton(
+              Row(
+                children: [
+                  Expanded(
+                    child: _AlertSpotButton(
                       label: spot?.name ?? alert.spotId,
                       onPressed: spot == null
                           ? null
                           : () => context.push('/spot/${spot.id}'),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${_alertStatusLine(alert)}\n${_alertSummary(alert)}\nNext check ${_formatAlertTime(alert.nextCheckAt)}',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+                  ),
+                  const SizedBox(width: 8),
                   IconButton(
                     onPressed: _busy
                         ? null
@@ -271,13 +267,14 @@ class _AlertRowState extends ConsumerState<_AlertRow> {
                     value: alert.enabled,
                     onChanged: _busy ? null : _setEnabled,
                   ),
-                  if (_busy && !_editing)
-                    const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
                 ],
               ),
+              const SizedBox(height: 12),
+              AlertStatusBanner(alert: alert),
+              if (_busy && !_editing) ...[
+                const SizedBox(height: 10),
+                const LinearProgressIndicator(),
+              ],
             ],
           ),
         ),
@@ -348,58 +345,6 @@ class _AlertSpotButton extends StatelessWidget {
       ),
     );
   }
-}
-
-String _alertStatusLine(AlertModel alert) {
-  if (!alert.enabled) {
-    return 'Alert turned off';
-  }
-  switch (alert.status) {
-    case 'triggered':
-      return alert.statusReason ?? 'Conditions match right now';
-    case 'waiting':
-      return alert.statusReason ?? 'Waiting on live data';
-    case 'watching':
-    default:
-      return alert.statusReason ?? 'Watching conditions';
-  }
-}
-
-String _alertSummary(AlertModel alert) {
-  final parts = <String>[];
-  if (alert.waveEnabled && alert.minWaveHeightM != null) {
-    parts.add('Wave at least ${alert.minWaveHeightM}m');
-  }
-  if (alert.windEnabled && alert.maxWindKts != null) {
-    parts.add('Wind less than ${alert.maxWindKts}kts');
-  }
-  if (alert.tideEnabled &&
-      alert.tideType != null &&
-      alert.tideOffsetHours != null) {
-    final tideLabel = alert.tideType == 'high' ? 'high tide' : 'low tide';
-    final offset = alert.tideOffsetHours!;
-    if (offset == 0) {
-      parts.add('At $tideLabel');
-    } else if (offset < 0) {
-      parts.add('${offset.abs()}h before $tideLabel');
-    } else {
-      parts.add('${offset.abs()}h after $tideLabel');
-    }
-  }
-  if (parts.isEmpty) return 'Custom alert';
-  return parts.join(' • ');
-}
-
-String _formatAlertTime(String timestamp) {
-  final parsed = DateTime.tryParse(timestamp);
-  if (parsed == null) {
-    return timestamp;
-  }
-  final local = parsed.toLocal();
-  final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
-  final minute = local.minute.toString().padLeft(2, '0');
-  final period = local.hour >= 12 ? 'PM' : 'AM';
-  return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} $hour:$minute $period';
 }
 
 class _EmptyAlertsState extends StatelessWidget {
