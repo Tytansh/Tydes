@@ -386,7 +386,9 @@ class _Metric extends StatelessWidget {
     constraints: const BoxConstraints(minWidth: 118),
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
     decoration: BoxDecoration(
-      color: const Color(0xFFE4F7F5),
+      color: Theme.of(context).brightness == Brightness.dark
+          ? Theme.of(context).colorScheme.surfaceContainerHigh
+          : const Color(0xFFE4F7F5),
       borderRadius: BorderRadius.circular(18),
     ),
     child: Column(

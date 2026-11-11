@@ -125,6 +125,7 @@ Future<ProviderContainer> _show(
   WidgetTester tester,
   _Repository repository, {
   double width = 390,
+  ThemeData? theme,
 }) async {
   tester.view.physicalSize = Size(width, 1000);
   tester.view.devicePixelRatio = 1;
@@ -141,7 +142,7 @@ Future<ProviderContainer> _show(
         builder: (context) {
           container = ProviderScope.containerOf(context);
           return MaterialApp(
-            theme: AppTheme.light(),
+            theme: theme ?? AppTheme.light(),
             home: const SpotDetailPage(spotId: 'uluwatu'),
           );
         },
@@ -153,6 +154,48 @@ Future<ProviderContainer> _show(
 }
 
 void main() {
+  testWidgets('dark forecast page and locked card use readable dark surfaces', (
+    tester,
+  ) async {
+    final theme = ThemeData(
+      brightness: Brightness.dark,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: const Color(0xFF67D8CB),
+        brightness: Brightness.dark,
+      ),
+      cardColor: const Color(0xFF17292D),
+      scaffoldBackgroundColor: const Color(0xFF101C20),
+    );
+    await _show(tester, _Repository(_user()), theme: theme);
+    expect(
+      tester.widget<Scaffold>(find.byType(Scaffold).first).backgroundColor,
+      theme.scaffoldBackgroundColor,
+    );
+    final unlock = tester.widget<Container>(
+      find.byKey(const ValueKey('forecast-unlock-card')),
+    );
+    expect(
+      (unlock.decoration! as BoxDecoration).color,
+      theme.colorScheme.surfaceContainerHigh,
+    );
+    final title = tester.widget<Text>(
+      find.text('One break free. Every break with Premium.'),
+    );
+    expect(title.style!.color, theme.colorScheme.onSurface);
+    await tester.ensureVisible(find.text('BREAK GUIDE'));
+    await tester.pumpAndSettle();
+    final guide = tester.widget<Container>(
+      find
+          .ancestor(
+            of: find.text('BREAK GUIDE'),
+            matching: find.byType(Container),
+          )
+          .first,
+    );
+    expect((guide.decoration! as BoxDecoration).color, theme.cardColor);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'Premium spot page displays model desk, not seeded current readings or old scores',
     (tester) async {

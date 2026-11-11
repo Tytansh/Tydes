@@ -15,7 +15,9 @@ class AuthEntryLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ColoredBox(
-    color: const Color(0xFFF9FAF7),
+    color: Theme.of(context).brightness == Brightness.dark
+        ? Theme.of(context).scaffoldBackgroundColor
+        : const Color(0xFFF9FAF7),
     child: SafeArea(
       child: LayoutBuilder(
         builder: (context, size) {
@@ -35,14 +37,18 @@ class AuthEntryLayout extends StatelessWidget {
                       fontWeight: FontWeight.w800,
                       height: 1.2,
                       letterSpacing: -1.2,
-                      color: const Color(0xFF163340),
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Theme.of(context).colorScheme.onSurface
+                          : const Color(0xFF163340),
                     ),
                   ),
                   const SizedBox(height: 10),
                   Text(
                     subtitle,
-                    style: const TextStyle(
-                      color: Color(0xFF5A6F77),
+                    style: TextStyle(
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Theme.of(context).colorScheme.onSurfaceVariant
+                          : const Color(0xFF5A6F77),
                       fontSize: 15,
                       height: 1.45,
                     ),
@@ -238,26 +244,45 @@ class _AuthFormStyle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    const borderColor = Color(0xFFDDE5E5);
+    final dark = theme.brightness == Brightness.dark;
+    final borderColor = dark
+        ? theme.colorScheme.outlineVariant
+        : const Color(0xFFDDE5E5);
     final border = OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(color: borderColor),
+      borderSide: BorderSide(color: borderColor),
     );
     return Theme(
       data: theme.copyWith(
         textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(foregroundColor: const Color(0xFF087B88)),
+          style: TextButton.styleFrom(
+            foregroundColor: dark
+                ? theme.colorScheme.primary
+                : const Color(0xFF087B88),
+          ),
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: const Color(0xFFF4F7F6),
+          fillColor: dark
+              ? theme.colorScheme.surfaceContainerHigh
+              : const Color(0xFFF4F7F6),
           border: border,
           enabledBorder: border,
           focusedBorder: border.copyWith(
-            borderSide: const BorderSide(color: Color(0xFF168F99), width: 1.5),
+            borderSide: BorderSide(
+              color: dark ? theme.colorScheme.primary : const Color(0xFF168F99),
+              width: 1.5,
+            ),
           ),
-          labelStyle: const TextStyle(color: Color(0xFF5A6F77), fontSize: 14),
-          prefixIconColor: const Color(0xFF6A7D83),
+          labelStyle: TextStyle(
+            color: dark
+                ? theme.colorScheme.onSurfaceVariant
+                : const Color(0xFF5A6F77),
+            fontSize: 14,
+          ),
+          prefixIconColor: dark
+              ? theme.colorScheme.onSurfaceVariant
+              : const Color(0xFF6A7D83),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 17,

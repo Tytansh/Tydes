@@ -238,6 +238,9 @@ class _MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final dark = theme.brightness == Brightness.dark;
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -245,9 +248,15 @@ class _MessageBubble extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: mine ? const Color(0xFF087E7A) : Colors.white,
+          color: mine
+              ? (dark ? scheme.primary : const Color(0xFF087E7A))
+              : theme.cardColor,
           borderRadius: BorderRadius.circular(18),
-          border: mine ? null : Border.all(color: const Color(0xFFE0E2DC)),
+          border: mine
+              ? null
+              : Border.all(
+                  color: dark ? scheme.outlineVariant : const Color(0xFFE0E2DC),
+                ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -257,8 +266,8 @@ class _MessageBubble extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 3),
                 child: Text(
                   message.authorName,
-                  style: const TextStyle(
-                    color: Color(0xFF087E7A),
+                  style: TextStyle(
+                    color: dark ? scheme.primary : const Color(0xFF087E7A),
                     fontWeight: FontWeight.w800,
                     fontSize: 12,
                   ),
@@ -267,7 +276,9 @@ class _MessageBubble extends StatelessWidget {
             Text(
               message.text,
               style: TextStyle(
-                color: mine ? Colors.white : const Color(0xFF202725),
+                color: mine
+                    ? (dark ? scheme.onPrimary : Colors.white)
+                    : (dark ? scheme.onSurface : const Color(0xFF202725)),
                 height: 1.3,
               ),
             ),

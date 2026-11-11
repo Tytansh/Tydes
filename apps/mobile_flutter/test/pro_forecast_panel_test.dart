@@ -103,6 +103,7 @@ Future<void> _show(
   TideForecastModel? tide,
   Size size = const Size(1440, 1000),
   double scale = 1,
+  ThemeData? theme,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -110,7 +111,7 @@ Future<void> _show(
   addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(
     MaterialApp(
-      theme: AppTheme.light(),
+      theme: theme ?? AppTheme.light(),
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(
           context,
@@ -131,6 +132,16 @@ Future<void> _show(
 }
 
 void main() {
+  final darkTheme = ThemeData(
+    useMaterial3: true,
+    colorScheme: ColorScheme.fromSeed(
+      seedColor: const Color(0xFF67D8CB),
+      brightness: Brightness.dark,
+    ),
+    cardColor: const Color(0xFF17292D),
+    scaffoldBackgroundColor: const Color(0xFF101C20),
+  );
+
   for (final size in [
     const Size(390, 844),
     const Size(768, 1024),
@@ -153,6 +164,60 @@ void main() {
         expect(tester.takeException(), isNull);
       });
     }
+  }
+
+  for (final size in [const Size(390, 844), const Size(1440, 1000)]) {
+    testWidgets('dark forecast remains legible and interactive at $size', (
+      tester,
+    ) async {
+      await _show(
+        tester,
+        _forecast(gaps: true),
+        size: size,
+        scale: 2,
+        theme: darkTheme,
+      );
+      final heading = find.text('Read the swell. Time your session.');
+      final panel = tester.widget<Container>(
+        find.ancestor(of: heading, matching: find.byType(Container)).first,
+      );
+      final background = (panel.decoration! as BoxDecoration).color!;
+      final foreground = tester.widget<Text>(heading).style!.color!;
+      expect(background, darkTheme.cardColor);
+      expect(foreground, darkTheme.colorScheme.onSurface);
+      final luminances = [
+        background.computeLuminance(),
+        foreground.computeLuminance(),
+      ]..sort();
+      expect(
+        (luminances.last + .05) / (luminances.first + .05),
+        greaterThan(7),
+      );
+
+      await tester.ensureVisible(find.byTooltip('Next forecast hour'));
+      await tester.tap(find.byTooltip('Next forecast hour'));
+      await tester.pump();
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('forecast-selected-time')))
+            .data,
+        '07:00',
+      );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('wave-swell-chart')),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('tide-sample-chart')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Datum: LAT'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(find.text('KNOW YOUR DATA'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
   }
 
   testWidgets('day selection resets hour and arrows inspect data', (

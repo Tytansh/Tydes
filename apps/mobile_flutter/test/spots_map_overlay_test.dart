@@ -91,6 +91,7 @@ Future<ProviderContainer> _pump(
   double width = 1440,
   List<String>? forecasts,
   String? initialSpotId,
+  ThemeData? theme,
 }) async {
   tester.view.physicalSize = Size(width, 1100);
   tester.view.devicePixelRatio = 1;
@@ -113,7 +114,10 @@ Future<ProviderContainer> _pump(
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: MaterialApp(home: SpotsMapPage(initialSpotId: initialSpotId)),
+      child: MaterialApp(
+        theme: theme,
+        home: SpotsMapPage(initialSpotId: initialSpotId),
+      ),
     ),
   );
   await tester.pumpAndSettle();
@@ -127,6 +131,36 @@ Future<void> _finish(WidgetTester tester, ProviderContainer container) async {
 }
 
 void main() {
+  testWidgets('dark map keeps search and location sheets on dark surfaces', (
+    tester,
+  ) async {
+    final theme = ThemeData.dark(useMaterial3: true).copyWith(
+      cardColor: const Color(0xFF172D32),
+      scaffoldBackgroundColor: const Color(0xFF0C1C21),
+    );
+    final repository = _Repository();
+    final container = await _pump(tester, repository, theme: theme);
+    final search = tester.widget<TextField>(find.byType(TextField));
+    expect(search.decoration!.fillColor, theme.cardColor);
+    await tester.tap(
+      find
+          .ancestor(of: find.text('Location'), matching: find.byType(InkWell))
+          .first,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Choose location'), findsOneWidget);
+    final sheetColors = tester
+        .widgetList<Container>(find.byType(Container))
+        .where((widget) => widget.decoration is BoxDecoration)
+        .map((widget) => (widget.decoration as BoxDecoration).color);
+    expect(sheetColors, contains(theme.scaffoldBackgroundColor));
+    expect(sheetColors, isNot(contains(const Color(0xFFF2F6F7))));
+    expect(find.byType(SurfMapSpotPin), findsNWidgets(3));
+    expect(repository.eventLoads, 1);
+    expect(tester.takeException(), isNull);
+    await _finish(tester, container);
+  });
+
   for (final width in [390.0, 1440.0]) {
     testWidgets('spots and event overlay coexist at width $width', (
       tester,

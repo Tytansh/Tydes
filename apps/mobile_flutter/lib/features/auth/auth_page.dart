@@ -16,6 +16,11 @@ import 'google_sign_in_button.dart';
 import 'auth_return_path.dart';
 import 'auth_entry_layout.dart';
 
+Color _authMuted(BuildContext context, Color light) =>
+    Theme.of(context).brightness == Brightness.dark
+    ? Theme.of(context).colorScheme.onSurfaceVariant
+    : light;
+
 final authStateProvider = FutureProvider.autoDispose((ref) async {
   return ref.watch(surfRepositoryProvider).fetchMe();
 });
@@ -297,6 +302,8 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     required bool isSignup,
     required String actionLabel,
   }) {
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -386,8 +393,10 @@ class _AuthPageState extends ConsumerState<AuthPage> {
         const SizedBox(height: 24),
         FilledButton(
           style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF073F43),
-            foregroundColor: Colors.white,
+            backgroundColor: dark
+                ? theme.colorScheme.primary
+                : const Color(0xFF073F43),
+            foregroundColor: dark ? theme.colorScheme.onPrimary : Colors.white,
             minimumSize: const Size.fromHeight(56),
             textStyle: const TextStyle(
               fontSize: 16,
@@ -408,19 +417,30 @@ class _AuthPageState extends ConsumerState<AuthPage> {
         ),
         if (!_verificationPending) ...[
           const SizedBox(height: 24),
-          const Text(
+          Text(
             'Just looking around?',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Color(0xFF5A6F77), fontSize: 13),
+            style: TextStyle(
+              color: _authMuted(context, const Color(0xFF5A6F77)),
+              fontSize: 13,
+            ),
           ),
           const SizedBox(height: 10),
           OutlinedButton.icon(
             key: const ValueKey('explore-as-guest'),
             style: OutlinedButton.styleFrom(
               minimumSize: const Size.fromHeight(52),
-              backgroundColor: const Color(0xFFE9F3F0),
-              foregroundColor: const Color(0xFF164D59),
-              side: const BorderSide(color: Color(0xFFD2E4DE)),
+              backgroundColor: dark
+                  ? theme.colorScheme.surfaceContainerHigh
+                  : const Color(0xFFE9F3F0),
+              foregroundColor: dark
+                  ? theme.colorScheme.primary
+                  : const Color(0xFF164D59),
+              side: BorderSide(
+                color: dark
+                    ? theme.colorScheme.outlineVariant
+                    : const Color(0xFFD2E4DE),
+              ),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -434,10 +454,13 @@ class _AuthPageState extends ConsumerState<AuthPage> {
             label: const Text('Explore the map'),
           ),
           const SizedBox(height: 7),
-          const Text(
+          Text(
             'No account needed',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Color(0xFF5A6F77), fontSize: 11),
+            style: TextStyle(
+              color: _authMuted(context, const Color(0xFF5A6F77)),
+              fontSize: 11,
+            ),
           ),
         ],
         const SizedBox(height: 24),
@@ -475,7 +498,9 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     return PopScope(
       canPop: false,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF9FAF7),
+        backgroundColor: Theme.of(context).brightness == Brightness.dark
+            ? Theme.of(context).scaffoldBackgroundColor
+            : const Color(0xFFF9FAF7),
         body: AuthEntryLayout(
           title: title,
           subtitle: subtitle,
@@ -513,7 +538,7 @@ class _AuthLegalNote extends StatelessWidget {
               : 'Need help or want to review Tydes policies?',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: const Color(0xFF5E6A68),
+            color: _authMuted(context, const Color(0xFF5E6A68)),
             height: 1.35,
           ),
         ),
@@ -537,8 +562,14 @@ class _AuthModeToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFDEE6E5))),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Theme.of(context).colorScheme.outlineVariant
+                : const Color(0xFFDEE6E5),
+          ),
+        ),
       ),
       child: Row(
         children: [
@@ -579,6 +610,8 @@ class _AuthModeButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
     return InkWell(
       borderRadius: BorderRadius.circular(8),
       onTap: onTap,
@@ -589,7 +622,11 @@ class _AuthModeButton extends StatelessWidget {
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(
-              color: selected ? const Color(0xFF168F99) : Colors.transparent,
+              color: selected
+                  ? dark
+                        ? theme.colorScheme.primary
+                        : const Color(0xFF168F99)
+                  : Colors.transparent,
               width: 2.5,
             ),
           ),
@@ -601,16 +638,20 @@ class _AuthModeButton extends StatelessWidget {
               icon,
               size: 16,
               color: selected
-                  ? const Color(0xFF079CA3)
-                  : const Color(0xFF5F737C),
+                  ? dark
+                        ? theme.colorScheme.primary
+                        : const Color(0xFF079CA3)
+                  : _authMuted(context, const Color(0xFF5F737C)),
             ),
             const SizedBox(width: 8),
             Text(
               label,
               style: TextStyle(
                 color: selected
-                    ? const Color(0xFF073F43)
-                    : const Color(0xFF5F737C),
+                    ? dark
+                          ? theme.colorScheme.primary
+                          : const Color(0xFF073F43)
+                    : _authMuted(context, const Color(0xFF5F737C)),
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -821,8 +862,12 @@ class _ProfileSetupFormState extends ConsumerState<_ProfileSetupForm> {
           width: double.infinity,
           child: FilledButton(
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF073F43),
-              foregroundColor: Colors.white,
+              backgroundColor: Theme.of(context).brightness == Brightness.dark
+                  ? Theme.of(context).colorScheme.primary
+                  : const Color(0xFF073F43),
+              foregroundColor: Theme.of(context).brightness == Brightness.dark
+                  ? Theme.of(context).colorScheme.onPrimary
+                  : Colors.white,
               minimumSize: const Size.fromHeight(56),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
@@ -961,7 +1006,9 @@ class _PasswordResetSheetState extends ConsumerState<_PasswordResetSheet> {
                   width: 42,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFD5D0C6),
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? Theme.of(context).colorScheme.outlineVariant
+                        : const Color(0xFFD5D0C6),
                     borderRadius: BorderRadius.circular(999),
                   ),
                 ),
@@ -972,9 +1019,12 @@ class _PasswordResetSheetState extends ConsumerState<_PasswordResetSheet> {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 'We’ll email you a code, then you can choose a new password.',
-                style: TextStyle(color: Color(0xFF5D686C), height: 1.35),
+                style: TextStyle(
+                  color: _authMuted(context, const Color(0xFF5D686C)),
+                  height: 1.35,
+                ),
               ),
               const SizedBox(height: 18),
               TextField(
@@ -1088,13 +1138,22 @@ class _AuthNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFE7F6F3),
+        color: dark
+            ? theme.colorScheme.primaryContainer
+            : const Color(0xFFE7F6F3),
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Text(text),
+      child: Text(
+        text,
+        style: dark
+            ? TextStyle(color: theme.colorScheme.onPrimaryContainer)
+            : null,
+      ),
     );
   }
 }
@@ -1106,13 +1165,23 @@ class _AuthError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFE8E1),
+        color: dark
+            ? theme.colorScheme.errorContainer
+            : const Color(0xFFFFE8E1),
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Text(text, style: const TextStyle(fontWeight: FontWeight.w700)),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: dark ? theme.colorScheme.onErrorContainer : null,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
     );
   }
 }

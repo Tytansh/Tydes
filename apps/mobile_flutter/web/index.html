@@ -33,16 +33,18 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="Tydes">
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=tydes-wave-2">
-  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-180x180.png?v=tydes-wave-2">
-  <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=tydes-wave-2">
+  <!-- Keep one unambiguous, opaque iPhone icon. The root aliases remain for
+       Safari versions that probe apple-touch-icon.png automatically. -->
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/tydes-apple-touch-v3.png">
 
   <!-- Favicon -->
-  <link rel="icon" type="image/png" href="icons/tydes-icon.png"/>
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=tydes-wave-3"/>
 
   <title>Tydes — Surf forecasts, community and travel</title>
-  <link rel="manifest" href="manifest.json">
+  <link rel="manifest" href="/manifest.json?v=tydes-wave-3">
   <style>
+    :root { color-scheme: light; }
+    :root[data-theme="dark"] { color-scheme: dark; }
     html, body {
       height: 100%;
       overscroll-behavior-x: none;
@@ -77,7 +79,27 @@
     .tydes-loader-mark img { width: 100%; height: 100%; display: block; object-fit: cover; }
     .tydes-loader-card strong { display: block; margin-top: 16px; font-size: 22px; }
     .tydes-loader-card span { display: block; margin-top: 6px; color: #607175; font-size: 14px; }
+    :root[data-theme="dark"] body { background: #0c171b; color: #e6f1ef; }
+    :root[data-theme="dark"] #tydes-loader {
+      background:
+        radial-gradient(circle at 18% 20%, rgba(40, 137, 139, .16), transparent 30%),
+        radial-gradient(circle at 82% 78%, rgba(157, 123, 63, .12), transparent 34%),
+        #0c171b;
+    }
+    :root[data-theme="dark"] .tydes-loader-card span { color: #adc3c2; }
   </style>
+  <script>
+    // Match Flutter's saved per-device setting before its first frame.
+    // Blocked storage still follows the system; no cookies or account data.
+    (function () {
+      let mode = 'system';
+      try { mode = window.localStorage.getItem('tydes.appearance.v1') || 'system'; } catch (_) {}
+      const dark = mode === 'dark' ||
+        (mode !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      document.querySelector('meta[name="theme-color"]').content = dark ? '#0c171b' : '#f8f7f2';
+    })();
+  </script>
 </head>
 <body>
   <div id="tydes-loader" aria-label="Loading Tydes">

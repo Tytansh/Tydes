@@ -7,9 +7,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app/app.dart';
 import 'core/network/demo_persistence.dart';
 import 'core/network/demo_seed.dart';
+import 'core/theme/theme_preference.dart';
+import 'core/theme/theme_preference_store.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final themeMode = await loadThemeMode(ThemePreferenceStore());
   if (kIsWeb) {
     await _warmBrandLogo();
   }
@@ -20,7 +23,12 @@ Future<void> main() async {
       favoriteSpotIds: persistedFavoriteSpotIds,
     );
   }
-  runApp(const ProviderScope(child: SurfTravelApp()));
+  runApp(
+    ProviderScope(
+      overrides: [initialThemeModeProvider.overrideWithValue(themeMode)],
+      child: const SurfTravelApp(),
+    ),
+  );
 }
 
 Future<void> _warmBrandLogo() async {

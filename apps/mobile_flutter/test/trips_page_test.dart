@@ -33,158 +33,241 @@ void main() {
     expect(DemoSeed.dashboard.upcomingTrip, isNull);
   });
 
-  testWidgets('travel shows real destinations and honest coming-soon states', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          travelSpotsProvider.overrideWith((_) async => DemoSeed.spots),
-          nextSwellProvider.overrideWith(
-            (_) async => NextSwellModel(
-              available: true,
-              spotId: 'spot_snapper',
-              spotName: 'Snapper Rocks',
-              destination: 'Gold Coast, Australia',
-              country: 'Australia',
-              region: 'Queensland',
-              area: 'Gold Coast',
-              bestDay: '2026-10-27',
-              waveHeightM: 2.4,
-              swellHeightM: 2.1,
-              periodS: 14,
-              windKts: 8,
-              quality: 'epic',
-              source: 'open-meteo',
-              confidence: 'live',
-              updatedAt: '2026-10-24T02:00:00Z',
-              summary:
-                  'Snapper Rocks has the strongest travel signal in the next five days.',
-              note:
-                  'Forecast-model guidance for trip planning, not a safety call.',
-            ),
-          ),
-          travelEventsProvider.overrideWith(
-            (_) async => [
-              SocialPostModel(
-                id: 'post_uluwatu_event',
-                userId: 'usr_event_host',
-                authorName: 'Maya Surfer',
-                authorHandle: 'mayasurfer',
-                authorAvatarUrl: null,
-                authorPremium: false,
-                spotId: DemoSeed.spots
-                    .firstWhere(
-                      (spot) =>
-                          spot.country == 'Indonesia' &&
-                          spot.region == 'Bali' &&
-                          spot.area == 'Uluwatu',
-                    )
-                    .id,
-                postType: 'surf_plan',
-                visibility: 'public',
-                body: 'Sunset paddle and dinner after',
-                media: const [],
-                meetupDate: '2030-01-02',
-                createdAt: '2026-10-31T12:00:00Z',
+  for (final dark in [false, true]) {
+    testWidgets(
+      'travel remains usable in ${dark ? 'dark' : 'light'} mode with events and coming-soon states',
+      (tester) async {
+        final theme = dark
+            ? ThemeData(
+                colorScheme: ColorScheme.fromSeed(
+                  seedColor: const Color(0xFF67D8CB),
+                  brightness: Brightness.dark,
+                ),
+                cardColor: const Color(0xFF17292D),
+                scaffoldBackgroundColor: const Color(0xFF101C20),
+              )
+            : AppTheme.light();
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              travelSpotsProvider.overrideWith((_) async => DemoSeed.spots),
+              nextSwellProvider.overrideWith(
+                (_) async => NextSwellModel(
+                  available: true,
+                  spotId: 'spot_snapper',
+                  spotName: 'Snapper Rocks',
+                  destination: 'Gold Coast, Australia',
+                  country: 'Australia',
+                  region: 'Queensland',
+                  area: 'Gold Coast',
+                  bestDay: '2026-10-27',
+                  waveHeightM: 2.4,
+                  swellHeightM: 2.1,
+                  periodS: 14,
+                  windKts: 8,
+                  quality: 'epic',
+                  source: 'open-meteo',
+                  confidence: 'live',
+                  updatedAt: '2026-10-24T02:00:00Z',
+                  summary:
+                      'Snapper Rocks has the strongest travel signal in the next five days.',
+                  note:
+                      'Forecast-model guidance for trip planning, not a safety call.',
+                ),
+              ),
+              travelEventsProvider.overrideWith(
+                (_) async => [
+                  SocialPostModel(
+                    id: 'post_uluwatu_event',
+                    userId: 'usr_event_host',
+                    authorName: 'Maya Surfer',
+                    authorHandle: 'mayasurfer',
+                    authorAvatarUrl: null,
+                    authorPremium: false,
+                    spotId: DemoSeed.spots
+                        .firstWhere(
+                          (spot) =>
+                              spot.country == 'Indonesia' &&
+                              spot.region == 'Bali' &&
+                              spot.area == 'Uluwatu',
+                        )
+                        .id,
+                    postType: 'surf_plan',
+                    visibility: 'public',
+                    body: 'Sunset paddle and dinner after',
+                    media: const [],
+                    meetupDate: '2030-01-02',
+                    createdAt: '2026-10-31T12:00:00Z',
+                  ),
+                ],
+              ),
+              travelEngagementProvider.overrideWith(
+                (_) async => SocialEngagementModel(
+                  likedPostIds: const {},
+                  repostedPostIds: const [],
+                  reposts: const [],
+                  likedCommentIds: const {},
+                  rsvpPostIds: const {},
+                  comments: const [],
+                ),
               ),
             ],
+            child: MaterialApp(theme: theme, home: const TripsPage()),
           ),
-          travelEngagementProvider.overrideWith(
-            (_) async => SocialEngagementModel(
-              likedPostIds: const {},
-              repostedPostIds: const [],
-              reposts: const [],
-              likedCommentIds: const {},
-              rsvpPostIds: const {},
-              comments: const [],
-            ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Go where the swell is.'), findsOneWidget);
+        expect(
+          find.text('Everything you need around the break'),
+          findsOneWidget,
+        );
+        expect(find.text('Hostels & stays'), findsOneWidget);
+        expect(find.text('Scooter rentals'), findsOneWidget);
+        expect(find.text('Board shops'), findsOneWidget);
+        if (dark) {
+          final comingSoon = tester.widget<Container>(
+            find
+                .ancestor(
+                  of: find.text('Everything you need around the break'),
+                  matching: find.byType(Container),
+                )
+                .first,
+          );
+          expect(
+            (comingSoon.decoration! as BoxDecoration).color,
+            theme.cardColor,
+          );
+        }
+        await tester.scrollUntilVisible(
+          find.text('NEXT SWELL'),
+          220,
+          scrollable: find.byType(Scrollable).first,
+        );
+        expect(find.text('NEXT SWELL'), findsOneWidget);
+        expect(find.text('Gold Coast, Australia'), findsOneWidget);
+        expect(
+          find.textContaining('Best break • Snapper Rocks'),
+          findsOneWidget,
+        );
+        expect(find.text('Surf bases worth a look'), findsNothing);
+        expect(find.text('Choose your coast'), findsNothing);
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('travel-location-picker')),
+          220,
+          scrollable: find.byType(Scrollable).first,
+        );
+        expect(find.text('Find event'), findsNWidgets(2));
+        expect(find.text('Events in Uluwatu'), findsNothing);
+        if (dark) {
+          final location = tester.widget<Container>(
+            find
+                .descendant(
+                  of: find.byKey(const Key('travel-location-picker')),
+                  matching: find.byType(Container),
+                )
+                .first,
+          );
+          expect(
+            (location.decoration! as BoxDecoration).color,
+            theme.cardColor,
+          );
+        }
+
+        await tester.tap(find.byKey(const Key('travel-location-picker')));
+        await tester.pumpAndSettle();
+        expect(
+          find.text(
+            'Pick a country, then choose the surf area you want to explore.',
           ),
-        ],
-        child: MaterialApp(theme: AppTheme.light(), home: const TripsPage()),
-      ),
-    );
-    await tester.pumpAndSettle();
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('travel-country-see-all')), findsOneWidget);
+        if (dark) {
+          final sheet = tester.widget<Container>(
+            find
+                .ancestor(
+                  of: find.text(
+                    'Pick a country, then choose the surf area you want to explore.',
+                  ),
+                  matching: find.byType(Container),
+                )
+                .first,
+          );
+          expect((sheet.decoration! as BoxDecoration).color, theme.cardColor);
+        }
+        await tester.tap(find.text('Bali'));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('travel-region-see-all-Bali')),
+          findsOneWidget,
+        );
+        await tester.tap(find.text('Uluwatu'));
+        await tester.pumpAndSettle();
+        await tester.scrollUntilVisible(
+          find.text('Events in Uluwatu'),
+          250,
+          scrollable: find.byType(Scrollable).first,
+        );
+        expect(find.text('Events in Uluwatu'), findsOneWidget);
+        expect(
+          find.byKey(const Key('travel-events-region-scope')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const Key('travel-events-country-scope')),
+          findsNothing,
+        );
+        expect(find.text('Sunset paddle and dinner after'), findsOneWidget);
+        expect(find.textContaining('Maya Surfer'), findsOneWidget);
+        expect(find.text('Join now'), findsOneWidget);
+        if (dark) {
+          final event = tester.widget<Container>(
+            find
+                .ancestor(
+                  of: find.text('Sunset paddle and dinner after'),
+                  matching: find.byType(Container),
+                )
+                .first,
+          );
+          expect((event.decoration! as BoxDecoration).color, theme.cardColor);
+        }
+        expect(find.text('Who’s going'), findsOneWidget);
+        expect(find.text('See post'), findsOneWidget);
+        expect(find.text('Swell outlooks and surf events'), findsNothing);
+        expect(
+          find.textContaining('We removed the demo itinerary'),
+          findsNothing,
+        );
+        expect(find.text('Dry Season Surf Sprint'), findsNothing);
 
-    expect(find.text('Go where the swell is.'), findsOneWidget);
-    expect(find.text('Everything you need around the break'), findsOneWidget);
-    expect(find.text('Hostels & stays'), findsOneWidget);
-    expect(find.text('Scooter rentals'), findsOneWidget);
-    expect(find.text('Board shops'), findsOneWidget);
-    await tester.scrollUntilVisible(
-      find.text('NEXT SWELL'),
-      220,
-      scrollable: find.byType(Scrollable).first,
-    );
-    expect(find.text('NEXT SWELL'), findsOneWidget);
-    expect(find.text('Gold Coast, Australia'), findsOneWidget);
-    expect(find.textContaining('Best break • Snapper Rocks'), findsOneWidget);
-    expect(find.text('Surf bases worth a look'), findsNothing);
-    expect(find.text('Choose your coast'), findsNothing);
-    await tester.scrollUntilVisible(
-      find.byKey(const Key('travel-location-picker')),
-      220,
-      scrollable: find.byType(Scrollable).first,
-    );
-    expect(find.text('Find event'), findsNWidgets(2));
-    expect(find.text('Events in Uluwatu'), findsNothing);
+        await tester.tap(find.byKey(const Key('travel-location-picker')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('travel-region-see-all-Bali')),
+        );
+        await tester.pumpAndSettle();
+        await tester.scrollUntilVisible(
+          find.text('Events in Bali'),
+          250,
+          scrollable: find.byType(Scrollable).first,
+        );
+        expect(find.text('Events in Bali'), findsOneWidget);
+        expect(find.text('All events in Bali, Indonesia'), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('travel-location-picker')));
-    await tester.pumpAndSettle();
-    expect(
-      find.text(
-        'Pick a country, then choose the surf area you want to explore.',
-      ),
-      findsOneWidget,
+        await tester.tap(find.byKey(const Key('travel-location-picker')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('travel-country-see-all')));
+        await tester.pumpAndSettle();
+        await tester.scrollUntilVisible(
+          find.text('Events in Indonesia'),
+          250,
+          scrollable: find.byType(Scrollable).first,
+        );
+        expect(find.text('Events in Indonesia'), findsOneWidget);
+        expect(find.text('All events in Indonesia'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
     );
-    expect(find.byKey(const Key('travel-country-see-all')), findsOneWidget);
-    await tester.tap(find.text('Bali'));
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey('travel-region-see-all-Bali')),
-      findsOneWidget,
-    );
-    await tester.tap(find.text('Uluwatu'));
-    await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.text('Events in Uluwatu'),
-      250,
-      scrollable: find.byType(Scrollable).first,
-    );
-    expect(find.text('Events in Uluwatu'), findsOneWidget);
-    expect(find.byKey(const Key('travel-events-region-scope')), findsNothing);
-    expect(find.byKey(const Key('travel-events-country-scope')), findsNothing);
-    expect(find.text('Sunset paddle and dinner after'), findsOneWidget);
-    expect(find.textContaining('Maya Surfer'), findsOneWidget);
-    expect(find.text('Join now'), findsOneWidget);
-    expect(find.text('Who’s going'), findsOneWidget);
-    expect(find.text('See post'), findsOneWidget);
-    expect(find.text('Swell outlooks and surf events'), findsNothing);
-    expect(find.textContaining('We removed the demo itinerary'), findsNothing);
-    expect(find.text('Dry Season Surf Sprint'), findsNothing);
-
-    await tester.tap(find.byKey(const Key('travel-location-picker')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('travel-region-see-all-Bali')));
-    await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.text('Events in Bali'),
-      250,
-      scrollable: find.byType(Scrollable).first,
-    );
-    expect(find.text('Events in Bali'), findsOneWidget);
-    expect(find.text('All events in Bali, Indonesia'), findsOneWidget);
-
-    await tester.tap(find.byKey(const Key('travel-location-picker')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('travel-country-see-all')));
-    await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.text('Events in Indonesia'),
-      250,
-      scrollable: find.byType(Scrollable).first,
-    );
-    expect(find.text('Events in Indonesia'), findsOneWidget);
-    expect(find.text('All events in Indonesia'), findsOneWidget);
-  });
+  }
 }

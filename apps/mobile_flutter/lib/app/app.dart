@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/l10n/app_strings.dart';
 import '../core/theme/app_theme.dart';
+import '../core/theme/appearance_host.dart';
+import '../core/theme/theme_preference.dart';
 import '../features/alerts/alert_monitor.dart';
 import '../features/home/home_page.dart';
 import '../core/network/api_models.dart';
@@ -96,6 +98,9 @@ class _SurfTravelAppState extends ConsumerState<SurfTravelApp>
       title: 'Tydes',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      themeMode: ref.watch(themeModeProvider),
+      builder: (context, child) => _AppearanceHost(child: child!),
       routerConfig: router,
       locale: locale,
       supportedLocales: AppStrings.supportedLocales,
@@ -106,4 +111,23 @@ class _SurfTravelAppState extends ConsumerState<SurfTravelApp>
       ],
     );
   }
+}
+
+class _AppearanceHost extends StatefulWidget {
+  const _AppearanceHost({required this.child});
+  final Widget child;
+
+  @override
+  State<_AppearanceHost> createState() => _AppearanceHostState();
+}
+
+class _AppearanceHostState extends State<_AppearanceHost> {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    syncHostAppearance(Theme.of(context).brightness == Brightness.dark);
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

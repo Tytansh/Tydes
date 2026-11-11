@@ -128,8 +128,10 @@ class _AuthGateLoadingPage extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               message,
-              style: const TextStyle(
-                color: Color(0xFF5D686C),
+              style: TextStyle(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? Theme.of(context).colorScheme.onSurfaceVariant
+                    : const Color(0xFF5D686C),
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -206,7 +208,7 @@ class _FeedSearchPill extends StatelessWidget {
           height: 42,
           padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(999),
             border: Border.all(color: scheme.outline.withValues(alpha: 0.18)),
             boxShadow: [
@@ -295,7 +297,7 @@ class _PeopleSearchPageState extends ConsumerState<PeopleSearchPage> {
                       icon: const Icon(Icons.close_rounded),
                     ),
               filled: true,
-              fillColor: Colors.white,
+              fillColor: Theme.of(context).cardColor,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(24),
                 borderSide: BorderSide.none,

@@ -8,6 +8,7 @@ import 'package:mobile_flutter/core/network/api_models.dart';
 import 'package:mobile_flutter/core/network/demo_persistence.dart';
 import 'package:mobile_flutter/core/network/demo_seed.dart';
 import 'package:mobile_flutter/core/network/surf_repository.dart';
+import 'package:mobile_flutter/core/theme/app_theme.dart';
 import 'package:mobile_flutter/features/home/home_page.dart';
 import 'package:mobile_flutter/features/paywall/paywall_page.dart';
 
@@ -84,6 +85,7 @@ Future<void> _show(
   _BillingRepository repo,
   _BillingService service, {
   bool productAvailable = true,
+  ThemeData? theme,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -105,13 +107,40 @@ Future<void> _show(
               : null,
         ),
       ],
-      child: const MaterialApp(home: PaywallPage()),
+      child: MaterialApp(theme: theme, home: const PaywallPage()),
     ),
   );
   await tester.pumpAndSettle();
 }
 
 void main() {
+  for (final dark in [false, true]) {
+    testWidgets(
+      'subscription notes remain readable in ${dark ? 'dark' : 'light'} mode',
+      (tester) async {
+        final theme = dark ? AppTheme.dark() : AppTheme.light();
+        await _show(
+          tester,
+          _BillingRepository(),
+          _BillingService(),
+          theme: theme,
+        );
+        final title = find.text('Subscription and safety notes');
+        await tester.scrollUntilVisible(title, 300);
+        final card = tester.widget<Card>(
+          find.ancestor(of: title, matching: find.byType(Card)).first,
+        );
+        expect(
+          card.color,
+          dark
+              ? theme.colorScheme.surfaceContainerHigh
+              : const Color(0xFFFFF8ED),
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets(
     'only verified purchases unlock the current account and show the store price',
     (tester) async {

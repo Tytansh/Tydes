@@ -1,0 +1,50 @@
+/* Shared public-page palette. No light selectors: the existing light design
+   stays unchanged, and images/brand artwork are never filtered or inverted. */
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #e6f1ef;
+  --muted: #adc3c2;
+  --teal: #75ded6;
+  --line: #345056;
+  --paper: #15272c;
+  --cream: #0c171b;
+  --foam: #174d50;
+  --sea: #173336;
+  --shadow: 0 32px 80px rgba(0, 0, 0, 0.25);
+}
+:root[data-theme="dark"] body { background: #0c171b; color: var(--ink); }
+:root[data-theme="dark"] a:focus-visible { outline-color: var(--teal); }
+:root[data-theme="dark"] .skip-link { color: var(--ink); background: #213b40; }
+:root[data-theme="dark"] .site-nav a { color: var(--ink); }
+:root[data-theme="dark"] .site-nav a:hover { color: var(--teal); }
+:root[data-theme="dark"] .site-footer { background: #0c171b; color: var(--muted); }
+:root[data-theme="dark"] .footer-bottom { color: var(--muted); border-color: var(--line); }
+
+/* About-page buttons use --ink as their light background. Set the paired dark
+   foreground explicitly so a pale button never inherits pale page text. */
+:root[data-theme="dark"] .button {
+  color: #073b3d;
+  background: var(--teal);
+  border-color: var(--teal);
+}
+:root[data-theme="dark"] .button:hover { color: #073b3d; background: #9ce9e2; }
+:root[data-theme="dark"] .partner-panel,
+:root[data-theme="dark"] .proposed-flow,
+:root[data-theme="dark"] .partner-panel > .partner-detail { border-color: var(--line); }
+:root[data-theme="dark"] .partner-panel > p,
+:root[data-theme="dark"] .flow-label,
+:root[data-theme="dark"] .proposed-flow li p,
+:root[data-theme="dark"] .photo-credit { color: var(--muted); }
+:root[data-theme="dark"] .partner-panel > .partner-lead { color: var(--ink); }
+:root[data-theme="dark"] .status { background: #213b40; border-color: #446267; color: #cee7e2; }
+:root[data-theme="dark"] .status span { background: var(--teal); }
+:root[data-theme="dark"] .proposed-flow li > span { background: #25494b; color: var(--ink); }
+
+/* Legal and support content includes a few deliberately fixed light tints. */
+:root[data-theme="dark"] .legal-card p,
+:root[data-theme="dark"] .legal-card li { color: var(--muted); }
+:root[data-theme="dark"] .legal-notice,
+:root[data-theme="dark"] .contact-panel { background: #1a3035; }
+:root[data-theme="dark"] .contact-panel strong,
+:root[data-theme="dark"] .legal-notice strong { color: var(--ink); }

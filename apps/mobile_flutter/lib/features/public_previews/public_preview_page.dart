@@ -385,7 +385,9 @@ class _Action extends StatelessWidget {
   final VoidCallback onTap;
   @override
   Widget build(BuildContext context) => Card(
-    color: const Color(0xFFE7F4F2),
+    color: Theme.of(context).brightness == Brightness.dark
+        ? Theme.of(context).colorScheme.surfaceContainerHigh
+        : const Color(0xFFE7F4F2),
     child: Padding(
       padding: const EdgeInsets.all(24),
       child: Column(

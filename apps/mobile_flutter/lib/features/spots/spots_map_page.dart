@@ -251,7 +251,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                                 icon: const Icon(Icons.close),
                               ),
                         filled: true,
-                        fillColor: Colors.white,
+                        fillColor: Theme.of(context).cardColor,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(18),
                           borderSide: BorderSide.none,
@@ -974,7 +974,11 @@ class _MapSpotTile extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
       child: Card(
-        color: isSelected ? const Color(0xFFE6F3F1) : null,
+        color: isSelected
+            ? (Theme.of(context).brightness == Brightness.dark
+                  ? Theme.of(context).colorScheme.primaryContainer
+                  : const Color(0xFFE6F3F1))
+            : null,
         child: ListTile(
           title: Row(
             children: [
@@ -1248,7 +1252,9 @@ class _MapAttributionPill extends StatelessWidget {
       bottom: 10,
       child: SafeArea(
         child: Material(
-          color: Colors.white.withValues(alpha: 0.88),
+          color: theme.cardColor.withValues(
+            alpha: theme.brightness == Brightness.dark ? 0.94 : 0.88,
+          ),
           borderRadius: BorderRadius.circular(999),
           elevation: 2,
           child: InkWell(
@@ -1397,9 +1403,13 @@ class _LocationPickerSheet extends StatelessWidget {
         maxChildSize: 0.94,
         builder: (context, scrollController) {
           return Container(
-            decoration: const BoxDecoration(
-              color: Color(0xFFF2F6F7),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+            decoration: BoxDecoration(
+              color: theme.brightness == Brightness.dark
+                  ? theme.scaffoldBackgroundColor
+                  : const Color(0xFFF2F6F7),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(30),
+              ),
             ),
             child: ListView(
               controller: scrollController,
@@ -1566,7 +1576,9 @@ class _RegionLocationSection extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: const Color(0xFFF6F3ED),
+          color: Theme.of(context).brightness == Brightness.dark
+              ? Theme.of(context).colorScheme.surfaceContainerLow
+              : const Color(0xFFF6F3ED),
           borderRadius: BorderRadius.circular(16),
         ),
         child: ExpansionTile(
@@ -1650,7 +1662,7 @@ class _AreaLocationSection extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(14),
         ),
         child: ExpansionTile(
@@ -1833,7 +1845,9 @@ class _NestedResultGroupCardState extends State<_NestedResultGroupCard> {
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: const Color(0xFFF6F3ED),
+          color: Theme.of(context).brightness == Brightness.dark
+              ? Theme.of(context).colorScheme.surfaceContainerLow
+              : const Color(0xFFF6F3ED),
           borderRadius: BorderRadius.circular(16),
         ),
         child: ExpansionTile(
@@ -1918,9 +1932,13 @@ class _SwellDirectionPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final angle = ((degrees ?? 0) % 360) * math.pi / 180;
+    final theme = Theme.of(context);
+    final accent = theme.brightness == Brightness.dark
+        ? theme.colorScheme.primary
+        : _mapMarkerSelectedColor;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: const Color(0x332AA7A1)),
         boxShadow: const [
@@ -1938,17 +1956,13 @@ class _SwellDirectionPill extends StatelessWidget {
           children: [
             Transform.rotate(
               angle: angle,
-              child: const Icon(
-                Icons.arrow_upward_rounded,
-                color: _mapMarkerSelectedColor,
-                size: 16,
-              ),
+              child: Icon(Icons.arrow_upward_rounded, color: accent, size: 16),
             ),
             const SizedBox(width: 4),
             Text(
               '$direction swell',
-              style: const TextStyle(
-                color: _mapMarkerSelectedColor,
+              style: TextStyle(
+                color: accent,
                 fontSize: 11,
                 fontWeight: FontWeight.w800,
               ),

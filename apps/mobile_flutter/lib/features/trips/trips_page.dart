@@ -8,6 +8,28 @@ import '../home/home_page.dart';
 import '../social/direct_messages_page.dart';
 import '../social/event_chat_page.dart';
 
+// Keep the established light styling, while letting the travel surfaces and
+// supporting text follow the user's appearance setting.
+Color _travelSurface(BuildContext context, Color light) =>
+    Theme.of(context).brightness == Brightness.dark
+    ? Theme.of(context).cardColor
+    : light;
+
+Color _travelMuted(BuildContext context, Color light) =>
+    Theme.of(context).brightness == Brightness.dark
+    ? Theme.of(context).colorScheme.onSurfaceVariant
+    : light;
+
+Color _travelAccent(BuildContext context) =>
+    Theme.of(context).brightness == Brightness.dark
+    ? Theme.of(context).colorScheme.primary
+    : const Color(0xFF087E7A);
+
+Color _travelBorder(BuildContext context, Color light) =>
+    Theme.of(context).brightness == Brightness.dark
+    ? Theme.of(context).colorScheme.outlineVariant
+    : light;
+
 final travelSpotsProvider = FutureProvider(
   (ref) => ref.watch(surfRepositoryProvider).fetchSpots(),
 );
@@ -44,7 +66,7 @@ class _TripsPageState extends ConsumerState<TripsPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Travel'),
-        backgroundColor: const Color(0xFFF8F7F2),
+        backgroundColor: _travelSurface(context, const Color(0xFFF8F7F2)),
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
       ),
@@ -349,9 +371,9 @@ class _SectionHeading extends StatelessWidget {
         const SizedBox(height: 2),
         Text(
           subtitle,
-          style: Theme.of(
-            context,
-          ).textTheme.bodySmall?.copyWith(color: const Color(0xFF6D716D)),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: _travelMuted(context, const Color(0xFF6D716D)),
+          ),
         ),
       ],
     );
@@ -528,14 +550,16 @@ class _NextSwellCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFFE9F5F2),
+        color: _travelSurface(context, const Color(0xFFE9F5F2)),
         borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: const Color(0xFFCCE7E1)),
+        border: Border.all(
+          color: _travelBorder(context, const Color(0xFFCCE7E1)),
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.radar_rounded, color: Color(0xFF087E7A), size: 28),
+          Icon(Icons.radar_rounded, color: _travelAccent(context), size: 28),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -554,10 +578,10 @@ class _NextSwellCard extends StatelessWidget {
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   'Watching Taiwan, Indonesia, Siargao, Sri Lanka, and Australia.',
                   style: TextStyle(
-                    color: Color(0xFF087E7A),
+                    color: _travelAccent(context),
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                   ),
@@ -660,9 +684,11 @@ class _TravelServicesComingSoonCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFE9F5F2),
+        color: _travelSurface(context, const Color(0xFFE9F5F2)),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFCCE7E1)),
+        border: Border.all(
+          color: _travelBorder(context, const Color(0xFFCCE7E1)),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -673,12 +699,14 @@ class _TravelServicesComingSoonCard extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFD7EFEC),
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? Theme.of(context).colorScheme.surfaceContainerHigh
+                      : const Color(0xFFD7EFEC),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.travel_explore_outlined,
-                  color: Color(0xFF087E7A),
+                  color: _travelAccent(context),
                 ),
               ),
               const SizedBox(width: 12),
@@ -697,7 +725,7 @@ class _TravelServicesComingSoonCard extends StatelessWidget {
           Text(
             'Verified hostels and accommodations, scooter rentals, board shops, and personal trip planning are coming soon.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: const Color(0xFF394340),
+              color: _travelMuted(context, const Color(0xFF394340)),
               height: 1.4,
             ),
           ),
@@ -731,19 +759,23 @@ class _TravelServicePill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.78),
+        color: Theme.of(context).brightness == Brightness.dark
+            ? Theme.of(context).colorScheme.surfaceContainerHigh
+            : Colors.white.withValues(alpha: 0.78),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFBEDFD9)),
+        border: Border.all(
+          color: _travelBorder(context, const Color(0xFFBEDFD9)),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 17, color: const Color(0xFF087E7A)),
+          Icon(icon, size: 17, color: _travelAccent(context)),
           const SizedBox(width: 6),
           Text(
             label,
-            style: const TextStyle(
-              color: Color(0xFF164B49),
+            style: TextStyle(
+              color: _travelMuted(context, const Color(0xFF164B49)),
               fontSize: 12,
               fontWeight: FontWeight.w800,
             ),
@@ -770,7 +802,7 @@ class _TravelAreaOverview extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1EEE5),
+        color: _travelSurface(context, const Color(0xFFF1EEE5)),
         borderRadius: BorderRadius.circular(22),
       ),
       child: Column(
@@ -778,8 +810,8 @@ class _TravelAreaOverview extends StatelessWidget {
         children: [
           Text(
             '${region.name.toUpperCase()} • ${country.name.toUpperCase()}',
-            style: const TextStyle(
-              color: Color(0xFF087E7A),
+            style: TextStyle(
+              color: _travelAccent(context),
               fontSize: 10,
               letterSpacing: .7,
               fontWeight: FontWeight.w900,
@@ -789,7 +821,7 @@ class _TravelAreaOverview extends StatelessWidget {
           Text(
             area.summary,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: const Color(0xFF394340),
+              color: _travelMuted(context, const Color(0xFF394340)),
               height: 1.35,
             ),
           ),
@@ -807,7 +839,9 @@ class _TravelAreaOverview extends StatelessWidget {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? Theme.of(context).colorScheme.surfaceContainerHigh
+                            : Colors.white,
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
@@ -958,9 +992,11 @@ class _TravelEventCardState extends ConsumerState<_TravelEventCard> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFEAF6F4),
+        color: _travelSurface(context, const Color(0xFFEAF6F4)),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFC7E5E0)),
+        border: Border.all(
+          color: _travelBorder(context, const Color(0xFFC7E5E0)),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1015,8 +1051,8 @@ class _TravelEventCardState extends ConsumerState<_TravelEventCard> {
                       '${event.spot.name} • ${event.post.authorName}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF52625F),
+                      style: TextStyle(
+                        color: _travelMuted(context, const Color(0xFF52625F)),
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                       ),
@@ -1136,13 +1172,16 @@ class _EventAttendeesSheet extends ConsumerWidget {
                           : '@${attendee.handle}',
                     ),
                     trailing: attendee.organizer
-                        ? const Icon(
+                        ? Icon(
                             Icons.star_rounded,
-                            color: Color(0xFF087E7A),
+                            color: _travelAccent(context),
                           )
-                        : const Icon(
+                        : Icon(
                             Icons.check_circle,
-                            color: Color(0xFF2AA7A1),
+                            color:
+                                Theme.of(context).brightness == Brightness.dark
+                                ? Theme.of(context).colorScheme.primary
+                                : const Color(0xFF2AA7A1),
                           ),
                   ),
               ],
@@ -1165,13 +1204,13 @@ class _EmptyTravelEventsCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFFF2EEE6),
+        color: _travelSurface(context, const Color(0xFFF2EEE6)),
         borderRadius: BorderRadius.circular(22),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.event_available_outlined, color: Color(0xFF087E7A)),
+          Icon(Icons.event_available_outlined, color: _travelAccent(context)),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -1184,9 +1223,12 @@ class _EmptyTravelEventsCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
-                const Text(
+                Text(
                   'When someone plans a surf here, it will show up automatically.',
-                  style: TextStyle(color: Color(0xFF626A66), height: 1.35),
+                  style: TextStyle(
+                    color: _travelMuted(context, const Color(0xFF626A66)),
+                    height: 1.35,
+                  ),
                 ),
               ],
             ),
@@ -1264,9 +1306,11 @@ class _TravelLocationButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: _travelSurface(context, Colors.white),
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: const Color(0xFFE0D8CA)),
+          border: Border.all(
+            color: _travelBorder(context, const Color(0xFFE0D8CA)),
+          ),
         ),
         child: Row(
           children: [
@@ -1274,10 +1318,12 @@ class _TravelLocationButton extends StatelessWidget {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: const Color(0xFFD7EFEC),
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? Theme.of(context).colorScheme.surfaceContainerHigh
+                    : const Color(0xFFD7EFEC),
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: const Icon(Icons.place_outlined, color: Color(0xFF087E7A)),
+              child: Icon(Icons.place_outlined, color: _travelAccent(context)),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1361,9 +1407,9 @@ class _TravelLocationSheetState extends State<_TravelLocationSheet> {
       maxChildSize: 0.92,
       builder: (context, scrollController) {
         return Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFFF8F7F2),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+          decoration: BoxDecoration(
+            color: _travelSurface(context, const Color(0xFFF8F7F2)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
           ),
           child: ListView(
             controller: scrollController,
@@ -1375,7 +1421,7 @@ class _TravelLocationSheetState extends State<_TravelLocationSheet> {
                   height: 4,
                   margin: const EdgeInsets.only(bottom: 18),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFC9D0CC),
+                    color: _travelBorder(context, const Color(0xFFC9D0CC)),
                     borderRadius: BorderRadius.circular(999),
                   ),
                 ),
@@ -1483,7 +1529,7 @@ class _TravelRegionTileState extends State<_TravelRegionTile> {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFF2EEE6),
+        color: _travelSurface(context, const Color(0xFFF2EEE6)),
         borderRadius: BorderRadius.circular(22),
       ),
       child: ExpansionTile(
@@ -1562,14 +1608,14 @@ class _TravelAreaTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white,
+      color: _travelSurface(context, Colors.white),
       borderRadius: BorderRadius.circular(18),
       child: ListTile(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: Text(area.name),
         subtitle: Text('${area.breakCountLabel} • ${area.nearSpotsLabel}'),
         trailing: selected
-            ? const Icon(Icons.check_circle, color: Color(0xFF087E7A))
+            ? Icon(Icons.check_circle, color: _travelAccent(context))
             : const Icon(Icons.chevron_right),
         onTap: () => Navigator.of(context).pop(
           _TravelLocationSelection(
@@ -1594,7 +1640,9 @@ class _StatusPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFFEDE8DA),
+        color: Theme.of(context).brightness == Brightness.dark
+            ? Theme.of(context).colorScheme.surfaceContainerHigh
+            : const Color(0xFFEDE8DA),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(

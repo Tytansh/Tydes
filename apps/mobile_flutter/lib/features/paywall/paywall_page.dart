@@ -366,7 +366,9 @@ class _PremiumLegalCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      color: const Color(0xFFFFF8ED),
+      color: Theme.of(context).brightness == Brightness.dark
+          ? Theme.of(context).colorScheme.surfaceContainerHigh
+          : const Color(0xFFFFF8ED),
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Column(

@@ -127,7 +127,7 @@ class SpotDetailPage extends ConsumerWidget {
     final favorites = ref.watch(favoriteSpotIdsProvider);
     final profile = me.valueOrNull;
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F7F2),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         leading: IconButton(
           tooltip: 'Back to Tydes',
@@ -218,7 +218,11 @@ class SpotDetailPage extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.cloud_off_outlined, color: _ink, size: 32),
+                Icon(
+                  Icons.cloud_off_outlined,
+                  color: Theme.of(context).colorScheme.onSurface,
+                  size: 32,
+                ),
                 const SizedBox(height: 12),
                 Text(
                   friendlyLoadErrorMessage(error, label: 'spot details'),
@@ -325,26 +329,30 @@ class _SpotGuide extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(22),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: Theme.of(context).cardColor,
       borderRadius: BorderRadius.circular(22),
-      border: Border.all(color: const Color(0xFFE0E9E7)),
+      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'BREAK GUIDE',
           style: TextStyle(
             fontSize: 10,
             fontWeight: FontWeight.w800,
             letterSpacing: 1.5,
-            color: Color(0xFF087F89),
+            color: Theme.of(context).colorScheme.primary,
           ),
         ),
         const SizedBox(height: 12),
         Text(
           spot.summary,
-          style: const TextStyle(fontSize: 15, color: _ink, height: 1.6),
+          style: TextStyle(
+            fontSize: 15,
+            color: Theme.of(context).colorScheme.onSurface,
+            height: 1.6,
+          ),
         ),
         const SizedBox(height: 16),
         Wrap(
@@ -359,20 +367,22 @@ class _SpotGuide extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 12),
-        const Row(
+        Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(
               Icons.warning_amber_rounded,
-              color: Color(0xFF987233),
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? const Color(0xFFE8BC76)
+                  : const Color(0xFF987233),
               size: 18,
             ),
-            SizedBox(width: 8),
+            const SizedBox(width: 8),
             Expanded(
               child: Text(
                 'Local reef, currents, swell exposure and tide can change conditions dramatically. Check hazards and the beach before paddling out. This guide is not a current safety assessment.',
                 style: TextStyle(
-                  color: Color(0xFF617779),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                   fontSize: 12,
                   height: 1.6,
                 ),
@@ -397,6 +407,8 @@ class _ForecastUnlockCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
     final unlocked = profile.freeLiveSpotId == spotId;
     final remaining = profile.freeLiveSpotChangeRemaining(DateTime.now());
     final canSelect = !unlocked && remaining == null;
@@ -431,9 +443,17 @@ class _ForecastUnlockCard extends ConsumerWidget {
       key: const ValueKey('forecast-unlock-card'),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: unlocked ? const Color(0xFFE4F3EC) : const Color(0xFFF1F2E9),
+        color: dark
+            ? theme.colorScheme.surfaceContainerHigh
+            : unlocked
+            ? const Color(0xFFE4F3EC)
+            : const Color(0xFFF1F2E9),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFCFDFD6)),
+        border: Border.all(
+          color: dark
+              ? theme.colorScheme.outlineVariant
+              : const Color(0xFFCFDFD6),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -442,10 +462,10 @@ class _ForecastUnlockCard extends ConsumerWidget {
             unlocked
                 ? 'Your free forecast spot'
                 : 'One break free. Every break with Premium.',
-            style: const TextStyle(
+            style: TextStyle(
               fontWeight: FontWeight.w800,
               fontSize: 18,
-              color: _ink,
+              color: theme.colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 8),
@@ -455,8 +475,10 @@ class _ForecastUnlockCard extends ConsumerWidget {
                 : remaining != null
                 ? 'Your free spot is already selected. You can switch in ${_cooldown(remaining)}. Premium opens the hourly forecast desk at every break.'
                 : 'Choose this as your free spot for hourly wave, swell and wind model forecasts, plus available tide predictions. You can switch your free spot once every 24 hours.',
-            style: const TextStyle(
-              color: Color(0xFF526B65),
+            style: TextStyle(
+              color: dark
+                  ? theme.colorScheme.onSurfaceVariant
+                  : const Color(0xFF526B65),
               fontSize: 13,
               height: 1.6,
             ),

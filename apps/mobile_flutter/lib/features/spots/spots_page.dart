@@ -352,7 +352,7 @@ class _SpotsSearchBar extends StatelessWidget {
             ? null
             : IconButton(onPressed: onCleared, icon: const Icon(Icons.close)),
         filled: true,
-        fillColor: Colors.white,
+        fillColor: Theme.of(context).cardColor,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(20),
           borderSide: BorderSide.none,
@@ -462,13 +462,17 @@ class _PremiumBreakCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final remaining = profile.freeLiveSpotChangeRemaining(DateTime.now());
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
     final canChange = remaining == null && !isChanging;
     final buttonLabel = remaining == null
         ? 'Change'
         : _friendlyCooldown(remaining);
 
     return Card(
-      color: const Color(0xFFE8FAF8),
+      color: dark
+          ? theme.colorScheme.primaryContainer
+          : const Color(0xFFE8FAF8),
       child: InkWell(
         borderRadius: BorderRadius.circular(24),
         onTap: () => context.push('/spot/${spot.id}'),
@@ -502,14 +506,16 @@ class _PremiumBreakCard extends StatelessWidget {
                             vertical: 5,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: theme.cardColor,
                             borderRadius: BorderRadius.circular(99),
                           ),
                           child: Text(
                             'Premium break',
                             style: Theme.of(context).textTheme.labelMedium
                                 ?.copyWith(
-                                  color: const Color(0xFF007A80),
+                                  color: dark
+                                      ? theme.colorScheme.primary
+                                      : const Color(0xFF007A80),
                                   fontWeight: FontWeight.w900,
                                 ),
                           ),
@@ -555,7 +561,9 @@ class _PremiumBreakCard extends StatelessWidget {
                       Text(
                         'You can change it again in ${_friendlyCooldown(remaining)}.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: const Color(0xFF516163),
+                          color: dark
+                              ? theme.colorScheme.onSurfaceVariant
+                              : const Color(0xFF516163),
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -566,7 +574,9 @@ class _PremiumBreakCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: const Color(0xFF516163),
+                        color: dark
+                            ? theme.colorScheme.onSurfaceVariant
+                            : const Color(0xFF516163),
                       ),
                     ),
                   ],
@@ -868,7 +878,9 @@ class _RegionSection extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 10),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: const Color(0xFFF6F3ED),
+          color: Theme.of(context).brightness == Brightness.dark
+              ? Theme.of(context).colorScheme.surfaceContainerLow
+              : const Color(0xFFF6F3ED),
           borderRadius: BorderRadius.circular(18),
         ),
         child: ExpansionTile(
@@ -960,7 +972,9 @@ class _BaliRegionSection extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 10),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: const Color(0xFFF6F3ED),
+          color: Theme.of(context).brightness == Brightness.dark
+              ? Theme.of(context).colorScheme.surfaceContainerLow
+              : const Color(0xFFF6F3ED),
           borderRadius: BorderRadius.circular(18),
         ),
         child: ExpansionTile(
@@ -1012,7 +1026,7 @@ class _AreaSection extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(16),
       ),
       child: ExpansionTile(
@@ -1086,7 +1100,11 @@ class _SpotCard extends ConsumerWidget {
         : '${spot.area}, ${spot.region}';
     final forecast = ref.watch(spotCardForecastProvider(spot.id));
     final forecastTextStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
-      color: isPremium ? null : const Color(0xFF5D686B),
+      color: isPremium
+          ? null
+          : (Theme.of(context).brightness == Brightness.dark
+                ? Theme.of(context).colorScheme.onSurfaceVariant
+                : const Color(0xFF5D686B)),
     );
 
     return Card(

@@ -14,6 +14,7 @@ import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../../core/widgets/feed_refresh_indicator.dart';
+import '../../core/theme/appearance_settings.dart';
 import '../home/home_page.dart';
 import '../alerts/alert_state.dart';
 import '../social/direct_messages_page.dart';
@@ -372,7 +373,12 @@ class _SignedOutProfileCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               message,
-              style: const TextStyle(color: Color(0xFF5D686C), height: 1.35),
+              style: TextStyle(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? scheme.onSurfaceVariant
+                    : const Color(0xFF5D686C),
+                height: 1.35,
+              ),
             ),
             const SizedBox(height: 16),
             FilledButton(onPressed: onSignIn, child: const Text('Sign in')),
@@ -453,6 +459,7 @@ class _ProfileHero extends StatelessWidget {
                         displayName: profile.displayName,
                         imageUrl: profile.avatarUrl,
                         backgroundColor: Colors.white,
+                        foregroundColor: tydesAvatarForeground,
                       ),
                     ),
                     const SizedBox(width: 18),
@@ -820,99 +827,103 @@ class _ProfileSettingsSheet extends StatelessWidget {
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 42,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFD5D0C6),
-                  borderRadius: BorderRadius.circular(999),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 42,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD5D0C6),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 18),
-            Text(
-              'Profile settings',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 14),
-            if (profile != null) ...[
+              const SizedBox(height: 18),
+              Text(
+                'Profile settings',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 14),
+              if (profile != null) ...[
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.edit_outlined),
+                  title: const Text('Edit profile'),
+                  subtitle: Text('@${profile!.handle}'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: onEditProfile,
+                ),
+                const Divider(),
+              ],
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.edit_outlined),
-                title: const Text('Edit profile'),
-                subtitle: Text('@${profile!.handle}'),
+                leading: Icon(
+                  premium ? Icons.verified : Icons.workspace_premium_outlined,
+                ),
+                title: Text(premium ? 'Premium active' : 'Manage premium'),
+                subtitle: const Text('Forecast access and future upgrades'),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: onEditProfile,
+                onTap: onManagePremium,
               ),
               const Divider(),
-            ],
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(
-                premium ? Icons.verified : Icons.workspace_premium_outlined,
-              ),
-              title: Text(premium ? 'Premium active' : 'Manage premium'),
-              subtitle: const Text('Forecast access and future upgrades'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: onManagePremium,
-            ),
-            const Divider(),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.block_outlined),
-              title: const Text('Blocked surfers'),
-              subtitle: const Text('View or unblock accounts'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: onBlockedUsers,
-            ),
-            const Divider(),
-            if (onAdminDashboard != null) ...[
+              const AppearanceSettingsTile(contentPadding: EdgeInsets.zero),
+              const Divider(),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.admin_panel_settings_outlined),
-                title: const Text('Admin dashboard'),
-                subtitle: const Text('View registered Tydes accounts'),
+                leading: const Icon(Icons.block_outlined),
+                title: const Text('Blocked surfers'),
+                subtitle: const Text('View or unblock accounts'),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: onAdminDashboard,
+                onTap: onBlockedUsers,
               ),
               const Divider(),
+              if (onAdminDashboard != null) ...[
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.admin_panel_settings_outlined),
+                  title: const Text('Admin dashboard'),
+                  subtitle: const Text('View registered Tydes accounts'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: onAdminDashboard,
+                ),
+                const Divider(),
+              ],
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.policy_outlined),
+                title: const Text('Legal & support'),
+                subtitle: const Text('Privacy, terms, safety, and contact'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: onLegalSupport,
+              ),
+              const Divider(),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.logout),
+                title: const Text('Log out'),
+                subtitle: const Text('Sign in with a different account'),
+                onTap: onLogout,
+              ),
+              const Divider(),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  Icons.delete_forever_outlined,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                title: Text(
+                  'Delete account',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+                subtitle: const Text('Permanently delete your account'),
+                onTap: onDeleteAccount,
+              ),
             ],
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.policy_outlined),
-              title: const Text('Legal & support'),
-              subtitle: const Text('Privacy, terms, safety, and contact'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: onLegalSupport,
-            ),
-            const Divider(),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.logout),
-              title: const Text('Log out'),
-              subtitle: const Text('Sign in with a different account'),
-              onTap: onLogout,
-            ),
-            const Divider(),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(
-                Icons.delete_forever_outlined,
-                color: Color(0xFFB3261E),
-              ),
-              title: const Text(
-                'Delete account',
-                style: TextStyle(color: Color(0xFFB3261E)),
-              ),
-              subtitle: const Text('Permanently delete your account'),
-              onTap: onDeleteAccount,
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -936,7 +947,9 @@ class _LegalSupportSheet extends StatelessWidget {
                 width: 42,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFD5D0C6),
+                  color: theme.brightness == Brightness.dark
+                      ? theme.colorScheme.outlineVariant
+                      : const Color(0xFFD5D0C6),
                   borderRadius: BorderRadius.circular(999),
                 ),
               ),
@@ -1007,7 +1020,9 @@ class _SafetyAndCommunityCard extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Card(
-      color: const Color(0xFFFFF4E4),
+      color: theme.brightness == Brightness.dark
+          ? scheme.surfaceContainerHigh
+          : const Color(0xFFFFF4E4),
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Column(
@@ -1064,7 +1079,9 @@ class _BlockedUsersSheet extends ConsumerWidget {
                 width: 42,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFD5D0C6),
+                  color: theme.brightness == Brightness.dark
+                      ? theme.colorScheme.outlineVariant
+                      : const Color(0xFFD5D0C6),
                   borderRadius: BorderRadius.circular(999),
                 ),
               ),
@@ -1498,6 +1515,8 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.fromLTRB(20, 12, 20, 24 + bottomInset),
@@ -1511,7 +1530,9 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
                   width: 42,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFD5D0C6),
+                    color: isDark
+                        ? theme.colorScheme.outlineVariant
+                        : const Color(0xFFD5D0C6),
                     borderRadius: BorderRadius.circular(999),
                   ),
                 ),
@@ -1528,7 +1549,12 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
                     TydesProfileAvatar(
                       size: 84,
                       displayName: widget.profile.displayName,
-                      backgroundColor: const Color(0xFFE6F3F1),
+                      backgroundColor: isDark
+                          ? theme.colorScheme.primaryContainer
+                          : const Color(0xFFE6F3F1),
+                      foregroundColor: isDark
+                          ? theme.colorScheme.onPrimaryContainer
+                          : tydesAvatarForeground,
                       imageUrl: widget.profile.avatarUrl,
                       image: _avatarBytes == null
                           ? null
@@ -1616,11 +1642,16 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
                     ),
                 ],
               ),
-              const Center(
+              Center(
                 child: Text(
                   'Best size: 1600 × 600. Tydes crops it to fit every screen.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12, color: Color(0xFF65757A)),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark
+                        ? theme.colorScheme.onSurfaceVariant
+                        : const Color(0xFF65757A),
+                  ),
                 ),
               ),
               const SizedBox(height: 10),
@@ -1988,6 +2019,7 @@ class _ProfilePostCard extends StatelessWidget {
                   displayName: authorName,
                   imageUrl: authorAvatarUrl,
                   backgroundColor: Colors.white,
+                  foregroundColor: tydesAvatarForeground,
                 ),
                 const SizedBox(width: 12),
                 Expanded(

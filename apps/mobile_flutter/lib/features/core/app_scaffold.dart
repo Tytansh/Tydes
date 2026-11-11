@@ -166,7 +166,9 @@ class _DesktopNavigation extends StatelessWidget {
       selectedIndex: selectedIndex,
       onDestinationSelected: onDestinationSelected,
       groupAlignment: -1,
-      backgroundColor: const Color(0xFF174A4F),
+      backgroundColor: Theme.of(context).brightness == Brightness.dark
+          ? const Color(0xFF102A30)
+          : const Color(0xFF174A4F),
       indicatorColor: const Color(0xFFC9F1ED),
       selectedIconTheme: const IconThemeData(color: Color(0xFF174A4F)),
       selectedLabelTextStyle: const TextStyle(
@@ -290,8 +292,8 @@ class _AppAuthGate extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               message,
-              style: const TextStyle(
-                color: Color(0xFF5D686C),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
                 fontWeight: FontWeight.w700,
               ),
             ),

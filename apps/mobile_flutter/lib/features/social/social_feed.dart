@@ -1037,7 +1037,7 @@ class _PostEngagementBarState extends ConsumerState<PostEngagementBar> {
                 decoration: InputDecoration(
                   hintText: 'Comment',
                   filled: true,
-                  fillColor: const Color(0xFFF8F7F2),
+                  fillColor: Theme.of(context).scaffoldBackgroundColor,
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 14,
                     vertical: 10,
@@ -1055,7 +1055,7 @@ class _PostEngagementBarState extends ConsumerState<PostEngagementBar> {
               icon: const Icon(Icons.arrow_upward_rounded),
               style: IconButton.styleFrom(
                 backgroundColor: scheme.primary,
-                foregroundColor: Colors.white,
+                foregroundColor: scheme.onPrimary,
               ),
               tooltip: 'Post comment',
             ),
@@ -1277,7 +1277,7 @@ class _CommentPreviewTile extends ConsumerWidget {
                           vertical: 9,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF8F7F2),
+                          color: Theme.of(context).scaffoldBackgroundColor,
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: RichText(
@@ -1692,7 +1692,7 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                       decoration: InputDecoration(
                         hintText: 'Comment',
                         filled: true,
-                        fillColor: const Color(0xFFF8F7F2),
+                        fillColor: Theme.of(context).scaffoldBackgroundColor,
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 14,
                           vertical: 10,
@@ -1710,7 +1710,7 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                     icon: const Icon(Icons.arrow_upward_rounded),
                     style: IconButton.styleFrom(
                       backgroundColor: scheme.primary,
-                      foregroundColor: Colors.white,
+                      foregroundColor: scheme.onPrimary,
                     ),
                     tooltip: 'Post comment',
                   ),
@@ -2081,9 +2081,11 @@ class _SharePostSheetState extends ConsumerState<_SharePostSheet> {
         maxChildSize: 0.9,
         builder: (context, scrollController) {
           return Container(
-            decoration: const BoxDecoration(
-              color: Color(0xFFF8F7F2),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+            decoration: BoxDecoration(
+              color: theme.scaffoldBackgroundColor,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(30),
+              ),
             ),
             child: ListView(
               controller: scrollController,
@@ -2124,7 +2126,7 @@ class _SharePostSheetState extends ConsumerState<_SharePostSheet> {
                     hintText: 'Search messages',
                     prefixIcon: const Icon(Icons.search),
                     filled: true,
-                    fillColor: Colors.white,
+                    fillColor: Theme.of(context).cardColor,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(22),
                       borderSide: BorderSide.none,
@@ -2203,7 +2205,7 @@ class _SharePostPreviewLine extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
@@ -2278,7 +2280,7 @@ class _ShareRecipientTile extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(22),
           border: selected
               ? Border.all(color: scheme.primary.withValues(alpha: 0.5))
@@ -2344,7 +2346,7 @@ class _ShareRecipientTile extends StatelessWidget {
                       decoration: InputDecoration(
                         hintText: hintText,
                         filled: true,
-                        fillColor: const Color(0xFFF8F7F2),
+                        fillColor: Theme.of(context).scaffoldBackgroundColor,
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 14,
                           vertical: 10,
@@ -3464,7 +3466,7 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
                   const SizedBox(height: 14),
                   Container(
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: theme.cardColor,
                       borderRadius: BorderRadius.circular(24),
                       border: Border.all(
                         color: scheme.outlineVariant.withValues(alpha: 0.45),
@@ -3497,12 +3499,12 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                       child: _submitting
-                          ? const SizedBox(
+                          ? SizedBox(
                               width: 18,
                               height: 18,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: Colors.white,
+                                color: scheme.onPrimary,
                               ),
                             )
                           : Text(isSurfInvite ? 'Post event' : 'Post'),
@@ -4023,7 +4025,7 @@ class _ComposerTypeSwitch extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(5),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.6)),
       ),
@@ -4167,7 +4169,7 @@ class _ComposerMediaStageState extends State<_ComposerMediaStage> {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(28),
         border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
         boxShadow: [
@@ -4361,7 +4363,7 @@ class _ComposerEmptyMedia extends StatelessWidget {
             width: 62,
             height: 62,
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: Theme.of(context).cardColor,
               borderRadius: BorderRadius.circular(22),
             ),
             child: Icon(
@@ -4458,7 +4460,7 @@ class _ComposerDraftsSheet extends ConsumerWidget {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      tileColor: Colors.white,
+                      tileColor: Theme.of(context).cardColor,
                       title: Text(
                         _draftTitle(draft),
                         style: const TextStyle(fontWeight: FontWeight.w900),
@@ -4731,21 +4733,21 @@ class _ComposerMetaChip extends StatelessWidget {
       avatar: Icon(
         icon,
         size: 17,
-        color: selected ? Colors.white : scheme.primary,
+        color: selected ? scheme.onPrimary : scheme.primary,
       ),
       label: Text(label),
       labelStyle: TextStyle(
-        color: selected ? Colors.white : scheme.onSurface,
+        color: selected ? scheme.onPrimary : scheme.onSurface,
         fontWeight: FontWeight.w800,
       ),
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).cardColor,
       side: BorderSide(
         color: selected
             ? scheme.primary.withValues(alpha: 0.65)
             : scheme.outlineVariant,
       ),
       color: WidgetStateProperty.resolveWith(
-        (_) => selected ? scheme.primary : Colors.white,
+        (_) => selected ? scheme.primary : Theme.of(context).cardColor,
       ),
       onPressed: onTap,
     );
@@ -4989,7 +4991,7 @@ class _SpotTagExpansion extends StatelessWidget {
     return Container(
       margin: EdgeInsets.only(left: inset ? 10 : 0, bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(18),
       ),
       child: Theme(
@@ -5041,7 +5043,7 @@ class _SpotTagTile extends StatelessWidget {
         child: Container(
           padding: EdgeInsets.all(compact ? 12 : 14),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(18),
             border: selected ? Border.all(color: scheme.primary) : null,
           ),
@@ -5269,7 +5271,7 @@ class SurfInviteActions extends ConsumerWidget {
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: Theme.of(context).cardColor,
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Row(
@@ -5532,7 +5534,7 @@ class _GoingPersonTile extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: Theme.of(context).cardColor,
               borderRadius: BorderRadius.circular(22),
             ),
             child: Row(

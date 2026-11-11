@@ -1,0 +1,1 @@
+void syncHostAppearance(bool dark) {}

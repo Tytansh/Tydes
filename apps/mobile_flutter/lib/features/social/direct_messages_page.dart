@@ -791,9 +791,9 @@ class _NewMessageSheetState extends ConsumerState<_NewMessageSheet> {
       maxChildSize: 0.92,
       builder: (context, scrollController) {
         return Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFFF8F7F2),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+          decoration: BoxDecoration(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
           ),
           child: ListView(
             controller: scrollController,
@@ -1027,7 +1027,7 @@ class _SearchField extends StatelessWidget {
         hintText: hintText,
         prefixIcon: const Icon(Icons.search),
         filled: true,
-        fillColor: Colors.white,
+        fillColor: Theme.of(context).cardColor,
         contentPadding: const EdgeInsets.symmetric(vertical: 14),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(22),
@@ -1118,8 +1118,8 @@ class _MessageThreadTile extends StatelessWidget {
                 ),
                 child: Text(
                   thread.unreadCount.toString(),
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: theme.colorScheme.onPrimary,
                     fontSize: 12,
                     fontWeight: FontWeight.w900,
                   ),
@@ -1517,8 +1517,10 @@ class _MessageBubble extends StatelessWidget {
     final alignment = message.isMe
         ? Alignment.centerRight
         : Alignment.centerLeft;
-    final color = message.isMe ? theme.colorScheme.primary : Colors.white;
-    final textColor = message.isMe ? Colors.white : theme.colorScheme.onSurface;
+    final color = message.isMe ? theme.colorScheme.primary : theme.cardColor;
+    final textColor = message.isMe
+        ? theme.colorScheme.onPrimary
+        : theme.colorScheme.onSurface;
     final hasMedia = message.mediaPath != null;
     final isSharedPost = message.sharedPostId != null;
 
@@ -1544,7 +1546,7 @@ class _MessageBubble extends StatelessWidget {
                   color: isSharedPost
                       ? Colors.transparent
                       : hasMedia
-                      ? Colors.white
+                      ? theme.cardColor
                       : color,
                   borderRadius: isSharedPost
                       ? BorderRadius.zero
@@ -1624,13 +1626,15 @@ class _MessageContent extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: message.isMe ? scheme.primary : Colors.white,
+                color: message.isMe
+                    ? scheme.primary
+                    : Theme.of(context).cardColor,
                 borderRadius: BorderRadius.circular(18),
               ),
               child: Text(
                 message.text,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: message.isMe ? Colors.white : scheme.onSurface,
+                  color: message.isMe ? scheme.onPrimary : scheme.onSurface,
                   height: 1.28,
                 ),
               ),
@@ -1691,7 +1695,7 @@ class _SharedPostPreview extends ConsumerWidget {
       child: Container(
         width: MediaQuery.sizeOf(context).width * 0.72,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: scheme.outlineVariant),
         ),
@@ -2143,7 +2147,7 @@ class _MessageComposer extends StatelessWidget {
                 decoration: InputDecoration(
                   hintText: 'Message...',
                   filled: true,
-                  fillColor: Colors.white,
+                  fillColor: Theme.of(context).cardColor,
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 12,
@@ -2192,7 +2196,7 @@ class _MessageRequestActions extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(24),
           ),
           child: Column(

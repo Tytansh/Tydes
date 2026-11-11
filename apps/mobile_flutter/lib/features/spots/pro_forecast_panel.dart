@@ -7,12 +7,28 @@ import '../../core/legal/legal_links.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/detailed_forecast_models.dart';
 
-const _ink = Color(0xFF173B40);
-const _muted = Color(0xFF617779);
-const _ocean = Color(0xFF127EB0);
-const _teal = Color(0xFF069F9F);
-const _sand = Color(0xFFAE782B);
-const _border = Color(0xFFE0E9E7);
+/// Chart colours are chosen for the surrounding surface, not just the lines.
+/// Canvas labels need the same dark-mode treatment as regular Flutter text.
+class _ForecastColors {
+  _ForecastColors.of(BuildContext context) : theme = Theme.of(context);
+
+  final ThemeData theme;
+  bool get dark => theme.brightness == Brightness.dark;
+  Color get ink => dark ? theme.colorScheme.onSurface : const Color(0xFF173B40);
+  Color get muted =>
+      dark ? theme.colorScheme.onSurfaceVariant : const Color(0xFF617779);
+  Color get ocean => dark ? const Color(0xFF77C8F0) : const Color(0xFF127EB0);
+  Color get teal => dark ? const Color(0xFF67D8CB) : const Color(0xFF069F9F);
+  Color get sand => dark ? const Color(0xFFE8BC76) : const Color(0xFFAE782B);
+  Color get border =>
+      dark ? theme.colorScheme.outlineVariant : const Color(0xFFE0E9E7);
+  Color get panel => dark ? theme.cardColor : Colors.white;
+  Color get softSurface =>
+      dark ? theme.colorScheme.surfaceContainerHigh : const Color(0xFFF0F5F2);
+  Color get daySurface =>
+      dark ? theme.colorScheme.surfaceContainerHigh : const Color(0xFFF7F9F7);
+  Color get activeDay => dark ? const Color(0xFF265954) : ink;
+}
 
 /// A transparent model-data desk. Wave heights are not breaking-wave heights.
 class ProForecastPanel extends StatefulWidget {
@@ -78,6 +94,7 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = _ForecastColors.of(context);
     final forecast = widget.forecast;
     if (!forecast.available || forecast.hours.isEmpty) {
       return _Panel(
@@ -94,7 +111,7 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
             Text(
               forecast.note ??
                   'Detailed model data is not available for this spot right now. No estimated readings are substituted.',
-              style: const TextStyle(color: _muted),
+              style: TextStyle(color: colors.muted),
             ),
           ],
         ),
@@ -122,14 +139,17 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   const _Eyebrow('FORECAST DESK'),
-                  _Pill('${_days.length}-day hourly outlook', color: _ocean),
+                  _Pill(
+                    '${_days.length}-day hourly outlook',
+                    color: colors.ocean,
+                  ),
                 ],
               ),
               const SizedBox(height: 14),
               Text(
                 'Read the swell. Time your session.',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: _ink,
+                  color: colors.ink,
                   fontWeight: FontWeight.w800,
                   letterSpacing: -.8,
                 ),
@@ -137,7 +157,7 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
               const SizedBox(height: 10),
               Text(
                 'All times at the spot${forecast.timezone == null ? '' : ' · ${forecast.timezone}'}. Heights in metres; wind in knots.',
-                style: const TextStyle(color: _muted, fontSize: 12),
+                style: TextStyle(color: colors.muted, fontSize: 12),
               ),
               const SizedBox(height: 20),
               SingleChildScrollView(
@@ -160,10 +180,12 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
                           }),
                           style: OutlinedButton.styleFrom(
                             backgroundColor: active
-                                ? _ink
-                                : const Color(0xFFF7F9F7),
-                            foregroundColor: active ? Colors.white : _ink,
-                            side: BorderSide(color: active ? _ink : _border),
+                                ? colors.activeDay
+                                : colors.daySurface,
+                            foregroundColor: active ? Colors.white : colors.ink,
+                            side: BorderSide(
+                              color: active ? colors.activeDay : colors.border,
+                            ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14),
                             ),
@@ -186,7 +208,7 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
                                   fontSize: 12,
                                   color: active
                                       ? const Color(0xFFD0E9E8)
-                                      : _muted,
+                                      : colors.muted,
                                 ),
                               ),
                             ],
@@ -198,17 +220,17 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
                 ),
               ),
               const SizedBox(height: 22),
-              const Divider(color: _border, height: 1),
+              Divider(color: colors.border, height: 1),
               const SizedBox(height: 18),
               Row(
                 children: [
                   Expanded(
                     child: Text(
                       _dateLabel(_day!),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
-                        color: _ink,
+                        color: colors.ink,
                       ),
                     ),
                   ),
@@ -222,10 +244,10 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
                   Text(
                     hour.localTime,
                     key: const ValueKey('forecast-selected-time'),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 19,
                       fontWeight: FontWeight.w800,
-                      color: _ink,
+                      color: colors.ink,
                     ),
                   ),
                   IconButton(
@@ -279,7 +301,7 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
                         label: 'OFFSHORE WAVES',
                         value: _value(hour.waveHeightM, 'm'),
                         detail: 'Significant height · Hs',
-                        color: _ocean,
+                        color: colors.ocean,
                       ),
                       _Metric(
                         width: width,
@@ -288,7 +310,7 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
                         detail: hour.swellPeakPeriodS == null
                             ? 'Mean period'
                             : 'Peak ${_value(hour.swellPeakPeriodS, 's')}',
-                        color: _teal,
+                        color: colors.teal,
                       ),
                       _Metric(
                         key: const ValueKey('selected-wind-metric'),
@@ -296,23 +318,27 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
                         label: 'WIND',
                         value: _value(hour.windKts, 'kt'),
                         detail: _direction(hour.windDirectionDeg),
-                        color: _ink,
+                        color: colors.ink,
                       ),
                       _Metric(
                         width: width,
                         label: 'WATER',
                         value: _value(hour.seaSurfaceTemperatureC, '°C'),
                         detail: 'Sea surface estimate',
-                        color: _sand,
+                        color: colors.sand,
                       ),
                     ],
                   );
                 },
               ),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 'Modelled offshore wave height is not breaking-wave face height. Local bathymetry, shelter, sandbanks and tide can change what reaches the beach.',
-                style: TextStyle(color: _muted, fontSize: 12, height: 1.6),
+                style: TextStyle(
+                  color: colors.muted,
+                  fontSize: 12,
+                  height: 1.6,
+                ),
               ),
             ],
           ),
@@ -332,17 +358,17 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
                 series: [
                   _Series(
                     'Combined waves',
-                    _ocean,
+                    colors.ocean,
                     hours.map((h) => h.waveHeightM).toList(),
                   ),
                   _Series(
                     'Swell',
-                    _teal,
+                    colors.teal,
                     hours.map((h) => h.swellHeightM).toList(),
                   ),
                   _Series(
                     'Wind waves',
-                    _sand,
+                    colors.sand,
                     hours.map((h) => h.windWaveHeightM).toList(),
                   ),
                 ],
@@ -356,10 +382,14 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
                 onSelected: (index) => setState(() => _selectedHour = index),
                 unit: 'kt',
                 series: [
-                  _Series('Wind', _teal, hours.map((h) => h.windKts).toList()),
+                  _Series(
+                    'Wind',
+                    colors.teal,
+                    hours.map((h) => h.windKts).toList(),
+                  ),
                   _Series(
                     'Gusts',
-                    _sand,
+                    colors.sand,
                     hours.map((h) => h.windGustsKts).toList(),
                   ),
                 ],
@@ -402,7 +432,7 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
                       _Component(
                         width: width,
                         title: 'Swell',
-                        color: _teal,
+                        color: colors.teal,
                         height: hour.swellHeightM,
                         period: hour.swellPeriodS,
                         direction: hour.swellDirectionDeg,
@@ -413,7 +443,7 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
                       _Component(
                         width: width,
                         title: 'Secondary swell',
-                        color: _ocean,
+                        color: colors.ocean,
                         height: hour.secondarySwellHeightM,
                         period: hour.secondarySwellPeriodS,
                         direction: hour.secondarySwellDirectionDeg,
@@ -422,7 +452,7 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
                       _Component(
                         width: width,
                         title: 'Wind waves',
-                        color: _sand,
+                        color: colors.sand,
                         height: hour.windWaveHeightM,
                         period: hour.windWavePeriodS,
                         direction: hour.windWaveDirectionDeg,
@@ -433,9 +463,13 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
                 },
               ),
               const SizedBox(height: 14),
-              const Text(
+              Text(
                 'Directions are FROM true north: 0° N, 90° E, 180° S, 270° W. Components are not additive wave heights. “—” means the model did not supply a value.',
-                style: TextStyle(color: _muted, fontSize: 12, height: 1.6),
+                style: TextStyle(
+                  color: colors.muted,
+                  fontSize: 12,
+                  height: 1.6,
+                ),
               ),
             ],
           ),
@@ -444,7 +478,7 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
         _TidePanel(tide: widget.tide, forecast: forecast, day: _day!),
         const SizedBox(height: 14),
         _Panel(
-          color: const Color(0xFFF0F5F2),
+          color: colors.softSurface,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -452,16 +486,16 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
               const SizedBox(height: 10),
               Text(
                 'Marine: ${forecast.marineModel ?? forecast.source}. Wind: ${forecast.weatherModel ?? 'Open-Meteo automatic selection'}.',
-                style: const TextStyle(fontSize: 12, color: _ink, height: 1.6),
+                style: TextStyle(fontSize: 12, color: colors.ink, height: 1.6),
               ),
               const SizedBox(height: 5),
               Text(
                 forecast.fetchedAt == null
                     ? 'Fetch time unavailable. Model issue time is not supplied.'
                     : 'Fetched ${DateFormat('d MMM, HH:mm').format(forecast.fetchedAt!.toUtc())} UTC. This is retrieval time, not the model issue time.',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: _muted,
+                  color: colors.muted,
                   height: 1.6,
                 ),
               ),
@@ -469,17 +503,21 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
                 const SizedBox(height: 8),
                 Text(
                   forecast.note!,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
-                    color: _muted,
+                    color: colors.muted,
                     height: 1.6,
                   ),
                 ),
               ],
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 'Forecast models are guidance, not observations or a safety rating. Confidence generally falls further ahead. Check the beach and local hazards before surfing.',
-                style: TextStyle(fontSize: 12, color: _muted, height: 1.6),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colors.muted,
+                  height: 1.6,
+                ),
               ),
               const SizedBox(height: 8),
               Wrap(
@@ -533,6 +571,7 @@ class _TidePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = _ForecastColors.of(context);
     final samples = tide.samples
         .where(
           (sample) =>
@@ -560,7 +599,7 @@ class _TidePanel extends StatelessWidget {
                 '${tide.stationDistanceKm!.toStringAsFixed(1)} km from spot',
               if (tide.datum != null) 'Datum: ${tide.datum}',
             ].join(' · '),
-            style: const TextStyle(color: _muted, fontSize: 12, height: 1.6),
+            style: TextStyle(color: colors.muted, fontSize: 12, height: 1.6),
           ),
           const SizedBox(height: 16),
           if (!tide.available || (samples.isEmpty && events.isEmpty))
@@ -568,7 +607,7 @@ class _TidePanel extends StatelessWidget {
               tide.available
                   ? 'No tide predictions are available for this selected day.'
                   : (tide.note ?? 'Tide data is unavailable right now.'),
-              style: const TextStyle(color: _muted),
+              style: TextStyle(color: colors.muted),
             )
           else ...[
             if (samples.length >= 2)
@@ -592,14 +631,19 @@ class _TidePanel extends StatelessWidget {
                           )
                           .toList(),
                       textScaler: MediaQuery.textScalerOf(context),
+                      colors: colors,
                     ),
                   ),
                 ),
               )
             else
-              const Text(
+              Text(
                 'Only tide extremes are supplied for this day. No continuous tide curve is inferred.',
-                style: TextStyle(color: _muted, fontSize: 12, height: 1.6),
+                style: TextStyle(
+                  color: colors.muted,
+                  fontSize: 12,
+                  height: 1.6,
+                ),
               ),
             if (events.isNotEmpty) ...[
               const SizedBox(height: 14),
@@ -614,26 +658,28 @@ class _TidePanel extends StatelessWidget {
                           vertical: 11,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF2F7F5),
+                          color: colors.dark
+                              ? colors.softSurface
+                              : const Color(0xFFF2F7F5),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: _border),
+                          border: Border.all(color: colors.border),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               '${event.label} · ${event.localTime}',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 13,
-                                color: _ink,
+                                color: colors.ink,
                               ),
                             ),
                             const SizedBox(height: 3),
                             Text(
                               _value(event.heightM, 'm'),
-                              style: const TextStyle(
-                                color: _muted,
+                              style: TextStyle(
+                                color: colors.muted,
                                 fontSize: 12,
                               ),
                             ),
@@ -648,13 +694,13 @@ class _TidePanel extends StatelessWidget {
           const SizedBox(height: 14),
           Text(
             'Source: ${tide.source}${tide.timezone == null ? '' : ' · ${tide.timezone}'}. ${tide.datum == null ? 'Height datum was not supplied; do not compare these heights with another source.' : 'Tide heights are relative to ${tide.datum}.'} Nearby beach conditions may differ.',
-            style: const TextStyle(color: _muted, fontSize: 11, height: 1.6),
+            style: TextStyle(color: colors.muted, fontSize: 11, height: 1.6),
           ),
           if (tide.fetchedAt != null) ...[
             const SizedBox(height: 5),
             Text(
               'Tide predictions fetched ${DateFormat('d MMM, HH:mm').format(tide.fetchedAt!.toUtc())} UTC.',
-              style: const TextStyle(color: _muted, fontSize: 11, height: 1.6),
+              style: TextStyle(color: colors.muted, fontSize: 11, height: 1.6),
             ),
           ],
         ],
@@ -697,18 +743,18 @@ class _TidePanel extends StatelessWidget {
 }
 
 class _Panel extends StatelessWidget {
-  const _Panel({required this.child, this.color = Colors.white});
+  const _Panel({required this.child, this.color});
   final Widget child;
-  final Color color;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) => Container(
     width: double.infinity,
     padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 600 ? 18 : 24),
     decoration: BoxDecoration(
-      color: color,
+      color: color ?? _ForecastColors.of(context).panel,
       borderRadius: BorderRadius.circular(22),
-      border: Border.all(color: _border),
+      border: Border.all(color: _ForecastColors.of(context).border),
     ),
     child: child,
   );
@@ -720,8 +766,8 @@ class _Eyebrow extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(
     text,
-    style: const TextStyle(
-      color: _teal,
+    style: TextStyle(
+      color: _ForecastColors.of(context).teal,
       fontSize: 11,
       fontWeight: FontWeight.w800,
       letterSpacing: 1.8,
@@ -755,10 +801,16 @@ class _IconLabel extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
-      Icon(icon, size: 15, color: _muted),
+      Icon(icon, size: 15, color: _ForecastColors.of(context).muted),
       const SizedBox(width: 5),
       Flexible(
-        child: Text(text, style: const TextStyle(fontSize: 11, color: _muted)),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 11,
+            color: _ForecastColors.of(context).muted,
+          ),
+        ),
       ),
     ],
   );
@@ -774,15 +826,21 @@ class _SectionHeading extends StatelessWidget {
     children: [
       Text(
         title,
-        style: const TextStyle(
-          color: _ink,
+        style: TextStyle(
+          color: _ForecastColors.of(context).ink,
           fontSize: 18,
           fontWeight: FontWeight.w800,
           letterSpacing: -.4,
         ),
       ),
       const SizedBox(height: 5),
-      Text(subtitle, style: const TextStyle(color: _muted, fontSize: 12)),
+      Text(
+        subtitle,
+        style: TextStyle(
+          color: _ForecastColors.of(context).muted,
+          fontSize: 12,
+        ),
+      ),
     ],
   );
 }
@@ -814,8 +872,8 @@ class _Metric extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(
-            color: _muted,
+          style: TextStyle(
+            color: _ForecastColors.of(context).muted,
             fontSize: 10,
             fontWeight: FontWeight.w800,
             letterSpacing: .5,
@@ -834,7 +892,11 @@ class _Metric extends StatelessWidget {
         const SizedBox(height: 5),
         Text(
           detail,
-          style: const TextStyle(fontSize: 11, color: _muted, height: 1.5),
+          style: TextStyle(
+            fontSize: 11,
+            color: _ForecastColors.of(context).muted,
+            height: 1.5,
+          ),
         ),
       ],
     ),
@@ -864,7 +926,7 @@ class _Component extends StatelessWidget {
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
       color: color.withValues(alpha: .045),
-      border: Border.all(color: _border),
+      border: Border.all(color: _ForecastColors.of(context).border),
       borderRadius: BorderRadius.circular(14),
     ),
     child: Column(
@@ -881,8 +943,8 @@ class _Component extends StatelessWidget {
             Expanded(
               child: Text(
                 title,
-                style: const TextStyle(
-                  color: _ink,
+                style: TextStyle(
+                  color: _ForecastColors.of(context).ink,
                   fontWeight: FontWeight.w700,
                   fontSize: 13,
                 ),
@@ -912,7 +974,10 @@ class _Component extends StatelessWidget {
             Expanded(
               child: Text(
                 _direction(direction),
-                style: const TextStyle(fontSize: 12, color: _ink),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _ForecastColors.of(context).ink,
+                ),
               ),
             ),
           ],
@@ -920,7 +985,11 @@ class _Component extends StatelessWidget {
         const SizedBox(height: 8),
         Text(
           note,
-          style: const TextStyle(color: _muted, fontSize: 11, height: 1.5),
+          style: TextStyle(
+            color: _ForecastColors.of(context).muted,
+            fontSize: 11,
+            height: 1.5,
+          ),
         ),
       ],
     ),
@@ -974,7 +1043,10 @@ class _ChartCard extends StatelessWidget {
                     Flexible(
                       child: Text(
                         '${item.name} ${_value(item.values[selected], unit)}',
-                        style: const TextStyle(fontSize: 11, color: _muted),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: _ForecastColors.of(context).muted,
+                        ),
                       ),
                     ),
                   ],
@@ -987,11 +1059,11 @@ class _ChartCard extends StatelessWidget {
           (item) =>
               item.values.every((value) => value == null || !value.isFinite),
         ))
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 40),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 40),
             child: Text(
               'No model values supplied for this chart.',
-              style: TextStyle(color: _muted),
+              style: TextStyle(color: _ForecastColors.of(context).muted),
             ),
           )
         else
@@ -1019,6 +1091,7 @@ class _ChartCard extends StatelessWidget {
                       selected: selected,
                       unit: unit,
                       textScaler: MediaQuery.textScalerOf(context),
+                      colors: _ForecastColors.of(context),
                     ),
                   ),
                 ),
@@ -1026,9 +1099,13 @@ class _ChartCard extends StatelessWidget {
             ),
           ),
         const SizedBox(height: 3),
-        const Text(
+        Text(
           'Tap the chart or use the hour arrows to inspect. Gaps mean unavailable data.',
-          style: TextStyle(color: _muted, fontSize: 10, height: 1.5),
+          style: TextStyle(
+            color: _ForecastColors.of(context).muted,
+            fontSize: 10,
+            height: 1.5,
+          ),
         ),
       ],
     ),
@@ -1042,12 +1119,14 @@ class _ForecastPainter extends CustomPainter {
     required this.selected,
     required this.unit,
     required this.textScaler,
+    required this.colors,
   });
   final List<_Series> series;
   final List<String> labels;
   final int selected;
   final String unit;
   final TextScaler textScaler;
+  final _ForecastColors colors;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1059,11 +1138,11 @@ class _ForecastPainter extends CustomPainter {
     final maximum = values.isEmpty
         ? 1.0
         : math.max(1.0, values.reduce(math.max) * 1.15);
-    _grid(canvas, plot, 0, maximum, unit, textScaler);
+    _grid(canvas, plot, 0, maximum, unit, textScaler, colors);
     double x(int index) =>
         plot.left + plot.width * index / math.max(1, labels.length - 1);
     double y(double value) => plot.bottom - (value / maximum) * plot.height;
-    final highlight = Paint()..color = _teal.withValues(alpha: .07);
+    final highlight = Paint()..color = colors.teal.withValues(alpha: .07);
     canvas.drawRect(
       Rect.fromLTRB(x(selected) - 7, plot.top, x(selected) + 7, plot.bottom),
       highlight,
@@ -1072,7 +1151,7 @@ class _ForecastPainter extends CustomPainter {
       Offset(x(selected), plot.top),
       Offset(x(selected), plot.bottom),
       Paint()
-        ..color = _teal.withValues(alpha: .28)
+        ..color = colors.teal.withValues(alpha: .28)
         ..strokeWidth = 1,
     );
     canvas.save();
@@ -1108,7 +1187,7 @@ class _ForecastPainter extends CustomPainter {
         canvas.drawCircle(
           Offset(x(selected), y(value)),
           4.5,
-          Paint()..color = Colors.white,
+          Paint()..color = colors.panel,
         );
         canvas.drawCircle(
           Offset(x(selected), y(value)),
@@ -1131,6 +1210,7 @@ class _ForecastPainter extends CustomPainter {
         labels[index],
         Offset(x(index), plot.bottom + 14),
         textScaler,
+        colors.muted,
         centered: true,
       );
     }
@@ -1148,9 +1228,14 @@ class _TidePoint {
 }
 
 class _TidePainter extends CustomPainter {
-  const _TidePainter(this.samples, {required this.textScaler});
+  const _TidePainter(
+    this.samples, {
+    required this.textScaler,
+    required this.colors,
+  });
   final List<_TidePoint> samples;
   final TextScaler textScaler;
+  final _ForecastColors colors;
   @override
   void paint(Canvas canvas, Size size) {
     final finite = samples.where((sample) => sample.height.isFinite).toList()
@@ -1162,7 +1247,7 @@ class _TidePainter extends CustomPainter {
     final bottom = minimum - padding;
     final top = maximum + padding;
     final plot = Rect.fromLTRB(44, 15, size.width - 14, size.height - 38);
-    _grid(canvas, plot, bottom, top, 'm', textScaler);
+    _grid(canvas, plot, bottom, top, 'm', textScaler, colors);
     final start = finite.first.time.millisecondsSinceEpoch;
     final span = math.max(1, finite.last.time.millisecondsSinceEpoch - start);
     double x(_TidePoint point) =>
@@ -1182,7 +1267,7 @@ class _TidePainter extends CustomPainter {
     canvas.drawPath(
       path,
       Paint()
-        ..color = _ocean
+        ..color = colors.ocean
         ..strokeWidth = 2.6
         ..style = PaintingStyle.stroke
         ..strokeJoin = StrokeJoin.round,
@@ -1198,6 +1283,7 @@ class _TidePainter extends CustomPainter {
         finite[index].label,
         Offset(x(finite[index]), plot.bottom + 14),
         textScaler,
+        colors.muted,
         centered: true,
       );
     }
@@ -1214,6 +1300,7 @@ void _grid(
   double maximum,
   String unit,
   TextScaler textScaler,
+  _ForecastColors colors,
 ) {
   for (var i = 0; i <= 3; i++) {
     final fraction = i / 3;
@@ -1222,7 +1309,7 @@ void _grid(
       Offset(plot.left, y),
       Offset(plot.right, y),
       Paint()
-        ..color = _border
+        ..color = colors.border
         ..strokeWidth = 1,
     );
     final value = minimum + (maximum - minimum) * fraction;
@@ -1231,6 +1318,7 @@ void _grid(
       value.toStringAsFixed(unit == 'kt' ? 0 : 1),
       Offset(plot.left - 8, y - 6),
       textScaler,
+      colors.muted,
       right: true,
     );
   }
@@ -1240,14 +1328,15 @@ void _paintText(
   Canvas canvas,
   String text,
   Offset at,
-  TextScaler scaler, {
+  TextScaler scaler,
+  Color color, {
   bool centered = false,
   bool right = false,
 }) {
   final painter = TextPainter(
     text: TextSpan(
       text: text,
-      style: const TextStyle(color: _muted, fontSize: 10),
+      style: TextStyle(color: color, fontSize: 10),
     ),
     textDirection: TextDirection.ltr,
     textScaler: scaler,

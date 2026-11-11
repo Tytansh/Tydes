@@ -7,14 +7,26 @@ final _offWhite = img.ColorRgb8(250, 248, 242);
 final _ink = img.ColorRgb8(10, 18, 18);
 final _teal = img.ColorRgb8(42, 167, 161);
 
-void main() {
+void main(List<String> arguments) {
   final root = Directory.current;
+  // Web clips must use the approved full-bleed blue-wave artwork, not the
+  // historical black-on-white native generator below. This mode deliberately
+  // leaves native app icons and launch images untouched.
+  if (arguments.length == 1 && arguments.single == '--web-only') {
+    _writeWebIcons(root);
+    return;
+  }
+  if (arguments.isNotEmpty) {
+    throw ArgumentError(
+      'Usage: dart run tool/generate_brand_assets.dart [--web-only]',
+    );
+  }
   final icon = _buildIconMaster();
   final launch = _buildLaunchMaster();
 
   _writeIosIcons(root, icon);
   _writeAndroidIcons(root, icon);
-  _writeWebIcons(root, icon);
+  _writeWebIcons(root);
   _writeLaunchImages(root, launch);
 }
 
@@ -220,13 +232,35 @@ void _writeAndroidIcons(Directory root, img.Image master) {
   }
 }
 
-void _writeWebIcons(Directory root, img.Image master) {
+void _writeWebIcons(Directory root) {
+  final source = File('${root.path}/assets/branding/tydes-wave-blue.png');
+  final decoded = img.decodePng(source.readAsBytesSync());
+  if (decoded == null || decoded.width != 1024 || decoded.height != 1024) {
+    throw StateError('The approved blue-wave master must be a 1024px PNG.');
+  }
+  // Opaque RGB artwork fills every pixel. iOS applies its own rounded mask;
+  // baking transparent or rounded corners into this asset creates a border.
+  final master = decoded.convert(numChannels: 3);
   final dir = '${root.path}/web';
-  _writePng('$dir/favicon.png', _resize(master, 32));
-  _writePng('$dir/icons/Icon-192.png', _resize(master, 192));
-  _writePng('$dir/icons/Icon-512.png', _resize(master, 512));
-  _writePng('$dir/icons/Icon-maskable-192.png', _resize(master, 192));
-  _writePng('$dir/icons/Icon-maskable-512.png', _resize(master, 512));
+  const sizes = {
+    'favicon.png': 32,
+    'apple-touch-icon.png': 180,
+    'apple-touch-icon-180x180.png': 180,
+    'apple-touch-icon-precomposed.png': 180,
+    'icons/tydes-apple-touch-180.png': 180,
+    // A new path avoids reusing a previously cached letter/legacy web clip.
+    'icons/tydes-apple-touch-v3.png': 180,
+    'icons/tydes-app-192.png': 192,
+    'icons/tydes-app-512.png': 512,
+    // Old manifests may still request Flutter's historical filenames.
+    'icons/Icon-192.png': 192,
+    'icons/Icon-512.png': 512,
+    'icons/Icon-maskable-192.png': 192,
+    'icons/Icon-maskable-512.png': 512,
+  };
+  for (final entry in sizes.entries) {
+    _writePng('$dir/${entry.key}', _resize(master, entry.value));
+  }
 }
 
 void _writeLaunchImages(Directory root, img.Image master) {

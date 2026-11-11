@@ -98,7 +98,7 @@ class _SpotPickerSheet extends StatelessWidget {
                 width: 42,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFD5D0C6),
+                  color: Theme.of(context).colorScheme.outlineVariant,
                   borderRadius: BorderRadius.circular(99),
                 ),
               ),
@@ -217,7 +217,9 @@ class _SpotPickerRegionSection extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: const Color(0xFFF6F3ED),
+          color: Theme.of(context).brightness == Brightness.dark
+              ? Theme.of(context).colorScheme.surfaceContainerLow
+              : const Color(0xFFF6F3ED),
           borderRadius: BorderRadius.circular(16),
         ),
         child: ExpansionTile(

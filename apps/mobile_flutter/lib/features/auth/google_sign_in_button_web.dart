@@ -200,6 +200,8 @@ class _GoogleSignInButtonState extends ConsumerState<GoogleSignInButton> {
   @override
   Widget build(BuildContext context) {
     if (!_designPreview && !_available) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -208,8 +210,14 @@ class _GoogleSignInButtonState extends ConsumerState<GoogleSignInButton> {
             onPressed: null,
             style: OutlinedButton.styleFrom(
               minimumSize: const Size.fromHeight(44),
-              disabledForegroundColor: const Color(0xFF435B65),
-              side: const BorderSide(color: Color(0xFFD7E1E2)),
+              disabledForegroundColor: dark
+                  ? theme.colorScheme.onSurfaceVariant
+                  : const Color(0xFF435B65),
+              side: BorderSide(
+                color: dark
+                    ? theme.colorScheme.outlineVariant
+                    : const Color(0xFFD7E1E2),
+              ),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -217,10 +225,15 @@ class _GoogleSignInButtonState extends ConsumerState<GoogleSignInButton> {
             child: const Text('Continue with Google'),
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'Google sign-in is disabled in this local design preview.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11, color: Color(0xFF5A6F77)),
+            style: TextStyle(
+              fontSize: 11,
+              color: dark
+                  ? theme.colorScheme.onSurfaceVariant
+                  : const Color(0xFF5A6F77),
+            ),
           ),
         ] else if (_error != null)
           TextButton(
@@ -253,19 +266,23 @@ class _GoogleSignInButtonState extends ConsumerState<GoogleSignInButton> {
               );
             },
           ),
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 18),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 18),
           child: Row(
             children: [
-              Expanded(child: Divider()),
+              const Expanded(child: Divider()),
               Padding(
-                padding: EdgeInsets.symmetric(horizontal: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
                 child: Text(
                   'or use email',
-                  style: TextStyle(color: Color(0xFF607175)),
+                  style: TextStyle(
+                    color: dark
+                        ? theme.colorScheme.onSurfaceVariant
+                        : const Color(0xFF607175),
+                  ),
                 ),
               ),
-              Expanded(child: Divider()),
+              const Expanded(child: Divider()),
             ],
           ),
         ),

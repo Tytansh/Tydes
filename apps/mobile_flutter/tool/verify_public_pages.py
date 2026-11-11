@@ -31,6 +31,13 @@ def verify(directory):
     pages = {name: Page((root / name / "index.html").read_text())
              for name in ("about", "support", "privacy", "terms")}
     for name, page in pages.items():
+        html = (root / name / "index.html").read_text()
+        # This script is intentionally parser-blocking in the head: a deferred
+        # appearance change would flash a white legal/About page in dark mode.
+        appearance = '<script src="/appearance.js"></script>'
+        assert appearance in html, f"{name}: missing first-paint appearance script"
+        assert html.index(appearance) < html.index('<body'), f"{name}: appearance must run before paint"
+        assert '/appearance.css' in page.assets, f"{name}: missing shared appearance palette"
         for target in page.assets:
             url = urlsplit(target)
             assert not url.scheme, f"{name}: public assets should be bundled: {target}"
