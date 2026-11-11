@@ -39,9 +39,23 @@ Use this as the working launch list before TestFlight and App Store review.
 - Synchronized the iOS lockfile with the already-selected Flutter payment SDK:
   `purchases_flutter` 10.19.0, `PurchasesHybridCommon` 19.17.0, and RevenueCat
   5.99.0. The Podfile now explicitly matches Runner's iOS 13 minimum.
-- The new native build contains the hourly forecast UI and saved
-  Light/Dark/System appearance setting. The current sign-in screen was
-  visually checked; authenticated native checks still require sign-in.
+- Signed-in simulator checks passed for the existing Premium reviewer account:
+  Bondi's current five-day outlook (November 12–16, Australia/Sydney), day and
+  hour selection, chart tap-to-inspect, swell components, wind/gust charts,
+  and the Coogee tide-station curve with its LAT datum and source timestamp.
+- Changed System to Dark, fully closed only Tydes through the iOS app switcher,
+  and reopened it from its home-screen icon. Both authenticated access and the
+  saved Dark selection survived. Restored the original System preference and
+  left the signed-in app open. No app data or account content was deleted.
+- The native Premium screen recognised backend-granted Premium and displayed
+  the current-plan, restore and management controls. This is not proof that an
+  Apple offering, purchase or restore succeeded: the displayed price can fall
+  back to API pricing, and this account already has Premium. No purchase,
+  restore, cancellation or subscription-management action was submitted.
+- Added widget regression coverage for vertical scrolling initiated within
+  each forecast chart, including a held touch followed by a swipe. Both charts
+  still permit parent scrolling and subsequent tap selection; no production
+  gesture change was necessary.
 - Updated the existing installation without erasing simulator app data. This
   was **not** a fresh-install test, physical-iPhone test, signed release archive,
   TestFlight upload, purchase, or Restore Purchases verification.

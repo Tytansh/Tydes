@@ -104,6 +104,7 @@ Future<void> _show(
   Size size = const Size(1440, 1000),
   double scale = 1,
   ThemeData? theme,
+  ScrollController? scrollController,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -120,6 +121,7 @@ Future<void> _show(
       ),
       home: Scaffold(
         body: SingleChildScrollView(
+          controller: scrollController,
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: ProForecastPanel(forecast: forecast, tide: tide ?? _tides()),
@@ -326,6 +328,63 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  for (final chartKey in ['wave-swell-chart', 'wind-gust-chart']) {
+    testWidgets('$chartKey allows vertical scrolling and still accepts taps', (
+      tester,
+    ) async {
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await _show(
+        tester,
+        _forecast(),
+        size: const Size(390, 844),
+        theme: AppTheme.light().copyWith(platform: TargetPlatform.iOS),
+        scrollController: controller,
+      );
+      final chart = find.byKey(ValueKey(chartKey));
+
+      // Cover an ordinary swipe and a held touch before swiping, as native
+      // automation may pause after putting its pointer down inside the chart.
+      for (final hold in [Duration.zero, const Duration(milliseconds: 650)]) {
+        await Scrollable.ensureVisible(tester.element(chart), alignment: .5);
+        await tester.pumpAndSettle();
+        final offsetBefore = controller.offset;
+        expect(
+          controller.position.maxScrollExtent - offsetBefore,
+          greaterThan(200),
+        );
+        final gesture = await tester.startGesture(tester.getCenter(chart));
+        await tester.pump(hold);
+        await gesture.moveBy(const Offset(0, -30));
+        await tester.pump(const Duration(milliseconds: 16));
+        await gesture.moveBy(const Offset(0, -170));
+        await tester.pump(const Duration(milliseconds: 16));
+        await gesture.up();
+        await tester.pumpAndSettle();
+        expect(
+          controller.offset,
+          greaterThan(offsetBefore + 100),
+          reason: 'A chart-origin vertical drag must scroll after $hold.',
+        );
+
+        await Scrollable.ensureVisible(tester.element(chart), alignment: .5);
+        await tester.pumpAndSettle();
+        final rectangle = tester.getRect(chart);
+        await tester.tapAt(Offset(rectangle.right - 15, rectangle.center.dy));
+        await tester.pump();
+        expect(
+          tester
+              .widget<Text>(
+                find.byKey(const ValueKey('forecast-selected-time')),
+              )
+              .data,
+          '13:00',
+        );
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('missing readings do not turn into zero height or calm wind', (
     tester,
