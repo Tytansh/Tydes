@@ -135,6 +135,16 @@ void main() {
         Brightness.light,
       );
       expect(store.writes, ['dark', 'light']);
+      final selectedLight = tester.widget<ListTile>(
+        find.byKey(const ValueKey('appearance-light')),
+      );
+      expect(selectedLight.selected, isTrue);
+      expect(
+        selectedLight.selectedColor,
+        Theme.of(
+          tester.element(find.byType(AlertDialog)),
+        ).colorScheme.onSurface,
+      );
       await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
       expect(find.byType(AlertDialog), findsNothing);

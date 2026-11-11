@@ -76,6 +76,7 @@ class _AppearanceSettingsDialogState
                   contentPadding: EdgeInsets.zero,
                   enabled: !_saving,
                   selected: mode == option,
+                  selectedColor: scheme.onSurface,
                   leading: Icon(switch (option) {
                     ThemeMode.system => Icons.brightness_auto_outlined,
                     ThemeMode.light => Icons.light_mode_outlined,
