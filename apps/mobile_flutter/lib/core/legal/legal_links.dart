@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -13,6 +14,15 @@ const tydesSupportEmail = String.fromEnvironment(
   'SUPPORT_EMAIL',
   defaultValue: 'support@tydes.io',
 );
+
+// Keep public navigation on the current web origin (including local previews).
+// Native apps always open the production public page.
+String get tydesAboutPageUrl =>
+    kIsWeb ? Uri.base.resolve('/about/').toString() : 'https://tydes.io/about/';
+
+Future<void> launchTydesAboutPage(BuildContext context) {
+  return launchTydesExternalLink(context, tydesAboutPageUrl);
+}
 
 Future<void> launchTydesPrivacyPolicy(BuildContext context) {
   return launchTydesExternalLink(context, tydesPrivacyPolicyUrl);
@@ -56,11 +66,13 @@ class TydesLegalLinks extends StatelessWidget {
   const TydesLegalLinks({
     super.key,
     this.includeSupport = false,
+    this.includeAbout = false,
     this.alignment = WrapAlignment.center,
     this.dense = false,
   });
 
   final bool includeSupport;
+  final bool includeAbout;
   final WrapAlignment alignment;
   final bool dense;
 
@@ -79,6 +91,13 @@ class TydesLegalLinks extends StatelessWidget {
       crossAxisAlignment: WrapCrossAlignment.center,
       spacing: 2,
       children: [
+        if (includeAbout)
+          TextButton(
+            key: const ValueKey('about-partnerships-link'),
+            style: style,
+            onPressed: () => launchTydesAboutPage(context),
+            child: const Text('About & Partnerships'),
+          ),
         TextButton(
           style: style,
           onPressed: () => launchTydesTermsOfUse(context),

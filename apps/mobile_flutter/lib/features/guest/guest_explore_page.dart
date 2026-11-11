@@ -9,6 +9,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/network/api_error_message.dart';
+import '../../core/legal/legal_links.dart';
 import '../../core/network/public_preview_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../auth/auth_return_path.dart';
@@ -438,9 +439,21 @@ class _GuestExplorePageState extends ConsumerState<GuestExplorePage> {
       builder: (context, size) {
         final footer = Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Text(
-            'Tap a pin to explore. Sign in to save spots or join events.',
-            style: Theme.of(context).textTheme.bodySmall,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Tap a pin to explore. Sign in to save spots or join events.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 4),
+              const TydesLegalLinks(
+                includeAbout: true,
+                includeSupport: true,
+                dense: true,
+                alignment: WrapAlignment.start,
+              ),
+            ],
           ),
         );
         final columns = size.maxWidth >= 1100

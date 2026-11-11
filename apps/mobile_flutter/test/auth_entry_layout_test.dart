@@ -33,6 +33,7 @@ void main() {
       expect(find.text('Terms'), findsOneWidget);
       expect(find.text('Privacy'), findsOneWidget);
       expect(find.text('Support'), findsOneWidget);
+      expect(find.text('About & Partnerships'), findsOneWidget);
       expect(find.text('300+ surf breaks'), findsNothing);
       final photo = tester.widget<Image>(
         find.byKey(const ValueKey('auth-surf-photo')),

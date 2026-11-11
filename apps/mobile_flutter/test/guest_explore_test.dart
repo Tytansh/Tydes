@@ -165,6 +165,31 @@ Future<ProviderContainer> _show(
 }
 
 void main() {
+  for (final size in [const Size(390, 844), const Size(1440, 900)]) {
+    testWidgets('guest map exposes public About and policy links at $size', (
+      tester,
+    ) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final transport = _PublicTransport();
+      await _show(tester, transport, '/explore', _Notifications());
+      final about = find.byKey(const ValueKey('about-partnerships-link'));
+      await tester.ensureVisible(about);
+      await tester.pumpAndSettle();
+      expect(find.text('About & Partnerships'), findsOneWidget);
+      expect(find.text('Terms'), findsOneWidget);
+      expect(find.text('Privacy'), findsOneWidget);
+      expect(find.text('Support'), findsOneWidget);
+      expect(
+        transport.requests.every((path) => path.startsWith('/public/')),
+        isTrue,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   test(
     'event grouping excludes ended, undated, unknown and invalid locations',
     () {

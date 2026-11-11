@@ -518,7 +518,11 @@ class _AuthLegalNote extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 2),
-        const TydesLegalLinks(includeSupport: true, dense: true),
+        const TydesLegalLinks(
+          includeSupport: true,
+          includeAbout: true,
+          dense: true,
+        ),
       ],
     );
   }
