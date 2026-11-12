@@ -47,14 +47,29 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   final router = GoRouter(
     initialLocation: ref.watch(routerInitialLocationProvider),
     refreshListenable: refresh,
-    redirect: (context, state) {
+    redirect: (context, state) async {
       final path = state.uri.path;
       if (isPublicAppPath(path)) return null;
       final gate = path == '/verify-email' || path == '/account-check';
       final next = safeAuthReturnPath(
         gate ? state.uri.queryParameters['next'] : state.uri.toString(),
       );
-      final account = ref.read(meProvider);
+      var account = ref.read(meProvider);
+      final retained = account.valueOrNull;
+      if (account.isLoading && !account.hasError && retained != null) {
+        final sameSession = await ref
+            .read(surfRepositoryProvider)
+            .canRetainAccountDuringRefresh(retained);
+        // Do not tear down an already-authorized page for a normal refresh.
+        // Recheck after the async token read so an old session cannot win.
+        if (sameSession &&
+            identical(ref.read(meProvider), account) &&
+            ref.read(emailVerificationRequiredTokenProvider) == null &&
+            !needsAccountProfile(retained)) {
+          return gate ? next : null;
+        }
+        account = ref.read(meProvider);
+      }
       if (account.isLoading ||
           account.hasError ||
           account.valueOrNull == null) {
@@ -95,14 +110,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/account-check',
-        builder: (_, state) => AccountCheckPage(
-          returnTo: safeAuthReturnPath(state.uri.queryParameters['next']),
+        pageBuilder: (_, state) => NoTransitionPage(
+          key: state.pageKey,
+          child: AccountCheckPage(
+            returnTo: safeAuthReturnPath(state.uri.queryParameters['next']),
+          ),
         ),
       ),
       GoRoute(
         path: '/verify-email',
-        builder: (_, state) => VerificationGatePage(
-          returnTo: safeAuthReturnPath(state.uri.queryParameters['next']),
+        pageBuilder: (_, state) => NoTransitionPage(
+          key: state.pageKey,
+          child: VerificationGatePage(
+            returnTo: safeAuthReturnPath(state.uri.queryParameters['next']),
+          ),
         ),
       ),
       GoRoute(path: '/explore', builder: (_, _) => const GuestExplorePage()),

@@ -41,6 +41,7 @@ class _SurfTravelAppState extends ConsumerState<SurfTravelApp>
   String? _inboxAccount;
   bool _inboxForeground = true;
   bool _checkingInbox = false;
+  int _monitorSyncRevision = 0;
   @override
   void initState() {
     super.initState();
@@ -79,7 +80,7 @@ class _SurfTravelAppState extends ConsumerState<SurfTravelApp>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _inboxForeground = state == AppLifecycleState.resumed;
-    _syncMonitors();
+    _syncMonitors(refreshInbox: state == AppLifecycleState.resumed);
     if (widget.enableAlertMonitor &&
         _monitorAccount != null &&
         state == AppLifecycleState.resumed) {
@@ -87,20 +88,54 @@ class _SurfTravelAppState extends ConsumerState<SurfTravelApp>
     }
   }
 
-  void _syncMonitors() {
+  void _syncMonitors({bool refreshInbox = false}) {
     if (_router == null) return;
-    if (widget.enableAlertMonitor) _syncAlertMonitor();
-    if (widget.enableInboxPolling) _syncInboxMonitor();
+    final revision = ++_monitorSyncRevision;
+    final me = ref.read(meProvider);
+    final retained = me.valueOrNull;
+    if (me.isLoading && !me.hasError && retained != null) {
+      unawaited(() async {
+        final sameSession = await ref
+            .read(surfRepositoryProvider)
+            .canRetainAccountDuringRefresh(retained);
+        if (!mounted || revision != _monitorSyncRevision) return;
+        _applyMonitors(
+          retainRefreshingProfile: sameSession,
+          refreshInbox: refreshInbox,
+        );
+      }());
+      return;
+    }
+    _applyMonitors(refreshInbox: refreshInbox);
   }
 
-  void _syncInboxMonitor() {
+  void _applyMonitors({
+    bool retainRefreshingProfile = false,
+    bool refreshInbox = false,
+  }) {
+    if (widget.enableAlertMonitor) {
+      _syncAlertMonitor(retainRefreshingProfile: retainRefreshingProfile);
+    }
+    if (widget.enableInboxPolling) {
+      _syncInboxMonitor(
+        retainRefreshingProfile: retainRefreshingProfile,
+        refreshCounts: refreshInbox,
+      );
+    }
+  }
+
+  void _syncInboxMonitor({
+    bool retainRefreshingProfile = false,
+    bool refreshCounts = false,
+  }) {
     if (!mounted) return;
     final path = _router!.routeInformationProvider.value.uri.path;
     final me = ref.read(meProvider);
-    final profile = me.hasError || me.isLoading ? null : me.valueOrNull;
+    final profile = me.hasError || (me.isLoading && !retainRefreshingProfile)
+        ? null
+        : me.valueOrNull;
     final account =
-        !_inboxForeground ||
-            path == '/login' ||
+        path == '/login' ||
             path == '/verify-email' ||
             path == '/account-check' ||
             path.startsWith('/explore') ||
@@ -112,7 +147,16 @@ class _SurfTravelAppState extends ConsumerState<SurfTravelApp>
             profile.surfSkill.isEmpty
         ? null
         : profile.id;
-    if (account == _inboxAccount) return;
+    if (account == _inboxAccount) {
+      if (refreshCounts && _inboxForeground && account != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _inboxAccount == account && _inboxForeground) {
+            ref.read(inboxCountsRefreshKeyProvider.notifier).state++;
+          }
+        });
+      }
+      return;
+    }
     _inboxTimer?.cancel();
     _inboxAccount = account;
     // Provider writes wait until the frame ends, including profile changes
@@ -156,11 +200,13 @@ class _SurfTravelAppState extends ConsumerState<SurfTravelApp>
     }
   }
 
-  void _syncAlertMonitor() {
+  void _syncAlertMonitor({bool retainRefreshingProfile = false}) {
     if (!mounted) return;
     final path = _router!.routeInformationProvider.value.uri.path;
     final me = ref.read(meProvider);
-    final profile = me.hasError || me.isLoading ? null : me.valueOrNull;
+    final profile = me.hasError || (me.isLoading && !retainRefreshingProfile)
+        ? null
+        : me.valueOrNull;
     final account =
         path == '/login' ||
             path == '/verify-email' ||

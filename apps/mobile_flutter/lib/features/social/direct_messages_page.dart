@@ -444,9 +444,12 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage>
   Object? _initialError;
 
   Future<void> _refreshInbox() async {
-    // Recover a failed account lookup before resolving its account-scoped
-    // inbox. A same-account profile refresh retains the notifier and drafts.
-    final account = await ref.refresh(meProvider.future);
+    // Refresh inbox data, not the global sign-in bootstrap. Only recover the
+    // account itself if it was unavailable; keep search, threads and drafts.
+    final current = ref.read(meProvider);
+    final account = current.hasValue && !current.hasError
+        ? current.requireValue
+        : await ref.refresh(meProvider.future);
     if (!mounted || ref.read(meProvider).valueOrNull?.id != account.id) {
       return;
     }

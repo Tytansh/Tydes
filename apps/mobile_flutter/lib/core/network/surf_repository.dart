@@ -424,6 +424,21 @@ class SurfRepository {
     }
   }
 
+  /// Retained UI is safe only for the exact session that confirmed it.
+  /// A refresh is not a sign-out, but a token/account change must still gate.
+  Future<bool> canRetainAccountDuringRefresh(UserProfile profile) async {
+    try {
+      final token = await _demoPersistence.loadAccessToken();
+      return token != null &&
+          token == _confirmedMeToken &&
+          _confirmedMe?.id == profile.id &&
+          profile.emailVerified &&
+          _isVerificationRequired?.call(token) != true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<UserProfile> fetchMe() async {
     final token = await _demoPersistence.loadAccessToken();
     if (token == null) {
