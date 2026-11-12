@@ -543,7 +543,7 @@ def test_spots_list(monkeypatch):
     response = client.get("/api/v1/spots", headers=_verified_headers(monkeypatch))
     assert response.status_code == 200
     assert len(response.json()) >= 1
-    assert "max-age=3600" in response.headers["cache-control"]
+    assert response.headers["cache-control"] == "private, no-store"
 
 
 def test_social_feed_response_is_bounded(monkeypatch):

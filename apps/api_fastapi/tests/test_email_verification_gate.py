@@ -110,7 +110,7 @@ def test_unverified_session_is_blocked_before_reads_validation_or_mutation(gate,
     response = gate.client.request(method, path, headers=gate.headers, json={})
     assert response.status_code == 403, response.text
     assert response.json()["detail"]["code"] == "email_verification_required"
-    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["cache-control"] == "private, no-store"
     assert "www-authenticate" not in response.headers
     assert {name: getattr(store, name) for name in before} == before
     assert gate.deliveries == []
@@ -341,3 +341,78 @@ def test_legacy_verification_rejects_missing_raw_and_expired_codes(gate):
     for replay in (code, "000000"):
         result = gate.client.post("/api/v1/auth/verify-email", json={"email": email, "code": replay})
         assert result.status_code == 400 and gate.user.id not in result.text
+
+
+@pytest.mark.parametrize("path", [
+    "/api/v1/spots", "/api/v1/spots?region=Bali", "/api/v1/social/posts",
+    "/api/v1/trips", "/api/v1/alerts", "/api/v1/billing/plans",
+])
+def test_verified_private_successes_are_never_shared_cacheable(gate, path):
+    store.auth_accounts[gate.user.email]["user"]["email_verified"] = True
+    for candidate in (path, f"/api/v1/spots/{store.spots[0].id}"):
+        result = gate.client.get(candidate, headers=gate.headers)
+        assert result.status_code == 200, result.text
+        assert result.headers["cache-control"] == "private, no-store"
+        assert "etag" not in result.headers
+
+
+def test_private_cache_override_removes_validators_and_proxy_cache_directives(gate, monkeypatch):
+    from fastapi.responses import JSONResponse
+    store.auth_accounts[gate.user.email]["user"]["email_verified"] = True
+    route = next(route for route in app.routes if getattr(route, "path", None) == "/api/v1/spots")
+
+    async def cacheable_endpoint(scope, receive, send):
+        await JSONResponse({"private": "verified content"}, headers={
+            "Cache-Control": "public, max-age=31536000",
+            "ETag": '"private-response"', "Last-Modified": "Thu, 01 Jan 2026 00:00:00 GMT",
+            "Expires": "Thu, 01 Jan 2027 00:00:00 GMT",
+            "CDN-Cache-Control": "public, max-age=31536000",
+            "Cloudflare-CDN-Cache-Control": "public, max-age=31536000",
+            "Surrogate-Control": "max-age=31536000",
+        })(scope, receive, send)
+
+    monkeypatch.setattr(route, "app", cacheable_endpoint)
+    response = gate.client.get("/api/v1/spots", headers=gate.headers)
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    for header in ("ETag", "Last-Modified", "Expires", "CDN-Cache-Control", "Cloudflare-CDN-Cache-Control", "Surrogate-Control"):
+        assert header not in response.headers
+
+
+@pytest.mark.parametrize("verified", [False, True])
+def test_bootstrap_successes_and_failures_are_private_no_store(gate, monkeypatch, verified):
+    async def unchanged_user(user):
+        return user
+
+    monkeypatch.setattr("app.modules.users.router.refresh_subscription_if_stale", unchanged_user)
+    store.auth_accounts[gate.user.email]["user"]["email_verified"] = verified
+    for headers, status in ((gate.headers, 200), ({}, 401)):
+        result = gate.client.get("/api/v1/users/me", headers=headers)
+        assert result.status_code == status
+        assert result.headers["cache-control"] == "private, no-store"
+
+
+def test_auth_token_profile_and_error_responses_are_private_no_store(gate, monkeypatch):
+    monkeypatch.setattr("app.core.store.send_password_reset_email", lambda *_: SimpleNamespace(configured=True, sent=True))
+    email = "uncacheable-auth@example.com"
+    signup = gate.client.post("/api/v1/auth/signup", json={"email": email, "password": "longboard123"})
+    assert signup.status_code == 200
+    headers = {"Authorization": f"Bearer {signup.json()['session']['access_token']}"}
+    confirm = gate.client.post("/api/v1/auth/email-verification/confirm", headers=headers, json={"code": gate.deliveries[0][1]})
+    login = gate.client.post("/api/v1/auth/login", json={"email": email, "password": "longboard123"})
+    reset = gate.client.post("/api/v1/auth/password-reset/request", json={"email": email})
+    google_config = gate.client.get("/api/v1/auth/google/config")
+    invalid = gate.client.post("/api/v1/auth/login", json={})
+    for response in (signup, confirm, login, reset, google_config, invalid):
+        assert response.status_code in {200, 422}, response.text
+        assert response.headers["cache-control"] == "private, no-store"
+        assert "etag" not in response.headers
+
+
+def test_sanitized_public_guides_keep_their_intended_shared_cache(gate):
+    for path in ("/api/v1/public/spots", f"/api/v1/public/spots/{store.spots[0].id}"):
+        for headers in ({}, gate.headers):
+            result = gate.client.get(path, headers=headers)
+            assert result.status_code == 200
+            assert result.headers["cache-control"] == "public, max-age=3600"
+    assert gate.client.get("/api/v1/public/events").headers["cache-control"] == "no-store"

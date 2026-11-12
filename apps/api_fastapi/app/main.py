@@ -207,6 +207,22 @@ async def bind_authenticated_user(request, call_next):
     else:
         with store.request_user_context(authenticated_user):
             response = await call_next(request)
+    path = request.scope["path"].rstrip("/")
+    if (
+        (path == "/api/v1" or path.startswith("/api/v1/"))
+        and path != "/api/v1/public"
+        and not path.startswith("/api/v1/public/")
+    ):
+        # Successful private reads and auth/bootstrap responses are sensitive
+        # too. Override legacy endpoint cache headers so a shared edge cannot
+        # serve a verified response to a later anonymous/unverified request.
+        response.headers["Cache-Control"] = "private, no-store"
+        for header in (
+            "ETag", "Last-Modified", "Expires", "CDN-Cache-Control",
+            "Cloudflare-CDN-Cache-Control", "Surrogate-Control",
+        ):
+            if header in response.headers:
+                del response.headers[header]
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
