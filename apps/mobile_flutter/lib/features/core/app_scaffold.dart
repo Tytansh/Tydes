@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/router.dart';
 import '../../core/l10n/app_strings.dart';
 import '../../core/network/api_models.dart';
+import '../../core/widgets/retained_tab_stack.dart';
 import '../home/home_page.dart';
 import '../social/social_profile.dart';
 import '../social/inbox_badges.dart';
@@ -104,7 +105,11 @@ class _AppScaffoldState extends ConsumerState<AppScaffold>
                 Expanded(
                   child: SafeArea(
                     left: false,
-                    child: IndexedStack(index: tab, children: desktopPages),
+                    child: RetainedTabStack(
+                      key: ValueKey(profile.id),
+                      index: tab,
+                      children: desktopPages,
+                    ),
                   ),
                 ),
               ],
@@ -114,7 +119,11 @@ class _AppScaffoldState extends ConsumerState<AppScaffold>
 
         return Scaffold(
           body: SafeArea(
-            child: IndexedStack(index: tab, children: pages),
+            child: RetainedTabStack(
+              key: ValueKey(profile.id),
+              index: tab,
+              children: pages,
+            ),
           ),
           bottomNavigationBar: NavigationBar(
             selectedIndex: tab,

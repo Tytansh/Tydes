@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image/image.dart' as image_tools;
+import 'package:image/image.dart' deferred as image_tools;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -1423,6 +1423,7 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
   }
 
   Future<XFile> _createProfileThumbnail(XFile source) async {
+    await image_tools.loadLibrary();
     final bytes = await source.readAsBytes();
     final decoded = image_tools.decodeImage(bytes);
     if (decoded == null) return source;
@@ -1450,6 +1451,7 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
     required int quality,
     required String prefix,
   }) async {
+    await image_tools.loadLibrary();
     final bytes = await source.readAsBytes();
     final decoded = image_tools.decodeImage(bytes);
     if (decoded == null) return source;

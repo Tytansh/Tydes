@@ -142,10 +142,14 @@ class HomePage extends ConsumerWidget {
       ),
       body: FeedRefreshIndicator(
         onRefresh: () => _refreshFeed(ref),
-        child: ListView(
+        child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(20),
-          children: [const TravelFeedSection(showHeader: false)],
+          slivers: const [
+            SliverPadding(
+              padding: EdgeInsets.all(20),
+              sliver: TravelFeedSection(showHeader: false, asSliver: true),
+            ),
+          ],
         ),
       ),
     );

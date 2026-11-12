@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
+import '../../core/widgets/media_image_strategy.dart';
 
 final followedUserIdsProvider = StateProvider<Set<String>>((ref) => {});
 final followerUserIdsProvider = StateProvider<Set<String>>((ref) => {});
@@ -91,7 +92,7 @@ class TydesProfileAvatar extends StatelessWidget {
               Image.network(
                 imageUrl!,
                 fit: BoxFit.cover,
-                webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+                webHtmlElementStrategy: mediaImageStrategy(imageUrl!),
                 errorBuilder: (_, _, _) => const SizedBox.shrink(),
               ),
           ],
@@ -134,7 +135,7 @@ class TydesProfileCover extends StatelessWidget {
                 coverUrl!,
                 fit: BoxFit.cover,
                 alignment: Alignment.center,
-                webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+                webHtmlElementStrategy: mediaImageStrategy(coverUrl!),
                 errorBuilder: (_, _, _) => const SizedBox.shrink(),
               ),
             ),

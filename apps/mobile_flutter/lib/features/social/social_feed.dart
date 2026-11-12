@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image/image.dart' as image_tools;
+import 'package:image/image.dart' deferred as image_tools;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:video_compress/video_compress.dart';
@@ -17,11 +17,13 @@ import '../../core/moderation/content_moderation.dart';
 import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
+import '../../core/widgets/media_image_strategy.dart';
 import 'direct_messages_page.dart';
 import 'event_chat_page.dart';
 import 'post_media_zoom.dart';
 import 'social_profile.dart';
 import '../auth/auth_return_path.dart';
+import '../home/home_page.dart' show meProvider;
 import '../public_previews/public_link_button.dart';
 
 final travelFeedPostsProvider = FutureProvider((ref) {
@@ -31,8 +33,8 @@ final travelFeedPostsProvider = FutureProvider((ref) {
 final travelFeedSpotsProvider = FutureProvider(
   (ref) => ref.watch(surfRepositoryProvider).fetchSpots(),
 );
-final currentViewerProvider = FutureProvider(
-  (ref) => ref.watch(surfRepositoryProvider).fetchMe(),
+final currentViewerProvider = FutureProvider<UserProfile>(
+  (ref) => ref.watch(meProvider.future),
 );
 final videoSoundEnabledProvider = StateProvider<bool>((ref) => false);
 final surfInviteRsvpProvider = StateProvider<Set<String>>((ref) => {});
@@ -119,10 +121,20 @@ void _applySocialEngagement(
   ref.read(repostedPostIdsProvider.notifier).state = engagement.repostedPostIds;
   ref.read(repostActivityTimesProvider.notifier).state = repostActivityTimes;
   if (syncVisibleReposts) {
-    ref.read(visibleRepostedPostIdsProvider.notifier).state =
-        engagement.repostedPostIds;
-    ref.read(visibleRepostActivityTimesProvider.notifier).state =
-        repostActivityTimes;
+    if (!listEquals(
+      ref.read(visibleRepostedPostIdsProvider),
+      engagement.repostedPostIds,
+    )) {
+      ref.read(visibleRepostedPostIdsProvider.notifier).state =
+          engagement.repostedPostIds;
+    }
+    if (!mapEquals(
+      ref.read(visibleRepostActivityTimesProvider),
+      repostActivityTimes,
+    )) {
+      ref.read(visibleRepostActivityTimesProvider.notifier).state =
+          repostActivityTimes;
+    }
   }
   ref.read(likedCommentIdsProvider.notifier).state = engagement.likedCommentIds;
   ref.read(surfInviteRsvpProvider.notifier).state = engagement.rsvpPostIds;
@@ -257,10 +269,12 @@ class TravelFeedSection extends ConsumerWidget {
     super.key,
     this.compact = false,
     this.showHeader = true,
+    this.asSliver = false,
   });
 
   final bool compact;
   final bool showHeader;
+  final bool asSliver;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -271,89 +285,110 @@ class TravelFeedSection extends ConsumerWidget {
     ref.watch(socialRelationshipHydrationProvider);
     final blockedUserIds = ref.watch(blockedUserIdsProvider);
 
-    return Column(
+    Widget box(Widget child) =>
+        asSliver ? SliverToBoxAdapter(child: child) : child;
+
+    final content = posts.when(
+      skipLoadingOnReload: true,
+      data: (items) {
+        final visiblePosts = items
+            .where((post) => !blockedUserIds.contains(post.userId))
+            .toList();
+        if (visiblePosts.isEmpty) return box(const _EmptyFeedCard());
+        final repostedItems = compact
+            ? const <RepostedPostItem>[]
+            : repostedItemsForFeed(
+                visiblePosts,
+                ref.watch(visibleRepostedPostIdsProvider),
+                ref.watch(visibleRepostActivityTimesProvider),
+              );
+        final feedItems = [
+          for (final item in repostedItems)
+            _FeedPostItem(
+              post: item.post,
+              repostHeader: item.header,
+              activityAt: item.activityAt,
+            ),
+          for (final post in visiblePosts)
+            _FeedPostItem(post: post, activityAt: _postCreatedAt(post)),
+        ]..sort((a, b) => b.activityAt.compareTo(a.activityAt));
+        final shown = compact ? feedItems.take(4).toList() : feedItems;
+        String rowId(_FeedPostItem item) =>
+            '${item.repostHeader ?? 'post'}_${item.post.id}';
+        Widget row(int index) {
+          final item = shown[index];
+          return Padding(
+            key: ValueKey(rowId(item)),
+            padding: const EdgeInsets.only(bottom: 14),
+            child: TydesDesktopPostWidth(
+              child: _PostCard(
+                post: item.post,
+                spots: spotItems,
+                repostHeader: item.repostHeader,
+              ),
+            ),
+          );
+        }
+
+        if (asSliver) {
+          final indexes = {
+            for (var i = 0; i < shown.length; i++) rowId(shown[i]): i,
+          };
+          return SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (_, index) => row(index),
+              childCount: shown.length,
+              findChildIndexCallback: (key) =>
+                  key is ValueKey<String> ? indexes[key.value] : null,
+            ),
+          );
+        }
+        return Column(
+          children: [for (var i = 0; i < shown.length; i++) row(i)],
+        );
+      },
+      loading: () => box(
+        const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: CircularProgressIndicator(),
+          ),
+        ),
+      ),
+      error: (error, _) =>
+          box(Text(friendlyLoadErrorMessage(error, label: 'posts'))),
+    );
+    if (!showHeader) return content;
+    final header = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (showHeader) ...[
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Travel feed',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Travel feed',
+                style: Theme.of(context).textTheme.headlineSmall,
               ),
-              FilledButton.icon(
-                style: tydesPostButtonStyle(),
-                onPressed: () => showCreatePostSheet(context, spotItems),
-                icon: const Icon(Icons.add),
-                label: const Text('Post'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Share clips, photos, plans, and surf travel updates.',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 14),
-        ],
-        posts.when(
-          skipLoadingOnReload: true,
-          data: (items) {
-            final visiblePosts = items
-                .where((post) => !blockedUserIds.contains(post.userId))
-                .toList();
-            if (visiblePosts.isEmpty) return const _EmptyFeedCard();
-            final repostedItems = compact
-                ? const <RepostedPostItem>[]
-                : repostedItemsForFeed(
-                    visiblePosts,
-                    ref.watch(visibleRepostedPostIdsProvider),
-                    ref.watch(visibleRepostActivityTimesProvider),
-                  );
-            final feedItems = [
-              for (final item in repostedItems)
-                _FeedPostItem(
-                  post: item.post,
-                  repostHeader: item.header,
-                  activityAt: item.activityAt,
-                ),
-              for (final post in visiblePosts)
-                _FeedPostItem(post: post, activityAt: _postCreatedAt(post)),
-            ]..sort((a, b) => b.activityAt.compareTo(a.activityAt));
-            final shown = compact ? feedItems.take(4).toList() : feedItems;
-            return TydesDesktopPostWidth(
-              child: Column(
-                children: shown
-                    .map(
-                      (item) => Padding(
-                        key: ValueKey(
-                          '${item.repostHeader ?? 'post'}_${item.post.id}',
-                        ),
-                        padding: const EdgeInsets.only(bottom: 14),
-                        child: _PostCard(
-                          post: item.post,
-                          spots: spotItems,
-                          repostHeader: item.repostHeader,
-                        ),
-                      ),
-                    )
-                    .toList(),
-              ),
-            );
-          },
-          loading: () => const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: CircularProgressIndicator(),
             ),
-          ),
-          error: (error, _) =>
-              Text(friendlyLoadErrorMessage(error, label: 'posts')),
+            FilledButton.icon(
+              style: tydesPostButtonStyle(),
+              onPressed: () => showCreatePostSheet(context, spotItems),
+              icon: const Icon(Icons.add),
+              label: const Text('Post'),
+            ),
+          ],
         ),
+        const SizedBox(height: 6),
+        Text(
+          'Share clips, photos, plans, and surf travel updates.',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 14),
       ],
     );
+    return asSliver
+        ? SliverMainAxisGroup(slivers: [box(header), content])
+        : Column(children: [header, content]);
   }
 }
 
@@ -974,13 +1009,25 @@ class _PostCaptionLimitNotice extends StatelessWidget {
   }
 }
 
-class _PostEngagementBarState extends ConsumerState<PostEngagementBar> {
+class _PostEngagementBarState extends ConsumerState<PostEngagementBar>
+    with AutomaticKeepAliveClientMixin {
   final TextEditingController _commentController = TextEditingController();
   final FocusNode _commentFocusNode = FocusNode();
   SocialComment? _replyTarget;
 
   @override
+  bool get wantKeepAlive =>
+      _commentController.text.isNotEmpty || _replyTarget != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _commentController.addListener(updateKeepAlive);
+  }
+
+  @override
   void dispose() {
+    _commentController.removeListener(updateKeepAlive);
     _commentController.dispose();
     _commentFocusNode.dispose();
     super.dispose();
@@ -988,11 +1035,14 @@ class _PostEngagementBarState extends ConsumerState<PostEngagementBar> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final scheme = Theme.of(context).colorScheme;
-    final liked = ref.watch(likedPostIdsProvider).contains(widget.post.id);
-    final reposted = ref
-        .watch(repostedPostIdsProvider)
-        .contains(widget.post.id);
+    final liked = ref.watch(
+      likedPostIdsProvider.select((ids) => ids.contains(widget.post.id)),
+    );
+    final reposted = ref.watch(
+      repostedPostIdsProvider.select((ids) => ids.contains(widget.post.id)),
+    );
     final likeCount = _baseLikeCount(widget.post) + (liked ? 1 : 0);
     final repostCount = _baseRepostCount(widget.post) + (reposted ? 1 : 0);
     final blockedUserIds = ref.watch(blockedUserIdsProvider);
@@ -1238,7 +1288,9 @@ class _CommentPreviewTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final liked = ref.watch(likedCommentIdsProvider).contains(comment.id);
+    final liked = ref.watch(
+      likedCommentIdsProvider.select((ids) => ids.contains(comment.id)),
+    );
     final likeCount = _baseCommentLikeCount(comment) + (liked ? 1 : 0);
     final currentViewer = ref.watch(currentViewerProvider).valueOrNull;
     final isOwnComment = comment.isMe || currentViewer?.id == comment.userId;
@@ -2465,13 +2517,33 @@ bool socialVideoShouldPlay({
 
 class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
   late final PageController _pageController;
+  bool _restoredPage = false;
   int _pageIndex = 0;
   bool _zooming = false;
 
+  String get _storageId =>
+      'post-media:${widget.media.map((item) => item.id).join(',')}';
+
   @override
-  void initState() {
-    super.initState();
-    _pageController = PageController();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_restoredPage) return;
+    final saved = PageStorage.maybeOf(
+      context,
+    )?.readState(context, identifier: _storageId);
+    if (saved is int && saved >= 0 && saved < widget.media.length) {
+      _pageIndex = saved;
+    }
+    // Retain only the selected index, not off-screen image/video controllers.
+    _pageController = PageController(initialPage: _pageIndex, keepPage: false);
+    _restoredPage = true;
+  }
+
+  void _pageChanged(int index) {
+    setState(() => _pageIndex = index);
+    PageStorage.maybeOf(
+      context,
+    )?.writeState(context, index, identifier: _storageId);
   }
 
   @override
@@ -2518,7 +2590,7 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
                   ? const NeverScrollableScrollPhysics()
                   : socialPostMediaCarouselPhysics(isWeb: kIsWeb),
               itemCount: media.length,
-              onPageChanged: (index) => setState(() => _pageIndex = index),
+              onPageChanged: _pageChanged,
               itemBuilder: (context, index) {
                 final item = media[index];
                 if (item.mediaType == 'video') {
@@ -2712,7 +2784,7 @@ class _PostPhotoState extends State<_PostPhoto> {
       _requestUrl,
       fit: BoxFit.cover,
       gaplessPlayback: true,
-      webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+      webHtmlElementStrategy: mediaImageStrategy(_requestUrl),
       loadingBuilder: (context, child, progress) {
         if (progress == null) return child;
         return ColoredBox(
@@ -2762,22 +2834,26 @@ class AutoplayVideoPlayer extends ConsumerStatefulWidget {
       _AutoplayVideoPlayerState();
 }
 
-class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
+class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
+    with WidgetsBindingObserver {
   VideoPlayerController? _controller;
   ScrollPosition? _scrollPosition;
   bool _loadRequested = false;
   bool _initializing = false;
   bool _userPaused = false;
   bool _videoFailed = false;
-  bool _posterPrecacheStarted = false;
   bool _visibilityCheckQueued = false;
+  bool _pageActive = true;
+  bool _foreground = true;
   int _completedLoops = 0;
   Duration _lastVideoPosition = Duration.zero;
   bool _loopLimitReached = false;
+  int _loadGeneration = 0;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _scheduleVisibilityCheck();
     _scheduleActiveAutoplayCheck();
   }
@@ -2785,6 +2861,15 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
   @override
   void didUpdateWidget(covariant AutoplayVideoPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) {
+      _loadGeneration++;
+      final previous = _controller;
+      _controller = null;
+      _loadRequested = false;
+      _initializing = false;
+      _videoFailed = false;
+      unawaited(previous?.dispose());
+    }
     if (!widget.active) {
       _controller?.setVolume(0);
       _controller?.pause();
@@ -2802,13 +2887,15 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _pageActive =
+        TickerMode.valuesOf(context).enabled &&
+        (ModalRoute.of(context)?.isCurrent ?? true);
     final nextPosition = Scrollable.maybeOf(context)?.position;
     if (_scrollPosition != nextPosition) {
       _scrollPosition?.removeListener(_handleScroll);
       _scrollPosition = nextPosition;
       _scrollPosition?.addListener(_handleScroll);
     }
-    _precachePoster();
     _scheduleVisibilityCheck();
     _scheduleActiveAutoplayCheck();
   }
@@ -2823,21 +2910,31 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
   }
 
   void _scheduleActiveAutoplayCheck() {
-    if (!widget.active) return;
+    if (!_active) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !widget.active) return;
+      if (!mounted || !_active) return;
       _syncPlaybackToVisibility();
     });
   }
 
   @override
   void dispose() {
+    _loadGeneration++;
+    WidgetsBinding.instance.removeObserver(this);
     _scrollPosition?.removeListener(_handleScroll);
     _controller?.dispose();
     super.dispose();
   }
 
   void _handleScroll() {
+    _scheduleVisibilityCheck();
+  }
+
+  bool get _active => widget.active && _pageActive && _foreground;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
     _syncPlaybackToVisibility();
   }
 
@@ -2886,16 +2983,9 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
     return thumbnailUrl;
   }
 
-  void _precachePoster() {
-    final thumbnailUrl = _usableThumbnailUrl;
-    if (_posterPrecacheStarted || thumbnailUrl == null) return;
-    _posterPrecacheStarted = true;
-    unawaited(precacheImage(NetworkImage(thumbnailUrl), context));
-  }
-
   void _syncPlaybackToVisibility() {
     final mostlyVisible = _isMostlyVisible();
-    final shouldPreload = widget.active && (mostlyVisible || _isNearViewport());
+    final shouldPreload = _active && (mostlyVisible || _isNearViewport());
     final controller = _controller;
 
     if (shouldPreload &&
@@ -2912,7 +3002,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
     }
 
     final shouldPlay = socialVideoShouldPlay(
-      active: widget.active,
+      active: _active,
       userPaused: _userPaused,
       mostlyVisible: mostlyVisible,
     );
@@ -2952,6 +3042,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
 
   Future<void> _loadVideo() async {
     if (_loadRequested || _initializing) return;
+    final generation = ++_loadGeneration;
     setState(() {
       _loadRequested = true;
       _initializing = true;
@@ -2966,10 +3057,11 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
     try {
       await controller.setLooping(true);
       await controller.initialize();
+      if (!mounted || generation != _loadGeneration) return;
       controller.addListener(_handleVideoProgress);
       final soundEnabled = ref.read(videoSoundEnabledProvider);
       final shouldPlay = socialVideoShouldPlay(
-        active: widget.active,
+        active: _active,
         userPaused: _userPaused,
         mostlyVisible: _isMostlyVisible(),
       );
@@ -2984,8 +3076,9 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
         _syncPlaybackToVisibility();
       });
     } catch (_) {
+      if (!mounted || generation != _loadGeneration) return;
       await controller.dispose();
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _controller = null;
         _loadRequested = false;
@@ -3023,7 +3116,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
     final targetVolume =
         soundEnabled &&
             socialVideoShouldPlay(
-              active: widget.active,
+              active: _active,
               userPaused: _userPaused,
               mostlyVisible: _isMostlyVisible(),
             )
@@ -3049,7 +3142,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer> {
             _loopLimitReached = false;
           }
           _userPaused = false;
-          if (widget.active && _isMostlyVisible()) {
+          if (_active && _isMostlyVisible()) {
             readyController.setVolume(soundEnabled ? 1.0 : 0.0);
             readyController.play();
           }
@@ -3197,26 +3290,29 @@ class _VideoPosterFrame extends StatelessWidget {
       child: const _TydesVideoLoader(),
     );
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        fallback,
-        if (thumbnailUrl != null)
-          Image.network(
-            thumbnailUrl!,
-            fit: BoxFit.cover,
-            gaplessPlayback: true,
-            webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
-            errorBuilder: (context, error, stackTrace) =>
-                const SizedBox.shrink(),
-          ),
-        if (initializing && thumbnailUrl != null)
-          Container(
-            color: const Color(0xFF052F34).withValues(alpha: 0.48),
-            alignment: Alignment.center,
-            child: const _TydesVideoLoader(compact: true),
-          ),
-      ],
+    if (thumbnailUrl == null) return fallback;
+    return Image.network(
+      thumbnailUrl!,
+      fit: BoxFit.cover,
+      gaplessPlayback: true,
+      webHtmlElementStrategy: mediaImageStrategy(thumbnailUrl!),
+      frameBuilder: (context, child, frame, synchronous) {
+        if (!synchronous && frame == null) return fallback;
+        // Do not leave a repeating loader hidden behind a finished poster.
+        if (!initializing) return child;
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            child,
+            Container(
+              color: const Color(0xFF052F34).withValues(alpha: 0.48),
+              alignment: Alignment.center,
+              child: const _TydesVideoLoader(compact: true),
+            ),
+          ],
+        );
+      },
+      errorBuilder: (context, error, stackTrace) => fallback,
     );
   }
 }
@@ -3888,6 +3984,8 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
   }
 
   Future<XFile?> _createThumbnail(XFile source) async {
+    // Image codecs are needed when composing, not when opening/scrolling feed.
+    await image_tools.loadLibrary();
     final bytes = await source.readAsBytes();
     final decoded = image_tools.decodeImage(bytes);
     if (decoded == null) return null;
