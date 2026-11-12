@@ -5,8 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_flutter/core/network/api_models.dart';
 import 'package:mobile_flutter/core/network/demo_persistence.dart';
+import 'package:mobile_flutter/core/network/demo_seed.dart';
 import 'package:mobile_flutter/core/network/surf_repository.dart';
 import 'package:mobile_flutter/core/theme/app_theme.dart';
+import 'package:mobile_flutter/features/home/home_page.dart' show meProvider;
 import 'package:mobile_flutter/features/social/direct_messages_page.dart';
 import 'package:mobile_flutter/features/social/inbox_badges.dart';
 import 'package:mobile_flutter/features/social/notification_read_state.dart';
@@ -18,6 +20,9 @@ void main() {
   runApp(
     ProviderScope(
       overrides: [
+        meProvider.overrideWith(
+          (_) async => DemoSeed.me.copyWith(id: 'sample-me'),
+        ),
         dioProvider.overrideWithValue(_blockedApi()),
         inboxForegroundAccountProvider.overrideWith((_) => 'sample-me'),
         notificationReadApiProvider.overrideWithValue(_PreviewReadApi()),

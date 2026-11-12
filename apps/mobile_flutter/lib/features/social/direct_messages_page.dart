@@ -9,6 +9,7 @@ import '../../core/network/surf_repository.dart';
 import '../../core/moderation/content_moderation.dart';
 import '../../core/widgets/feed_refresh_indicator.dart';
 import '../../core/network/api_error_message.dart';
+import '../auth/email_verification_sheet.dart';
 import '../home/home_page.dart' show meProvider;
 import 'direct_message_api.dart';
 import 'inbox_badges.dart';
@@ -32,6 +33,51 @@ final directMessageThreadsProvider =
 final dmInboxStatusProvider = StateProvider<AsyncValue<void>>(
   (ref) => const AsyncData(null),
 );
+
+class _VerifyEmailAction extends ConsumerWidget {
+  const _VerifyEmailAction();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final me = ref.watch(meProvider).valueOrNull;
+    if (me == null || me.emailVerified) return const SizedBox.shrink();
+    return TextButton.icon(
+      key: const ValueKey('messages-verify-email'),
+      icon: const Icon(Icons.mark_email_unread_outlined, size: 18),
+      label: const Text('Verify email'),
+      onPressed: () async {
+        final verified = await showEmailVerificationSheet(
+          context,
+          accountId: me.id,
+          email: me.email,
+        );
+        if (!context.mounted ||
+            !verified ||
+            ref.read(meProvider).valueOrNull?.id != me.id) {
+          return;
+        }
+        try {
+          final updated = await ref.refresh(meProvider.future);
+          if (!context.mounted || updated.id != me.id) return;
+          await ref.read(directMessageThreadsProvider.notifier).refresh();
+          if (!context.mounted) return;
+          ref.read(inboxCountsRefreshKeyProvider.notifier).state++;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Email verified. You can now send messages.'),
+            ),
+          );
+        } catch (error) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(friendlyErrorMessage(error))),
+            );
+          }
+        }
+      },
+    );
+  }
+}
 
 final unreadDirectMessageThreadCountProvider = Provider<int>((ref) {
   final blockedUserIds = ref.watch(blockedUserIdsProvider);
@@ -478,7 +524,10 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage>
     if (initialThreadId != null && initialThreadId.isNotEmpty) {
       if (_initialError != null) {
         return Scaffold(
-          appBar: AppBar(title: const Text('Messages')),
+          appBar: AppBar(
+            title: const Text('Messages'),
+            actions: const [_VerifyEmailAction()],
+          ),
           body: Center(
             child: Padding(
               padding: const EdgeInsets.all(24),
@@ -558,6 +607,7 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage>
       appBar: AppBar(
         title: const Text('Messages'),
         actions: [
+          const _VerifyEmailAction(),
           IconButton(
             onPressed: () => _openNewMessageSheet(context, ref),
             icon: const Icon(Icons.edit_square),
@@ -1410,7 +1460,9 @@ class _DirectChatPageState extends ConsumerState<_DirectChatPage>
           ),
         ),
         actions: [
-          if (!isBlocked)
+          const _VerifyEmailAction(),
+          if (!isBlocked &&
+              ref.watch(meProvider).valueOrNull?.emailVerified != false)
             Padding(
               padding: const EdgeInsets.only(right: 2),
               child: Center(
