@@ -201,7 +201,26 @@ class PostgresDirectMessageRepository:
                 id TEXT PRIMARY KEY, user_a TEXT NOT NULL, user_b TEXT NOT NULL,
                 created_by_user_id TEXT,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                UNIQUE(user_a, user_b), CHECK(user_a < user_b))""")
+                UNIQUE(user_a, user_b),
+                CONSTRAINT direct_message_thread_pair_order_c
+                    CHECK(user_a COLLATE "C" < user_b COLLATE "C"))""")
+            # IDs are sorted by Python's case-sensitive codepoint order. The
+            # database's default locale may sort mixed-case IDs differently,
+            # so its old implicit CHECK rejected otherwise valid new pairs.
+            # Add/validate the replacement before dropping only our v1 check;
+            # this block is atomic and safe to repeat after deployments.
+            connection.execute('''DO $$ BEGIN
+                PERFORM pg_advisory_xact_lock(hashtext('dm-pair-collation-v2'));
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                    WHERE conrelid='direct_message_threads'::regclass
+                    AND conname='direct_message_thread_pair_order_c') THEN
+                    ALTER TABLE direct_message_threads
+                        ADD CONSTRAINT direct_message_thread_pair_order_c
+                        CHECK(user_a COLLATE "C" < user_b COLLATE "C");
+                END IF;
+                ALTER TABLE direct_message_threads
+                    DROP CONSTRAINT IF EXISTS direct_message_threads_check;
+            END; $$''')
             connection.execute("ALTER TABLE direct_message_threads ADD COLUMN IF NOT EXISTS created_by_user_id TEXT")
             connection.execute("CREATE INDEX IF NOT EXISTS direct_message_thread_creation_idx ON direct_message_threads(created_by_user_id, created_at DESC)")
             connection.execute("""CREATE TABLE IF NOT EXISTS direct_message_participants (

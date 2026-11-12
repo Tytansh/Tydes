@@ -465,6 +465,75 @@ def test_postgres_inbox_reads_only_one_preview_in_one_query(monkeypatch):
     assert parameters == ("alice",) * 5
 
 
+def test_postgres_migrates_only_legacy_pair_check_to_explicit_codepoint_collation(monkeypatch):
+    connection = _Connection()
+    repository = PostgresDirectMessageRepository(SimpleNamespace(_connect=lambda: connection))
+    schema_sql = [query for query, _ in connection.calls]
+    create = schema_sql[0]
+    migration = schema_sql[1]
+    assert 'CHECK(user_a COLLATE "C" < user_b COLLATE "C")' in create
+    assert migration.startswith("DO $$ BEGIN") and "IF NOT EXISTS" in migration
+    assert migration.index("pg_advisory_xact_lock") < migration.index("IF NOT EXISTS")
+    assert "ADD CONSTRAINT direct_message_thread_pair_order_c" in migration
+    assert 'CHECK(user_a COLLATE "C" < user_b COLLATE "C")' in migration
+    assert "DROP CONSTRAINT IF EXISTS direct_message_threads_check" in migration
+    assert migration.index("ADD CONSTRAINT") < migration.index("DROP CONSTRAINT")
+    connection.calls.clear()
+    repository._ensure_schema()
+    assert [query for query, _ in connection.calls] == schema_sql
+
+
+def test_actual_postgres_mixed_case_pair_and_v1_migration():
+    """Optional real-Postgres integration; never uses the production DB URL."""
+    database_url = os.getenv("TYDES_TEST_POSTGRES_URL", "").strip()
+    if not database_url:
+        pytest.skip("Set TYDES_TEST_POSTGRES_URL to an isolated local test database")
+    import psycopg
+    from psycopg import sql
+    from psycopg.rows import dict_row
+    from uuid import uuid4
+
+    schema = "dm_pair_test_" + uuid4().hex
+    with psycopg.connect(database_url, autocommit=True, row_factory=dict_row) as control:
+        collation = control.execute("""SELECT collname FROM pg_collation
+            WHERE collname IN ('en-US-x-icu','en_US.utf8','en_US.UTF-8')
+            ORDER BY collname LIMIT 1""").fetchone()
+        if collation is None:
+            pytest.skip("A locale-aware English collation is required for this regression")
+        control.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
+        try:
+            control.execute(sql.SQL("SET search_path TO {}").format(sql.Identifier(schema)))
+            control.execute(sql.SQL("""CREATE TABLE direct_message_threads (
+                id TEXT PRIMARY KEY,
+                user_a TEXT COLLATE {} NOT NULL,
+                user_b TEXT COLLATE {} NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE(user_a,user_b), CHECK(user_a < user_b))""").format(
+                    sql.Identifier(collation["collname"]), sql.Identifier(collation["collname"])))
+            with pytest.raises(psycopg.errors.CheckViolation):
+                control.execute("INSERT INTO direct_message_threads(id,user_a,user_b) VALUES(%s,%s,%s)",
+                    ("old-check-fails", "usr_ZZlwffVZ5ms", "usr_oD8ZUNTpHc"))
+
+            @contextmanager
+            def connect():
+                with psycopg.connect(database_url, autocommit=True, row_factory=dict_row) as connection:
+                    connection.execute(sql.SQL("SET search_path TO {}").format(sql.Identifier(schema)))
+                    yield connection
+
+            repository = PostgresDirectMessageRepository(SimpleNamespace(_connect=connect))
+            repository._ensure_schema()  # Safe repeated migration of existing v1 schema.
+            thread = repository.ensure_thread("usr_oD8ZUNTpHc", "usr_ZZlwffVZ5ms", False)
+            assert thread["user_a"] == "usr_ZZlwffVZ5ms" and thread["user_b"] == "usr_oD8ZUNTpHc"
+            assert repository.ensure_thread("usr_ZZlwffVZ5ms", "usr_oD8ZUNTpHc", False)["id"] == thread["id"]
+            sent = repository.send(thread["id"], "usr_oD8ZUNTpHc", "Integration delivery", "real-pg-1", None, 100)
+            assert sent["sender_user_id"] == "usr_oD8ZUNTpHc"
+            assert repository.get_thread(thread["id"], "usr_ZZlwffVZ5ms")["unread_count"] == 1
+            assert repository.mark_read(thread["id"], "usr_ZZlwffVZ5ms", sent["id"]) == 0
+        finally:
+            control.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
+
+
 class _MessageSqlConnection(_Connection):
     def __init__(self):
         super().__init__()
@@ -488,7 +557,7 @@ class _MessageSqlConnection(_Connection):
 
     def execute(self, query, parameters=()):
         self.calls.append((query, parameters))
-        if "CREATE " in query or query.startswith("ALTER "):
+        if "CREATE " in query or query.startswith(("ALTER ", "DO $$")):
             return _Rows()
         assert self.active_transaction
         if "FOR UPDATE OF t" in query:
@@ -545,7 +614,7 @@ def test_postgres_new_thread_quota_is_locked_initiator_only_and_retries_are_free
         existing = False
         quota = 0
         def execute(self, query, parameters=()):
-            if "CREATE " in query or query.startswith("ALTER "):
+            if "CREATE " in query or query.startswith(("ALTER ", "DO $$")):
                 return super().execute(query, parameters)
             assert self.active_transaction
             self.calls.append((query, parameters))
