@@ -438,18 +438,18 @@ class DemoStore:
                         if user.banned:
                             raise ValueError("This account has been suspended.")
                         if account.get("google_subject") not in {None, identity.subject}:
-                            raise ValueError("This Tydes account is already connected to a different Google account.")
+                            raise ValueError("This TYDES account is already connected to a different Google account.")
                         if not identity.authoritative_email or not (user.email_verified or self._is_verified_email(email)):
-                            raise ValueError("For security, sign in with email and password and verify your existing Tydes email before connecting Google.")
+                            raise ValueError("For security, sign in with email and password and verify your existing TYDES email before connecting Google.")
                     else:
                         if not allow_signup:
-                            raise ValueError("No Tydes account exists for this Google email. Choose Sign up to create one, or use your existing account's Google email.")
+                            raise ValueError("No TYDES account exists for this Google email. Choose Sign up to create one, or use your existing account's Google email.")
                         account = {"password_hash": "!google-only", "user": new_user.model_dump(mode="json")}
                     account["google_subject"] = identity.subject
             user = User.model_validate(account["user"])
             if user.banned:
                 raise ValueError("This account has been suspended.")
-            # A changed Google email must not silently change the Tydes account
+            # A changed Google email must not silently change the TYDES account
             # or its billing identity: the existing subject binding wins.
             email = str(user.email).lower()
             self.auth_accounts[email] = account
@@ -634,7 +634,7 @@ class DemoStore:
             if word
         ]
         if not words:
-            return "Tydes Surfer"
+            return "TYDES Surfer"
         return " ".join(word.capitalize() for word in words)
 
     def _email_has_premium_override(self, email: str) -> bool:
@@ -1464,7 +1464,7 @@ class DemoStore:
                     "cover_url": user.cover_url,
                     "premium": user.premium,
                     "location": user.home_region or None,
-                    "subtitle": "Tydes surfer",
+                    "subtitle": "TYDES surfer",
                     "surf_skill": user.surf_skill or None,
                 }
             )
@@ -1488,7 +1488,7 @@ class DemoStore:
                     "cover_url": None,
                     "premium": False,
                     "location": None,
-                    "subtitle": "Blocked on Tydes",
+                    "subtitle": "Blocked on TYDES",
                     "surf_skill": None,
                 }
             )
@@ -1515,7 +1515,7 @@ class DemoStore:
             if user.id not in user_ids:
                 continue
             handle = user.handle.strip().lower().lstrip("@")
-            display_name = user.display_name.strip() or "Tydes surfer"
+            display_name = user.display_name.strip() or "TYDES surfer"
             profiles.append(
                 {
                     "user_id": user.id,
@@ -1525,7 +1525,7 @@ class DemoStore:
                     "cover_url": user.cover_url,
                     "premium": user.premium,
                     "location": user.home_region or None,
-                    "subtitle": "Tydes surfer",
+                    "subtitle": "TYDES surfer",
                     "surf_skill": user.surf_skill or None,
                 }
             )
@@ -1939,7 +1939,7 @@ class DemoStore:
                     display_name=(
                         str(profile.get("display_name"))
                         if profile is not None
-                        else "Tydes surfer"
+                        else "TYDES surfer"
                     ),
                     handle=(
                         str(profile.get("handle"))

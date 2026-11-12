@@ -62,8 +62,8 @@ def verify(directory):
     assert '<h1 id="about-title">Where We Surfing</h1>' in about
     assert '<h2 id="today-title">Find your break.<br /> Meet your crew.</h2>' in about
     assert 'id="partnerships"' in about
-    assert "stays cannot currently be booked through Tydes" in about
-    assert "mailto:support@tydes.io?subject=Tydes%20partnership%20enquiry" in about
+    assert "stays cannot currently be booked through TYDES" in about
+    assert "mailto:support@tydes.io?subject=TYDES%20partnership%20enquiry" in about
     assert not re.search(r"Bali surf sprint|364|<strong>9</strong>|product-demo", about, re.I)
     print("Public pages verified: local assets, working navigation, public access and clear planned-feature copy.")
 

@@ -160,17 +160,17 @@ class PostgresAuthRepository:
                     "SELECT email, password_hash, user_payload, google_subject FROM auth_accounts WHERE email = %s FOR UPDATE", (email,),
                 ).fetchone()
                 if row is None:
-                    raise ValueError("No Tydes account exists for this Google email. Choose Sign up to create one, or use your existing account's Google email.")
+                    raise ValueError("No TYDES account exists for this Google email. Choose Sign up to create one, or use your existing account's Google email.")
                 if not inserted:
                     if row["user_payload"].get("banned"):
                         raise ValueError("This account has been suspended.")
                     if row["google_subject"] not in {None, subject}:
-                        raise ValueError("This Tydes account is already connected to a different Google account.")
+                        raise ValueError("This TYDES account is already connected to a different Google account.")
                     verified = bool(row["user_payload"].get("email_verified")) or connection.execute(
                         "SELECT 1 FROM auth_verified_emails WHERE email = %s", (email,),
                     ).fetchone() is not None
                     if not authoritative or not verified:
-                        raise ValueError("For security, sign in with email and password and verify your existing Tydes email before connecting Google.")
+                        raise ValueError("For security, sign in with email and password and verify your existing TYDES email before connecting Google.")
                     connection.execute("UPDATE auth_accounts SET google_subject = %s WHERE email = %s", (subject, email))
             if row["user_payload"].get("banned"):
                 raise ValueError("This account has been suspended.")

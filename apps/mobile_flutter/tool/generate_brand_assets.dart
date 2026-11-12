@@ -66,7 +66,7 @@ img.Image _buildLaunchMaster() {
   );
 
   final canvas = _resizeExact(markCanvas, 504, 555);
-  _drawWordmark(canvas, 'Tydes', centerX: 252, baselineY: 414);
+  _drawWordmark(canvas, 'TYDES', centerX: 252, baselineY: 414);
   return canvas;
 }
 

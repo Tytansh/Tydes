@@ -142,7 +142,7 @@ def verify_google_login(credential: str, challenge_id: str, verifier: str) -> Go
             consumed = current is not None and current["expires_at"] > now
     if not consumed:
         raise GoogleIdentityError("This Google sign-in was already used. Please try again.")
-    # For other Google-account emails, require Tydes' own email confirmation.
+    # For other Google-account emails, require TYDES' own email confirmation.
     # email_verified alone does not mean Google is authoritative for that domain.
     hosted_domain = claims.get("hd")
     authoritative = email.endswith("@gmail.com") or (

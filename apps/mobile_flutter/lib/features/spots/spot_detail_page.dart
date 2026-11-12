@@ -132,7 +132,7 @@ class SpotDetailPage extends ConsumerWidget {
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         leading: IconButton(
-          tooltip: 'Back to Tydes',
+          tooltip: 'Back to TYDES',
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.canPop() ? context.pop() : context.go('/'),
         ),

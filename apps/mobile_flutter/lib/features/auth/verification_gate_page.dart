@@ -217,7 +217,7 @@ class _VerificationAccountState extends ConsumerState<_VerificationAccount> {
         builder: (context) => AlertDialog(
           title: const Text('Delete account?'),
           content: const Text(
-            'Permanently delete your Tydes account and its content. You can create a new account with the same email afterward. Cancel any active subscription through Manage subscription or your app store before deleting.',
+            'Permanently delete your TYDES account and its content. You can create a new account with the same email afterward. Cancel any active subscription through Manage subscription or your app store before deleting.',
           ),
           actions: [
             TextButton(
@@ -270,7 +270,7 @@ class _VerificationAccountState extends ConsumerState<_VerificationAccount> {
         body: AuthEntryLayout(
           title: 'Verify your email',
           subtitle:
-              'One more step to open your Tydes account. Your profile and sign-in are saved.',
+              'One more step to open your TYDES account. Your profile and sign-in are saved.',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

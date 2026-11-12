@@ -34,7 +34,7 @@ Future<void> launchTydesTermsOfUse(BuildContext context) {
 
 Future<void> launchTydesSupportEmail(
   BuildContext context, {
-  String subject = 'Tydes support',
+  String subject = 'TYDES support',
   String body = 'Tell us what happened and we will help.',
 }) async {
   final uri = Uri(

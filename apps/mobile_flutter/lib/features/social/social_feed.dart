@@ -479,7 +479,7 @@ class _PostCard extends ConsumerWidget {
       handle: authorHandle,
       avatarUrl: authorAvatarUrl,
       premium: authorPremium,
-      subtitle: isOwnPost ? currentViewer.bio : 'Surf traveler on Tydes',
+      subtitle: isOwnPost ? currentViewer.bio : 'Surf traveler on TYDES',
       location: isOwnPost ? currentViewer.homeRegion : null,
       surfSkill: isOwnPost ? currentViewer.surfSkill : 'beginner',
     );
@@ -730,7 +730,7 @@ Future<void> _reportPost(
         );
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Report sent. Thanks for helping Tydes.')),
+      const SnackBar(content: Text('Report sent. Thanks for helping TYDES.')),
     );
   } catch (_) {
     if (!context.mounted) return;
@@ -750,7 +750,7 @@ Future<void> _confirmAndBlockPostAuthor(
     builder: (context) => AlertDialog(
       title: Text('Block ${post.authorName}?'),
       content: const Text(
-        'You will not see their posts or profile in Tydes. You can undo this later from future safety settings.',
+        'You will not see their posts or profile in TYDES. You can undo this later from future safety settings.',
       ),
       actions: [
         TextButton(
@@ -1428,7 +1428,7 @@ Future<void> _reportComment(
         );
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Report sent. Thanks for helping Tydes.')),
+      const SnackBar(content: Text('Report sent. Thanks for helping TYDES.')),
     );
   } catch (_) {
     if (!context.mounted) return;
@@ -1448,7 +1448,7 @@ Future<void> _confirmAndBlockCommentAuthor(
     builder: (context) => AlertDialog(
       title: Text('Block ${comment.authorName}?'),
       content: const Text(
-        'You will not see their posts, comments, profile, or messages in Tydes. You can undo this later from safety settings.',
+        'You will not see their posts, comments, profile, or messages in TYDES. You can undo this later from safety settings.',
       ),
       actions: [
         TextButton(
@@ -3259,7 +3259,7 @@ class _TydesVideoLoaderState extends State<_TydesVideoLoader>
     final logoSize = widget.compact ? 46.0 : 72.0;
     final ringSize = widget.compact ? 62.0 : 94.0;
     return Semantics(
-      label: 'Tydes video loading',
+      label: 'TYDES video loading',
       child: Center(
         child: ScaleTransition(
           scale: _scale,
@@ -3732,7 +3732,7 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
             );
             continue;
           }
-          warnings.add('Video added. Tydes will optimize it before posting.');
+          warnings.add('Video added. TYDES will optimize it before posting.');
         }
         drafts.add(_PostMediaDraft.video(item));
         continue;
@@ -5794,7 +5794,7 @@ String _uploadErrorMessage(Object error) {
     if (error.type == DioExceptionType.sendTimeout ||
         error.type == DioExceptionType.receiveTimeout ||
         error.type == DioExceptionType.connectionTimeout) {
-      return 'Upload timed out while Tydes was finishing it. Try again — videos up to 30 seconds are supported.';
+      return 'Upload timed out while TYDES was finishing it. Try again — videos up to 30 seconds are supported.';
     }
     final data = error.response?.data;
     if (data is Map<String, dynamic> && data['detail'] is String) {

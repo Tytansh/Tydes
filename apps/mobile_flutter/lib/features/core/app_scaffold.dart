@@ -200,7 +200,7 @@ class _DesktopNavigation extends StatelessWidget {
               _DesktopBrandMark(),
               SizedBox(width: 12),
               Text(
-                'Tydes',
+                'TYDES',
                 style: TextStyle(
                   color: Color(0xFFF4FAF9),
                   fontFamily: 'Sora',

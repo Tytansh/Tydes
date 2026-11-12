@@ -236,7 +236,7 @@ Future<void> _reportProfile(
         );
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Report sent. Thanks for helping Tydes.')),
+      const SnackBar(content: Text('Report sent. Thanks for helping TYDES.')),
     );
   } catch (_) {
     if (!context.mounted) return;
@@ -256,7 +256,7 @@ Future<void> _confirmAndBlockProfile(
     builder: (context) => AlertDialog(
       title: Text('Block ${profile.displayName}?'),
       content: const Text(
-        'You will not see their posts or profile in Tydes. You can undo this later from future safety settings.',
+        'You will not see their posts or profile in TYDES. You can undo this later from future safety settings.',
       ),
       actions: [
         TextButton(
@@ -712,7 +712,7 @@ PublicProfilePreview _buildResolvedProfile(
         friend?.vibe ??
         seed?.subtitle ??
         socialProfile?.subtitle ??
-        'Surf traveler on Tydes.',
+        'Surf traveler on TYDES.',
     location:
         friend?.homeRegion ??
         seed?.location ??
@@ -764,7 +764,7 @@ String _displayNameFromUserId(String userId) {
       .replaceFirst(RegExp(r'^(usr|friend|sample|follower)_'), '')
       .replaceAll(RegExp(r'[^a-z0-9]+', caseSensitive: false), ' ')
       .trim();
-  if (cleaned.isEmpty) return 'Tydes Surfer';
+  if (cleaned.isEmpty) return 'TYDES Surfer';
   return cleaned
       .split(RegExp(r'\s+'))
       .map(
@@ -786,7 +786,7 @@ PublicProfilePreview _profileFromPost(SocialPostModel post) {
     handle: post.authorHandle,
     avatarUrl: post.authorAvatarUrl,
     premium: post.authorPremium,
-    subtitle: 'Surf traveler on Tydes',
+    subtitle: 'Surf traveler on TYDES',
   );
 }
 
@@ -906,7 +906,7 @@ PublicProfilePreview _profileForUserId(
     userId: userId,
     displayName: _displayNameFromUserId(userId),
     handle: _handleFromName(userId),
-    subtitle: 'Surf traveler on Tydes',
+    subtitle: 'Surf traveler on TYDES',
   );
 }
 

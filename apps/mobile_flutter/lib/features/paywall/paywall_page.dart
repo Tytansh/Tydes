@@ -291,7 +291,7 @@ class _PaywallPageState extends ConsumerState<PaywallPage>
         ];
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Tydes Premium')),
+      appBar: AppBar(title: const Text('TYDES Premium')),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
@@ -394,7 +394,7 @@ class _PremiumLegalCard extends StatelessWidget {
             const SizedBox(height: 10),
             Text(
               isWeb
-                  ? 'Premium renews monthly unless canceled. The checkout shows your price and billing terms before you pay. Manage or cancel with the provider where you subscribed. Your subscription follows your Tydes account across devices.'
+                  ? 'Premium renews monthly unless canceled. The checkout shows your price and billing terms before you pay. Manage or cancel with the provider where you subscribed. Your subscription follows your TYDES account across devices.'
                   : 'Premium renews monthly through your app-store account unless canceled. Payment is charged to your store account at confirmation. Manage or cancel in your store subscription settings. Restore purchases checks for an active subscription.',
             ),
             const SizedBox(height: 10),
@@ -466,7 +466,7 @@ class _HeroCard extends StatelessWidget {
             Text(
               isPremium
                   ? 'Your Premium access works on this device.'
-                  : 'Purchases are not available on this platform yet. If you already subscribed, sign in to the same Tydes account and check your subscription below.',
+                  : 'Purchases are not available on this platform yet. If you already subscribed, sign in to the same TYDES account and check your subscription below.',
               style: TextStyle(color: scheme.onPrimaryContainer),
             ),
           ],

@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_flutter/core/legal/legal_links.dart';
 
 void main() {
-  test('native About links target the public Tydes website', () {
+  test('native About links target the public TYDES website', () {
     expect(tydesAboutPageUrl, 'https://tydes.io/about/');
   });
 

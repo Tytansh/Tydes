@@ -18,7 +18,7 @@ const _package = Package(
   StoreProduct(
     'tydes_premium_monthly',
     'Monthly access',
-    'Tydes Premium',
+    'TYDES Premium',
     3.99,
     r'US$3.99',
     'USD',
@@ -101,7 +101,7 @@ Future<void> _show(
           (_) async => productAvailable
               ? const RevenueCatPremiumOffer(
                   package: _package,
-                  title: 'Tydes Premium',
+                  title: 'TYDES Premium',
                   price: r'US$3.99',
                 )
               : null,

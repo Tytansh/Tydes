@@ -203,7 +203,7 @@ class _GuestExplorePageState extends ConsumerState<GuestExplorePage> {
               ),
             ),
             const SizedBox(width: 10),
-            const Text('Tydes', style: TextStyle(fontWeight: FontWeight.w800)),
+            const Text('TYDES', style: TextStyle(fontWeight: FontWeight.w800)),
           ],
         ),
         actions: [

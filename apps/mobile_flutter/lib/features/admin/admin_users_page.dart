@@ -172,7 +172,7 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
     final reports = ref.watch(adminReportsProvider);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Tydes admin'),
+        title: const Text('TYDES admin'),
         actions: [
           IconButton(
             tooltip: 'Refresh accounts',

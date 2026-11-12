@@ -66,7 +66,7 @@ class HomePage extends ConsumerWidget {
     }
     if (user.hasError) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Tydes')),
+        appBar: AppBar(title: const Text('TYDES')),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -558,7 +558,7 @@ List<PublicProfilePreview> _searchProfiles({
         handle: post.authorHandle ?? _handleFromName(post.authorName),
         avatarUrl: post.authorAvatarUrl,
         premium: post.authorPremium,
-        subtitle: 'Posted recently on Tydes',
+        subtitle: 'Posted recently on TYDES',
         location: null,
         surfSkill: 'beginner',
       ),

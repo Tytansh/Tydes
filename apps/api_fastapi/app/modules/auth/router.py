@@ -72,7 +72,7 @@ class GoogleLoginRequest(BaseModel):
 
 def _require_google_origin(request: Request) -> None:
     if request.headers.get("origin", "").rstrip("/") not in google_auth_origins():
-        raise HTTPException(status_code=403, detail="Open Google sign-in from the Tydes website.")
+        raise HTTPException(status_code=403, detail="Open Google sign-in from the TYDES website.")
 
 
 @router.get("/google/config")

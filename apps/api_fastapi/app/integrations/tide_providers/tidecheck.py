@@ -155,7 +155,7 @@ class TideCheckProvider:
 
     @staticmethod
     def _reserve_upstream_request() -> None:
-        # This bounds Tydes' HTTP attempts, not provider credits from other apps
+        # This bounds TYDES' HTTP attempts, not provider credits from other apps
         # or the account's final bill. The limiter persists across workers when
         # its existing PostgreSQL backend is configured.
         try:

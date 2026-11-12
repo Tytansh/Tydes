@@ -1,5 +1,5 @@
 const contentBlockedMessage =
-    'This text breaks Tydes community rules. Please edit it and try again.';
+    'This text breaks TYDES community rules. Please edit it and try again.';
 
 final _blockedTextPatterns = <RegExp>[
   RegExp(

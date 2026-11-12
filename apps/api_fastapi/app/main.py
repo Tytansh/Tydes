@@ -139,7 +139,7 @@ def _media_cleanup_interval_seconds() -> int:
     return min(max(value, 300), 24 * 60 * 60)
 
 
-app = FastAPI(title="Tydes API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="TYDES API", version="0.1.0", lifespan=lifespan)
 MEDIA_DIR = media_dir_path()
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 sync_seed_media_files()
@@ -295,7 +295,7 @@ async def readiness():
 @app.get("/")
 def root():
     return {
-        "name": "Tydes API",
+        "name": "TYDES API",
         "version": "0.1.0",
         "docs": "/docs",
         "api_base": "/api/v1",

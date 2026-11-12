@@ -82,7 +82,7 @@ class NotificationService {
   Future<void> showTestNotification() async {
     await showAlertTriggered(
       id: 999001,
-      title: 'Tydes test notification',
+      title: 'TYDES test notification',
       body: 'If you can see this, local notifications are working.',
     );
   }

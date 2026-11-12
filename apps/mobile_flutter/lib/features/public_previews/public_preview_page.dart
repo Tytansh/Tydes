@@ -129,11 +129,11 @@ class _Frame extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          const Text('Tydes', style: TextStyle(fontWeight: FontWeight.w800)),
+          const Text('TYDES', style: TextStyle(fontWeight: FontWeight.w800)),
         ],
       ),
       leading: IconButton(
-        tooltip: 'Explore Tydes',
+        tooltip: 'Explore TYDES',
         icon: const Icon(Icons.arrow_back),
         onPressed: () =>
             context.canPop() ? context.pop() : context.go('/explore'),
@@ -372,7 +372,7 @@ class _EventContent extends StatelessWidget {
           title: event.ended ? 'This event has ended' : 'Surf with the crew',
           text: event.ended
               ? 'Sign in to view the original event post.'
-              : 'Sign in to join this event, see who’s going, and access its group chat. Joining is confirmed inside Tydes.',
+              : 'Sign in to join this event, see who’s going, and access its group chat. Joining is confirmed inside TYDES.',
           button: event.ended
               ? 'Sign in to view event'
               : 'Sign in to join event',

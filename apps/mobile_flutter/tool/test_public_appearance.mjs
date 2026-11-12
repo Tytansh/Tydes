@@ -101,7 +101,7 @@ test('blocked storage falls back safely to system appearance', () => {
   assert.equal(app.theme, 'light');
 });
 
-test('a setting changed in another Tydes tab updates public pages', () => {
+test('a setting changed in another TYDES tab updates public pages', () => {
   const app = boot({ saved: 'light', systemDark: false });
   app.storageChange('dark');
   assert.equal(app.theme, 'dark');

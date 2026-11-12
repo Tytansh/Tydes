@@ -104,7 +104,7 @@ class RevenueCatService {
   }
 
   Future<RevenueCatPremiumOffer?> loadPremiumOffer(UserProfile profile) async {
-    // Offerings and checkout must use the authenticated Tydes account on every platform.
+    // Offerings and checkout must use the authenticated TYDES account on every platform.
     await logIn(profile);
     final offerings = await Purchases.getOfferings();
     final offering = offeringId.isNotEmpty

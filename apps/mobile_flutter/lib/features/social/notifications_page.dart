@@ -244,7 +244,7 @@ class _NotificationTile extends StatelessWidget {
                 onTap: () => _openNotificationProfile(context, item),
                 child: TydesProfileAvatar(
                   size: 48,
-                  displayName: item.profile?.displayName ?? 'Tydes surfer',
+                  displayName: item.profile?.displayName ?? 'TYDES surfer',
                   imageUrl: item.profile?.avatarUrl,
                 ),
               ),

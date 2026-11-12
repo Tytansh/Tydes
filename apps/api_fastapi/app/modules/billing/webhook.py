@@ -57,7 +57,7 @@ def _target_ids(event: dict) -> list[str]:
         candidates.extend(values)
     if len(candidates) > 100:
         raise HTTPException(400, "Too many subscription notification identities.")
-    # Anonymous RevenueCat IDs and unknown IDs cannot create Tydes accounts.
+    # Anonymous RevenueCat IDs and unknown IDs cannot create TYDES accounts.
     return sorted({
         value for value in candidates
         if isinstance(value, str) and value.startswith("usr_") and len(value) <= 128

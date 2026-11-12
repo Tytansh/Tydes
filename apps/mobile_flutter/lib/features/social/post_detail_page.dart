@@ -34,7 +34,7 @@ class PostDetailPage extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Post'),
         leading: IconButton(
-          tooltip: 'Back to Tydes',
+          tooltip: 'Back to TYDES',
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.canPop() ? context.pop() : context.go('/'),
         ),
@@ -74,7 +74,7 @@ class _PostDetailCard extends StatelessWidget {
       handle: post.authorHandle,
       avatarUrl: post.authorAvatarUrl,
       premium: post.authorPremium,
-      subtitle: 'Surf traveler on Tydes',
+      subtitle: 'Surf traveler on TYDES',
     );
     final isEvent =
         post.postType == 'surf_plan' || post.postType == 'looking_for_buddy';

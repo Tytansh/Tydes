@@ -188,7 +188,7 @@ class _SurfTravelAppState extends ConsumerState<SurfTravelApp>
     final router = ref.watch(appRouterProvider);
     final locale = ref.watch(localeProvider);
     return MaterialApp.router(
-      title: 'Tydes',
+      title: 'TYDES',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),

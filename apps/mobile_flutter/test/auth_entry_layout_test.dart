@@ -30,7 +30,7 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       await showAuth(tester);
       expect(find.byKey(const ValueKey('auth-brand')), findsOneWidget);
-      expect(find.text('Tydes'), findsOneWidget);
+      expect(find.text('TYDES'), findsOneWidget);
       expect(find.text('Where We Surfing'), findsOneWidget);
       expect(find.text('Welcome back'), findsOneWidget);
       expect(find.text('Terms'), findsOneWidget);

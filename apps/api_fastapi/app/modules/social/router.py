@@ -41,7 +41,7 @@ ALLOWED_VIDEO_TYPES = {
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v"}
 MAX_MEDIA_PER_POST = 3
 MAX_PHOTO_BYTES = 15 * 1024 * 1024
-# Keep feed clips small enough to start quickly on mobile connections. Tydes
+# Keep feed clips small enough to start quickly on mobile connections. TYDES
 # currently serves progressive MP4 files, not an adaptive HLS/DASH ladder.
 MAX_VIDEO_BYTES = 25 * 1024 * 1024
 MAX_BUNNY_VIDEO_BYTES = 250 * 1024 * 1024
@@ -530,7 +530,7 @@ def create_direct_media_upload(
     if use_bunny:
         bunny_client = BunnyStreamClient()
         bunny_upload = bunny_client.create_upload(
-            payload.file_name or f"Tydes video {media_id}",
+            payload.file_name or f"TYDES video {media_id}",
             expires_seconds=ttl_seconds,
         )
         expires_at = bunny_upload.expires_at
@@ -672,7 +672,7 @@ def complete_direct_media_upload(
         if not video.ready:
             raise HTTPException(
                 status_code=425,
-                detail="Video is processing. Tydes will retry automatically.",
+                detail="Video is processing. TYDES will retry automatically.",
                 headers={"Retry-After": "5"},
             )
         if (
@@ -773,7 +773,7 @@ async def upload_media(
     if isinstance(storage, R2MediaStorage):
         raise HTTPException(
             status_code=426,
-            detail="Update Tydes to use protected direct media uploads.",
+            detail="Update TYDES to use protected direct media uploads.",
         )
     extension = _image_extension(file)
     media_type = "photo"

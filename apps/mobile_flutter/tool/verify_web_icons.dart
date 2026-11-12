@@ -76,12 +76,12 @@ void verifyWebIcons(Directory webRoot) {
   final manifest =
       jsonDecode(File('${webRoot.path}/manifest.json').readAsStringSync())
           as Map<String, dynamic>;
-  _check(manifest['name'] == 'Tydes', 'The installed app must be named Tydes.');
-  _check(manifest['short_name'] == 'Tydes', 'Use the Tydes home-screen label.');
+  _check(manifest['name'] == 'TYDES', 'The installed app must be named TYDES.');
+  _check(manifest['short_name'] == 'TYDES', 'Use the TYDES home-screen label.');
   _check(manifest['id'] == '/', 'Keep the existing installed-app identity.');
   _check(
     manifest['scope'] == '/',
-    'The installed app must cover Tydes routes.',
+    'The installed app must cover TYDES routes.',
   );
   _check(
     manifest['start_url'] == '/',
@@ -136,7 +136,7 @@ void verifyWebIcons(Directory webRoot) {
       '$name must use the current blue-wave home-screen icon.',
     );
     _check(
-      html.contains('name="apple-mobile-web-app-title" content="Tydes"'),
+      html.contains('name="apple-mobile-web-app-title" content="TYDES"'),
       '$name must set the installed shortcut label.',
     );
     _check(

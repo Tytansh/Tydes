@@ -125,7 +125,7 @@ class SettingsPage extends ConsumerWidget {
             builder: (dialogContext) => AlertDialog(
               title: const Text('Delete account?'),
               content: const Text(
-                'Permanently delete your Tydes account and its content. You can create a new account with the same email afterward. Cancel any active subscription through Manage subscription or your app store before deleting.',
+                'Permanently delete your TYDES account and its content. You can create a new account with the same email afterward. Cancel any active subscription through Manage subscription or your app store before deleting.',
               ),
               actions: [
                 TextButton(
@@ -766,8 +766,8 @@ PublicProfilePreview _profilePreviewFromUserId(
   }
   return PublicProfilePreview(
     userId: userId,
-    displayName: 'Tydes surfer',
-    subtitle: 'Surf traveler on Tydes',
+    displayName: 'TYDES surfer',
+    subtitle: 'Surf traveler on TYDES',
   );
 }
 
@@ -863,7 +863,7 @@ class _ProfileSettingsSheet extends StatelessWidget {
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.admin_panel_settings_outlined),
                   title: const Text('Admin dashboard'),
-                  subtitle: const Text('View registered Tydes accounts'),
+                  subtitle: const Text('View registered TYDES accounts'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: onAdminDashboard,
                 ),
@@ -1021,11 +1021,11 @@ class _SafetyAndCommunityCard extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             const Text(
-              'Surf forecasts, tide times, map locations, alerts, and Best Time Today are estimates for planning only. Conditions can change quickly. Check local hazards, tide, weather, and local advice before paddling out. Tydes is not for navigation or safety-critical decisions.',
+              'Surf forecasts, tide times, map locations, alerts, and Best Time Today are estimates for planning only. Conditions can change quickly. Check local hazards, tide, weather, and local advice before paddling out. TYDES is not for navigation or safety-critical decisions.',
             ),
             const SizedBox(height: 12),
             const Text(
-              'Tydes does not allow sexual services, nudity, harassment, hate, scams, or unsafe events. Use report and block if something feels wrong.',
+              'TYDES does not allow sexual services, nudity, harassment, hate, scams, or unsafe events. Use report and block if something feels wrong.',
             ),
           ],
         ),
@@ -1156,7 +1156,7 @@ class _BlockedUserTile extends ConsumerWidget {
                   ),
                   Text(
                     (profile.handle ?? '').isEmpty
-                        ? 'Blocked on Tydes'
+                        ? 'Blocked on TYDES'
                         : '@${profile.handle}',
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -1367,7 +1367,7 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
       builder: (context) => AlertDialog(
         title: Text(
           isCommunityRulesError
-              ? 'Tydes community guidelines'
+              ? 'TYDES community guidelines'
               : 'Could not save profile',
         ),
         content: Text(message),
@@ -1621,7 +1621,7 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
               ),
               Center(
                 child: Text(
-                  'Best size: 1600 × 600. Tydes crops it to fit every screen.',
+                  'Best size: 1600 × 600. TYDES crops it to fit every screen.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 12,
@@ -1794,7 +1794,7 @@ List<_SuggestedPerson> _profileSuggestions(
           initial: profile.displayName.trim().isEmpty
               ? '?'
               : profile.displayName.trim().characters.first.toUpperCase(),
-          reason: profile.subtitle ?? 'New to Tydes',
+          reason: profile.subtitle ?? 'New to TYDES',
           handle: profile.handle,
           location: profile.location,
         ),

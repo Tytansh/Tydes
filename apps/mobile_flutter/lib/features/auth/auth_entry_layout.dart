@@ -170,7 +170,7 @@ class _AuthOceanPanel extends StatelessWidget {
               ),
               SizedBox(width: compact ? 11 : 14),
               Text(
-                'Tydes',
+                'TYDES',
                 style: TextStyle(
                   fontFamily: 'Sora',
                   color: Colors.white,

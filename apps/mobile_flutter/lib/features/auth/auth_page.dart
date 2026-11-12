@@ -528,10 +528,10 @@ class _AuthLegalNote extends StatelessWidget {
       children: [
         Text(
           isSignup
-              ? 'By creating an account, you agree to Tydes Terms and Privacy Policy.'
+              ? 'By creating an account, you agree to TYDES Terms and Privacy Policy.'
               : kIsWeb
-              ? 'By continuing with Google, you agree to Tydes Terms and Privacy Policy.'
-              : 'Need help or want to review Tydes policies?',
+              ? 'By continuing with Google, you agree to TYDES Terms and Privacy Policy.'
+              : 'Need help or want to review TYDES policies?',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: _authMuted(context, const Color(0xFF5E6A68)),

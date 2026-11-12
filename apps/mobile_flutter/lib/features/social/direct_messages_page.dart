@@ -194,14 +194,14 @@ class DirectMessageThreadsNotifier
       throw StateError('The conversation response was incomplete.');
     }
     final previous = threadByIdOrHandle(id);
-    final name = json['peer_name'] as String? ?? 'Tydes surfer';
+    final name = json['peer_name'] as String? ?? 'TYDES surfer';
     return DirectMessageThread(
       id: id,
       profileUserId: peerId,
       name: name,
       handle: json['peer_handle'] as String? ?? '',
       initial: _initialFor(name),
-      location: 'Tydes',
+      location: 'TYDES',
       preview: json['preview'] as String? ?? '',
       time: _messageTime(json['updated_at'] as String?),
       updatedAt: DateTime.tryParse(json['updated_at'] as String? ?? ''),
@@ -921,7 +921,7 @@ PublicProfilePreview _profileFromThread(DirectMessageThread thread) {
         : thread.id,
     displayName: thread.name,
     handle: thread.handle,
-    subtitle: 'Surf traveler on Tydes',
+    subtitle: 'Surf traveler on TYDES',
     location: thread.location,
     avatarUrl: thread.avatarUrl,
     premium: thread.premium,
@@ -1073,7 +1073,7 @@ class _MessagePeopleErrorCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Try again and we will reload the real Tydes accounts.',
+              'Try again and we will reload the real TYDES accounts.',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 12),
@@ -1195,7 +1195,7 @@ class _NewMessagePersonTile extends StatelessWidget {
                     style: const TextStyle(fontWeight: FontWeight.w900),
                   ),
                   Text(
-                    '@${profile.handle ?? profile.userId} • ${profile.location ?? 'Tydes'}',
+                    '@${profile.handle ?? profile.userId} • ${profile.location ?? 'TYDES'}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -1681,7 +1681,7 @@ Future<void> _reportDirectThread(
         );
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Report sent. Thanks for helping Tydes.')),
+      const SnackBar(content: Text('Report sent. Thanks for helping TYDES.')),
     );
   } catch (_) {
     if (!context.mounted) return;
@@ -1704,7 +1704,7 @@ Future<void> _confirmAndBlockDirectProfile(
     builder: (context) => AlertDialog(
       title: Text('Block ${profile.displayName}?'),
       content: const Text(
-        'You will not see their messages, posts, or profile in Tydes. You can undo this later from safety settings.',
+        'You will not see their messages, posts, or profile in TYDES. You can undo this later from safety settings.',
       ),
       actions: [
         TextButton(
@@ -2016,7 +2016,7 @@ class _SharedPostPreview extends ConsumerWidget {
                               children: [
                                 Flexible(
                                   child: Text(
-                                    message.sharedPostAuthor ?? 'Tydes surfer',
+                                    message.sharedPostAuthor ?? 'TYDES surfer',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
@@ -2154,11 +2154,11 @@ void _openSharedPostProfile(BuildContext context, DirectChatMessage message) {
     '/profile/$userId?post=${message.sharedPostId ?? ''}',
     extra: PublicProfilePreview(
       userId: userId,
-      displayName: message.sharedPostAuthor ?? 'Tydes surfer',
+      displayName: message.sharedPostAuthor ?? 'TYDES surfer',
       handle: message.sharedPostAuthorHandle,
       avatarUrl: message.sharedPostAuthorAvatarUrl,
       premium: message.sharedPostAuthorPremium,
-      subtitle: 'Surf traveler on Tydes',
+      subtitle: 'Surf traveler on TYDES',
     ),
   );
 }

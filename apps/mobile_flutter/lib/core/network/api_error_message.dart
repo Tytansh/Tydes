@@ -65,7 +65,7 @@ String _friendlyDioMessage(DioException error, String fallback) {
     return 'Too many requests. Wait a moment and try again.';
   }
   if (statusCode != null && statusCode >= 500) {
-    return 'Tydes is having trouble right now. Try again soon.';
+    return 'TYDES is having trouble right now. Try again soon.';
   }
   if (error.type == DioExceptionType.connectionTimeout ||
       error.type == DioExceptionType.sendTimeout ||

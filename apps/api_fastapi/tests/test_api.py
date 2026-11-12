@@ -521,7 +521,7 @@ def test_auth_rejects_excessively_long_passwords():
 
 def test_email_delivery_hard_cap_stops_before_resend(monkeypatch):
     monkeypatch.setenv("RESEND_API_KEY", "re_test")
-    monkeypatch.setenv("AUTH_EMAIL_FROM", "Tydes <verify@send.tydes.io>")
+    monkeypatch.setenv("AUTH_EMAIL_FROM", "TYDES <verify@send.tydes.io>")
     def reject_email(*_rules):
         raise email_sender.HTTPException(status_code=429, detail="Too many requests")
 
@@ -1019,7 +1019,7 @@ def test_profile_name_and_handle_length_limits(monkeypatch):
     token = _signup_access_token(monkeypatch, "profile-limits@example.com")
     headers = {"Authorization": f"Bearer {token}"}
     base_payload = {
-        "display_name": "Tydes Surfer",
+        "display_name": "TYDES Surfer",
         "handle": "tydessurfer",
         "bio": "",
         "surf_skill": "intermediate",

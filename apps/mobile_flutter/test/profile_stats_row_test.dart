@@ -46,7 +46,7 @@ void main() {
                   Padding(
                     padding: const EdgeInsets.only(right: 64),
                     child: ProfileNamePremiumRow(
-                      displayName: 'Tydes Reviewer Name Name Name',
+                      displayName: 'TYDES Reviewer Name Name Name',
                       premium: true,
                       style: const TextStyle(
                         fontSize: 28,

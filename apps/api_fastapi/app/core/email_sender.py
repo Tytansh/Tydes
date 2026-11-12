@@ -77,21 +77,21 @@ def send_moderation_report_email(
 
     safe_reason = reason.strip() or "No reason supplied"
     text = (
-        f"A new Tydes {target_type} report was submitted.\n\n"
+        f"A new TYDES {target_type} report was submitted.\n\n"
         f"Report: {report_id}\nTarget: {target_id}\n"
         f"Reporter user: {reporter_user_id}\nReason: {safe_reason}\n\n"
-        "Review it in the private Tydes admin dashboard: "
+        "Review it in the private TYDES admin dashboard: "
         "https://tydes.io/#/admin"
     )
     payload = {
         "from": from_email,
         "to": [to_email],
-        "subject": f"New Tydes {target_type} report",
+        "subject": f"New TYDES {target_type} report",
         "text": text,
         "html": (
             "<div style=\"font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
             "color:#142127;line-height:1.5\">"
-            "<h1>New Tydes report</h1>"
+            "<h1>New TYDES report</h1>"
             f"<p><strong>Type:</strong> {escape(target_type)}</p>"
             f"<p><strong>Target:</strong> {escape(target_id)}</p>"
             f"<p><strong>Reporter:</strong> {escape(reporter_user_id)}</p>"
@@ -158,7 +158,7 @@ def _send_code_email(
             error="Email delivery safety limit reached.",
         )
 
-    app_name = _read_env("APP_NAME") or "Tydes"
+    app_name = _read_env("APP_NAME") or "TYDES"
     payload = {
         "from": from_email,
         "to": [email],

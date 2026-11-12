@@ -255,7 +255,7 @@ class _PreviewRepository extends SurfRepository {
     SocialPostModel(
       id: 'visual-event',
       userId: 'visual-qa',
-      authorName: 'Tydes Preview',
+      authorName: 'TYDES Preview',
       authorHandle: 'preview',
       authorAvatarUrl: null,
       authorPremium: true,
