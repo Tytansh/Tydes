@@ -1,5 +1,18 @@
 import 'package:dio/dio.dart';
 
+class EmailVerificationRequiredException extends StateError {
+  EmailVerificationRequiredException()
+    : super('Verify your email to continue.');
+}
+
+bool isEmailVerificationRequired(Object? error) {
+  if (error is EmailVerificationRequiredException) return true;
+  if (error is! DioException || error.response?.statusCode != 403) return false;
+  final data = error.response?.data;
+  final detail = data is Map ? data['detail'] : null;
+  return detail is Map && detail['code'] == 'email_verification_required';
+}
+
 String friendlyErrorMessage(
   Object? error, {
   String fallback = 'Something went wrong. Please try again.',
@@ -31,6 +44,9 @@ String friendlyLoadErrorMessage(Object? error, {required String label}) {
 }
 
 String _friendlyDioMessage(DioException error, String fallback) {
+  if (isEmailVerificationRequired(error)) {
+    return 'Verify your email to continue.';
+  }
   final detail = error.response?.data;
   if (detail is Map<String, dynamic> && detail['detail'] is String) {
     return _cleanMessage(detail['detail'] as String, fallback);

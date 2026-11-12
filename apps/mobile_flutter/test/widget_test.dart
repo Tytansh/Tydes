@@ -40,6 +40,7 @@ void main() {
       ),
     );
     await tester.pump();
+    await tester.pump();
 
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.text('Smoke shell'), findsOneWidget);

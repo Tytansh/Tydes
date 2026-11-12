@@ -21,6 +21,7 @@ final _complete = DemoSeed.me.copyWith(
   displayName: 'Current Surfer',
   handle: 'currentsurfer',
   surfSkill: 'intermediate',
+  emailVerified: true,
 );
 final _blank = _complete.copyWith(
   id: 'newuser',

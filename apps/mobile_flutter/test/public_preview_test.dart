@@ -14,6 +14,8 @@ import 'package:mobile_flutter/features/auth/auth_page.dart';
 import 'package:mobile_flutter/features/auth/auth_return_path.dart';
 import 'package:mobile_flutter/features/home/home_page.dart';
 import 'package:mobile_flutter/features/public_previews/public_preview_page.dart';
+import 'package:mobile_flutter/features/social/post_detail_page.dart';
+import 'package:mobile_flutter/features/spots/spot_detail_page.dart';
 
 final _spot = PublicSpotPreview.fromJson({
   'id': 'spot_test',
@@ -38,13 +40,27 @@ PublicEventPreview _event({bool ended = false, bool dated = true}) =>
 
 class _Repo extends SurfRepository {
   _Repo() : super(Dio(), DemoPersistence());
+  int privateReads = 0;
   UserProfile me = DemoSeed.me.copyWith(
     displayName: 'Current Surfer',
     handle: 'surfer',
     surfSkill: 'intermediate',
+    emailVerified: true,
   );
   @override
   Future<UserProfile> fetchMe() async => me;
+  @override
+  Future<SpotModel> fetchSpot(String spotId) async {
+    privateReads++;
+    throw StateError('Private spot reads are not permitted in this test.');
+  }
+
+  @override
+  Future<SocialPostModel> fetchSocialPost(String id) async {
+    privateReads++;
+    throw StateError('Private event reads are not permitted in this test.');
+  }
+
   @override
   Future<UserProfile> login(
     String email,
@@ -75,13 +91,13 @@ void main() {
   test('auth return destination only permits known internal item routes', () {
     expect(safeAuthReturnPath('/post/event_test'), '/post/event_test');
     expect(safeAuthReturnPath('/spot/spot_test'), '/spot/spot_test');
+    expect(safeAuthReturnPath('/admin'), '/admin');
     for (final value in [
       null,
       'https://evil.example',
       '//evil.example',
       '/post/../admin',
       '/post/id?next=https://evil.example',
-      '/admin',
       '/post/id#x',
     ]) {
       expect(safeAuthReturnPath(value), '/');
@@ -93,6 +109,58 @@ void main() {
     expect(publicSpotLink('spot_test'), 'https://tydes.io/#/spot/spot_test');
     expect(publicEventLink('event_test'), 'https://tydes.io/#/post/event_test');
   });
+
+  for (final scenario in [
+    (event: false, blocked: false),
+    (event: true, blocked: false),
+    (event: false, blocked: true),
+    (event: true, blocked: true),
+  ]) {
+    final event = scenario.event;
+    testWidgets(
+      '${scenario.blocked ? 'verification latch with cached verified' : 'unverified complete'} account keeps shared ${event ? 'event' : 'spot'} public without private reads',
+      (tester) async {
+        final repo = _Repo();
+        repo.me = repo.me.copyWith(
+          emailVerified: scenario.blocked,
+          premium: true,
+        );
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              surfRepositoryProvider.overrideWithValue(repo),
+              emailVerificationRequiredTokenProvider.overrideWith(
+                (_) => scenario.blocked ? 'latched-test-session' : null,
+              ),
+              publicSpotPreviewProvider(
+                'spot_test',
+              ).overrideWith((_) async => _spot),
+              publicEventPreviewProvider(
+                'event_test',
+              ).overrideWith((_) async => _event()),
+            ],
+            child: MaterialApp(
+              home: event
+                  ? const SharedEventPage(postId: 'event_test')
+                  : const SharedSpotPage(spotId: 'spot_test'),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.text(event ? 'Hosted by Maya Surfer' : 'A powerful reef break.'),
+          findsOneWidget,
+        );
+        expect(find.byType(SpotDetailPage), findsNothing);
+        expect(find.byType(PostDetailPage), findsNothing);
+        expect(find.text('Join now'), findsNothing);
+        expect(find.text("Who's going"), findsNothing);
+        expect(find.text('Group chat'), findsNothing);
+        expect(repo.privateReads, 0);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   for (final width in [390.0, 1440.0]) {
     testWidgets('guest can read shared spot before login at $width', (

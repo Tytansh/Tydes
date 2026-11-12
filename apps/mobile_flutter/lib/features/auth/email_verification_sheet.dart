@@ -98,6 +98,19 @@ class EmailVerificationSession {
       throw StateError('Email verification was not confirmed. Try again.');
     }
   }
+
+  /// Refreshes server evidence without dispatching another email.
+  Future<bool> refreshVerified() async {
+    final user = await _request('GET', '/users/me');
+    if (user['id'] != accountId) throw _accountChanged();
+    return user['email_verified'] == true;
+  }
+
+  /// Deletes only the session whose owner was proved when this flow opened.
+  Future<void> deleteAccount() async {
+    await _request('DELETE', '/auth/account');
+    await persistence.clearAccessTokenIfMatches(_token);
+  }
 }
 
 class EmailVerificationDispatch {

@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/network/api_models.dart';
+import '../core/network/surf_repository.dart';
 
 import '../features/alerts/alerts_page.dart';
 import '../features/admin/admin_users_page.dart';
 import '../features/auth/auth_page.dart';
 import '../features/auth/auth_return_path.dart';
+import '../features/auth/verification_gate_page.dart';
 import '../features/public_previews/public_preview_page.dart';
 import '../features/guest/guest_explore_page.dart';
 import '../features/home/home_page.dart';
@@ -23,16 +25,83 @@ import '../features/spots/spots_page.dart';
 import '../features/trips/trips_page.dart';
 import '../features/core/app_scaffold.dart';
 
+final routerInitialLocationProvider = Provider<String>((_) => '/');
+
+bool isPublicAppPath(String path) =>
+    path == '/login' ||
+    path == '/explore' ||
+    path.startsWith('/explore/') ||
+    RegExp(r'^/(spot|post)/[A-Za-z0-9_-]{1,120}$').hasMatch(path);
+
+class _AccountRouterRefresh extends ChangeNotifier {
+  void changed() => notifyListeners();
+}
+
 final appRouterProvider = Provider<GoRouter>((ref) {
-  return GoRouter(
-    initialLocation: '/',
+  final refresh = _AccountRouterRefresh();
+  ref.listen(meProvider, (_, _) => refresh.changed());
+  ref.listen(
+    emailVerificationRequiredTokenProvider,
+    (_, _) => refresh.changed(),
+  );
+  final router = GoRouter(
+    initialLocation: ref.watch(routerInitialLocationProvider),
+    refreshListenable: refresh,
+    redirect: (context, state) {
+      final path = state.uri.path;
+      if (isPublicAppPath(path)) return null;
+      final gate = path == '/verify-email' || path == '/account-check';
+      final next = safeAuthReturnPath(
+        gate ? state.uri.queryParameters['next'] : state.uri.toString(),
+      );
+      final account = ref.read(meProvider);
+      if (account.isLoading ||
+          account.hasError ||
+          account.valueOrNull == null) {
+        final expired =
+            account.hasError &&
+            account.error.toString().toLowerCase().contains('session expired');
+        if (expired) return loginForPath(next);
+        return path == '/account-check'
+            ? null
+            : Uri(
+                path: '/account-check',
+                queryParameters: {'next': next},
+              ).toString();
+      }
+      final profile = account.requireValue;
+      if (!profile.emailVerified ||
+          ref.read(emailVerificationRequiredTokenProvider) != null) {
+        return path == '/verify-email' ? null : verificationForPath(next);
+      }
+      if (needsAccountProfile(profile)) return loginForPath(next);
+      return gate ? next : null;
+    },
     routes: [
       GoRoute(
         path: '/login',
         builder: (context, state) => AuthPage(
           initialProfile: state.extra is UserProfile
               ? state.extra as UserProfile
-              : null,
+              : switch (ref.read(meProvider).valueOrNull) {
+                  final profile?
+                      when profile.emailVerified &&
+                          needsAccountProfile(profile) =>
+                    profile,
+                  _ => null,
+                },
+          returnTo: safeAuthReturnPath(state.uri.queryParameters['next']),
+        ),
+      ),
+      GoRoute(
+        path: '/account-check',
+        builder: (_, state) => AccountCheckPage(
+          returnTo: safeAuthReturnPath(state.uri.queryParameters['next']),
+        ),
+      ),
+      GoRoute(
+        path: '/verify-email',
+        builder: (_, state) => VerificationGatePage(
           returnTo: safeAuthReturnPath(state.uri.queryParameters['next']),
         ),
       ),
@@ -105,6 +174,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
     ],
   );
+  ref.onDispose(() {
+    router.dispose();
+    refresh.dispose();
+  });
+  return router;
 });
 
 final currentTabProvider = StateProvider<int>((ref) => 0);

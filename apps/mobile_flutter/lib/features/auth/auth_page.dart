@@ -8,13 +8,8 @@ import '../../core/legal/legal_links.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../home/home_page.dart';
-import '../alerts/alert_state.dart';
-import '../social/social_profile.dart';
-import '../social/direct_messages_page.dart';
-import '../social/notifications_page.dart';
-import '../social/inbox_badges.dart';
-import '../spots/spot_detail_page.dart';
-import '../spots/spots_page.dart';
+import 'auth_account_refresh.dart';
+import 'verification_gate_page.dart';
 import 'google_sign_in_button.dart';
 import 'auth_return_path.dart';
 import 'auth_entry_layout.dart';
@@ -58,7 +53,14 @@ class _AuthPageState extends ConsumerState<AuthPage> {
   @override
   void initState() {
     super.initState();
-    _profileSetup = widget.initialProfile;
+    final profile = widget.initialProfile;
+    if (profile != null && profile.emailVerified) {
+      _profileSetup = profile;
+    } else if (profile != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _finishAuth(profile);
+      });
+    }
   }
 
   @override
@@ -83,49 +85,32 @@ class _AuthPageState extends ConsumerState<AuthPage> {
   }
 
   void _refreshAfterAuth() {
-    ref.read(inboxForegroundAccountProvider.notifier).state = null;
-    ref.invalidate(inboxUnreadCountsProvider);
-    ref.invalidate(directMessageThreadsProvider);
-    ref.invalidate(socialNotificationsProvider);
-    ref.invalidate(alertsProvider);
+    // A successful sign-in or explicit sign-out starts a new session proof.
+    // Verification itself never clears the latch until /users/me confirms it.
+    ref.read(emailVerificationRequiredTokenProvider.notifier).state = null;
     ref.invalidate(authStateProvider);
-    ref.invalidate(meProvider);
-    ref.invalidate(dashboardProvider);
-    ref.invalidate(homeAdsProvider);
-    ref.invalidate(spotForecastsBySpotProvider);
-    ref.invalidate(spotCardForecastProvider);
-    ref.invalidate(spotTideProvider);
-    ref.invalidate(spotSurfWindowProvider);
-    ref.invalidate(spotDetailBundleProvider);
-    ref.invalidate(favoriteSpotIdsProvider);
-    ref.invalidate(followedUserIdsProvider);
-    ref.invalidate(followerUserIdsProvider);
-    ref.invalidate(blockedUserIdsProvider);
-    ref.invalidate(hiddenFollowingUserIdsProvider);
-    ref.invalidate(hiddenFollowerUserIdsProvider);
-    ref.invalidate(socialRelationshipHydrationProvider);
-    ref.read(socialRefreshKeyProvider.notifier).state++;
+    refreshAuthenticatedAccount(ref);
   }
 
   Future<void> _finishAuth(UserProfile profile) async {
     if (!mounted) return;
-    if (_needsProfileSetup(profile)) {
-      setState(() {
-        _profileSetup = profile;
-        _verificationPending = false;
-        _errorText = null;
-        _loading = false;
-      });
-      return;
-    }
     setState(() => _loading = true);
     _refreshAfterAuth();
     // Do not navigate with the previous account's retained AsyncValue. Wait
     // until the new session has a fresh profile, for Google and email alike.
     final currentProfile = await ref.read(meProvider.future);
     if (!mounted) return;
+    if (!currentProfile.emailVerified) {
+      context.go(verificationForPath(widget.returnTo));
+      return;
+    }
     if (_needsProfileSetup(currentProfile)) {
-      await _finishAuth(currentProfile);
+      setState(() {
+        _profileSetup = currentProfile;
+        _verificationPending = false;
+        _errorText = null;
+        _loading = false;
+      });
       return;
     }
     final destination = safeAuthReturnPath(widget.returnTo);
@@ -141,6 +126,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     await ref.read(surfRepositoryProvider).logout();
     if (!mounted) return;
     _refreshAfterAuth();
+    ref.read(pendingEmailVerificationProvider.notifier).state = null;
     setState(() {
       _profileSetup = null;
       _verificationPending = false;
@@ -215,12 +201,14 @@ class _AuthPageState extends ConsumerState<AuthPage> {
           );
       if (!mounted) return;
       if (result.verificationRequired) {
-        setState(() {
-          _loading = false;
-          _verificationPending = true;
-          _verificationEmail = result.verificationSentTo;
-          _verificationHint = result.verificationHint;
-        });
+        ref
+            .read(pendingEmailVerificationProvider.notifier)
+            .state = PendingEmailVerification(
+          accountId: result.user.id,
+          email: result.verificationSentTo,
+          hint: result.verificationHint,
+        );
+        await _finishAuth(result.user);
         return;
       }
       await _finishAuth(result.user);
@@ -250,13 +238,14 @@ class _AuthPageState extends ConsumerState<AuthPage> {
           );
       if (!mounted) return;
       if (result.verificationRequired) {
-        setState(() {
-          _loading = false;
-          _verificationPending = true;
-          _verificationEmail =
-              result.verificationSentTo ?? _emailController.text.trim();
-          _verificationHint = result.verificationHint;
-        });
+        ref
+            .read(pendingEmailVerificationProvider.notifier)
+            .state = PendingEmailVerification(
+          accountId: result.user.id,
+          email: result.verificationSentTo ?? _emailController.text.trim(),
+          hint: result.verificationHint,
+        );
+        await _finishAuth(result.user);
         return;
       }
       await _finishAuth(result.user);

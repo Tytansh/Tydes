@@ -8,11 +8,19 @@ import 'package:image_picker/image_picker.dart';
 
 import '../moderation/content_moderation.dart';
 import 'api_config.dart';
+import 'api_error_message.dart';
 import 'api_models.dart';
 import 'detailed_forecast_models.dart';
 import 'public_preview_models.dart';
 import 'demo_persistence.dart';
 import 'demo_seed.dart';
+
+// Internal session latch: never logged, rendered, or persisted separately.
+// A blocked private request must not become a fake-success demo fallback.
+final emailVerificationRequiredTokenProvider = StateProvider<String?>(
+  (ref) => null,
+);
+final accountVerificationRefreshKeyProvider = StateProvider<int>((ref) => 0);
 
 final dioProvider = Provider<Dio>((ref) {
   final persistence = ref.watch(demoPersistenceProvider);
@@ -27,10 +35,45 @@ final dioProvider = Provider<Dio>((ref) {
     InterceptorsWrapper(
       onRequest: (options, handler) async {
         final token = await persistence.loadAccessToken();
+        final blockedToken = ref.read(emailVerificationRequiredTokenProvider);
+        if (blockedToken != null && blockedToken != token) {
+          ref.read(emailVerificationRequiredTokenProvider.notifier).state =
+              null;
+        }
         if (token != null && !options.headers.containsKey('Authorization')) {
           options.headers['Authorization'] = 'Bearer $token';
         }
         handler.next(options);
+      },
+      onResponse: (response, handler) async {
+        final data = response.data;
+        if (response.requestOptions.path == '/users/me' &&
+            data is Map &&
+            data['email_verified'] == true) {
+          final token = await persistence.loadAccessToken();
+          if (token != null &&
+              response.requestOptions.headers['Authorization'] ==
+                  'Bearer $token' &&
+              ref.read(emailVerificationRequiredTokenProvider) == token) {
+            ref.read(emailVerificationRequiredTokenProvider.notifier).state =
+                null;
+          }
+        }
+        handler.next(response);
+      },
+      onError: (error, handler) async {
+        if (isEmailVerificationRequired(error)) {
+          final token = await persistence.loadAccessToken();
+          if (token != null &&
+              error.requestOptions.headers['Authorization'] ==
+                  'Bearer $token' &&
+              ref.read(emailVerificationRequiredTokenProvider) != token) {
+            ref.read(emailVerificationRequiredTokenProvider.notifier).state =
+                token;
+            ref.read(accountVerificationRefreshKeyProvider.notifier).state++;
+          }
+        }
+        handler.next(error);
       },
     ),
   );
@@ -41,6 +84,8 @@ final surfRepositoryProvider = Provider<SurfRepository>((ref) {
   return SurfRepository(
     ref.watch(dioProvider),
     ref.watch(demoPersistenceProvider),
+    isVerificationRequired: (token) =>
+        ref.read(emailVerificationRequiredTokenProvider) == token,
   );
 });
 
@@ -80,10 +125,15 @@ class SignupResult {
 }
 
 class SurfRepository {
-  SurfRepository(this._dio, this._demoPersistence);
+  SurfRepository(
+    this._dio,
+    this._demoPersistence, {
+    bool Function(String token)? isVerificationRequired,
+  }) : _isVerificationRequired = isVerificationRequired;
 
   final Dio _dio;
   final DemoPersistence _demoPersistence;
+  final bool Function(String token)? _isVerificationRequired;
   String? _confirmedMeToken;
   UserProfile? _confirmedMe;
 
@@ -180,6 +230,7 @@ class SurfRepository {
         verificationHint: data['verification_hint'] as String?,
       );
     } on DioException catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       final detail = error.response?.data;
       if (detail is Map<String, dynamic> && detail['detail'] is String) {
         throw StateError(detail['detail'] as String);
@@ -214,12 +265,14 @@ class SurfRepository {
       DemoSeed.me = profile;
       return profile;
     } on DioException catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       final detail = error.response?.data;
       if (detail is Map<String, dynamic> && detail['detail'] is String) {
         throw StateError(detail['detail'] as String);
       }
       throw StateError('Could not sign in right now.');
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       throw StateError('Could not sign in right now.');
     }
   }
@@ -251,12 +304,14 @@ class SurfRepository {
         verificationHint: data['verification_hint'] as String?,
       );
     } on DioException catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       final detail = error.response?.data;
       if (detail is Map<String, dynamic> && detail['detail'] is String) {
         throw StateError(detail['detail'] as String);
       }
       throw StateError('Could not create account right now.');
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       throw StateError('Could not create account right now.');
     }
   }
@@ -274,12 +329,14 @@ class SurfRepository {
       DemoSeed.me = profile;
       return profile;
     } on DioException catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       final detail = error.response?.data;
       if (detail is Map<String, dynamic> && detail['detail'] is String) {
         throw StateError(detail['detail'] as String);
       }
       throw StateError('Could not verify that code right now.');
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       throw StateError('Could not verify that code right now.');
     }
   }
@@ -292,6 +349,7 @@ class SurfRepository {
       );
       return response.data!['reset_hint'] as String?;
     } on DioException catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       final detail = error.response?.data;
       if (detail is Map<String, dynamic> && detail['detail'] is String) {
         throw StateError(detail['detail'] as String);
@@ -321,6 +379,7 @@ class SurfRepository {
       DemoSeed.me = profile;
       return profile;
     } on DioException catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       final detail = error.response?.data;
       if (detail is Map<String, dynamic> && detail['detail'] is String) {
         throw StateError(detail['detail'] as String);
@@ -388,6 +447,7 @@ class SurfRepository {
       return profile;
     } on DioException catch (error) {
       if (await _demoPersistence.loadAccessToken() != token) return fetchMe();
+      if (isEmailVerificationRequired(error)) rethrow;
       final statusCode = error.response?.statusCode;
       if (statusCode == 401 || statusCode == 403) {
         if (!await _demoPersistence.clearAccessTokenIfMatches(token)) {
@@ -405,6 +465,9 @@ class SurfRepository {
   }
 
   UserProfile _confirmedAccountOrError(String token) {
+    if (_isVerificationRequired?.call(token) == true) {
+      throw EmailVerificationRequiredException();
+    }
     // A default/demo profile is not evidence of who owns a saved session.
     // Reuse only an account this repository confirmed with this exact token.
     final confirmed = _confirmedMe;
@@ -445,12 +508,14 @@ class SurfRepository {
       DemoSeed.me = profile;
       return profile;
     } on DioException catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       final detail = error.response?.data;
       if (detail is Map<String, dynamic> && detail['detail'] is String) {
         throw StateError(detail['detail'] as String);
       }
       throw StateError('Could not update profile right now.');
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       DemoSeed.me = DemoSeed.me.copyWith(
         displayName: displayName,
         handle: handle,
@@ -475,12 +540,14 @@ class SurfRepository {
       DemoSeed.me = profile;
       return profile;
     } on DioException catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       final detail = error.response?.data;
       if (detail is Map<String, dynamic> && detail['detail'] is String) {
         throw StateError(detail['detail'] as String);
       }
       throw StateError('Could not unlock live data right now.');
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       throw StateError(
         'Could not unlock the forecast right now. Please try again.',
       );
@@ -491,7 +558,8 @@ class SurfRepository {
     try {
       final response = await _dio.get<Map<String, dynamic>>('/users/dashboard');
       return DashboardModel.fromJson(response.data!);
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       return DemoSeed.dashboard;
     }
   }
@@ -502,7 +570,8 @@ class SurfRepository {
       return response.data!
           .map((item) => SpotModel.fromJson(item as Map<String, dynamic>))
           .toList();
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       return DemoSeed.spots;
     }
   }
@@ -511,7 +580,8 @@ class SurfRepository {
     try {
       final response = await _dio.get<Map<String, dynamic>>('/spots/$spotId');
       return SpotModel.fromJson(response.data!);
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       return DemoSeed.spots.firstWhere((spot) => spot.id == spotId);
     }
   }
@@ -531,7 +601,8 @@ class SurfRepository {
       return response.data!
           .map((item) => ForecastModel.fromJson(item as Map<String, dynamic>))
           .toList();
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       return spotId == null
           ? DemoSeed.forecasts
           : DemoSeed.forecasts.where((item) => item.spotId == spotId).toList();
@@ -549,6 +620,7 @@ class SurfRepository {
         options: Options(receiveTimeout: timeout),
       );
     } on DioException catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       if (!_shouldRetryForecast(error)) rethrow;
       return _dio.get<List<dynamic>>(
         '/forecasts',
@@ -574,7 +646,8 @@ class SurfRepository {
         '/forecasts/next-swell',
       );
       return NextSwellModel.fromJson(response.data!);
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       return NextSwellModel.unavailable(
         summary: 'The next-swell scan is unavailable right now.',
       );
@@ -588,7 +661,8 @@ class SurfRepository {
         queryParameters: {'spot_id': spotId},
       );
       return TideForecastModel.fromJson(response.data!);
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       return TideForecastModel.unavailable(spotId);
     }
   }
@@ -609,7 +683,8 @@ class SurfRepository {
         queryParameters: {'spot_id': spotId},
       );
       return SurfWindowModel.fromJson(response.data!);
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       return SurfWindowModel(
         spotId: spotId,
         available: false,
@@ -632,7 +707,8 @@ class SurfRepository {
       return response.data!
           .map((item) => TripModel.fromJson(item as Map<String, dynamic>))
           .toList();
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       return DemoSeed.trips;
     }
   }
@@ -735,7 +811,8 @@ class SurfRepository {
         '/auth/waitlist',
         data: {'email': email},
       );
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       // Keep the UI friendly even if the backend isn't reachable yet.
     }
   }
@@ -748,7 +825,8 @@ class SurfRepository {
             (item) => FriendProfileModel.fromJson(item as Map<String, dynamic>),
           )
           .toList();
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       return DemoSeed.friends;
     }
   }
@@ -763,7 +841,8 @@ class SurfRepository {
         ..clear()
         ..addAll(posts);
       return posts;
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       return DemoSeed.posts;
     }
   }
@@ -816,12 +895,14 @@ class SurfRepository {
       DemoSeed.posts.insert(0, post);
       return post;
     } on DioException catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       final detail = error.response?.data;
       if (detail is Map<String, dynamic> && detail['detail'] is String) {
         throw StateError(detail['detail'] as String);
       }
       throw StateError('Could not create post right now.');
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       final post = SocialPostModel(
         id: 'post_${DateTime.now().millisecondsSinceEpoch}',
         userId: DemoSeed.me.id,
@@ -848,6 +929,7 @@ class SurfRepository {
       await _dio.delete<Map<String, dynamic>>('/social/posts/$postId');
       DemoSeed.posts.removeWhere((post) => post.id == postId);
     } on DioException catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       final detail = error.response?.data;
       if (detail is Map<String, dynamic> && detail['detail'] is String) {
         throw StateError(detail['detail'] as String);
@@ -862,7 +944,8 @@ class SurfRepository {
         '/social/engagement',
       );
       return SocialEngagementModel.fromJson(response.data!);
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       return SocialEngagementModel(
         likedPostIds: const {},
         repostedPostIds: const [],
@@ -910,6 +993,7 @@ class SurfRepository {
           )
           .toList();
     } on DioException catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       final detail = error.response?.data;
       if (detail is Map<String, dynamic> && detail['detail'] is String) {
         throw StateError(detail['detail'] as String);
@@ -928,6 +1012,7 @@ class SurfRepository {
           .map((item) => AdminReport.fromJson(item as Map<String, dynamic>))
           .toList();
     } on DioException catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       final detail = error.response?.data;
       if (detail is Map<String, dynamic> && detail['detail'] is String) {
         throw StateError(detail['detail'] as String);
@@ -966,6 +1051,7 @@ class SurfRepository {
       );
       return AdminUserAccount.fromJson(response.data!);
     } on DioException catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       final detail = error.response?.data;
       if (detail is Map<String, dynamic> && detail['detail'] is String) {
         throw StateError(detail['detail'] as String);
@@ -1148,6 +1234,7 @@ class SurfRepository {
         onSendProgress: onSendProgress,
       );
     } on DioException catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       if (!_directUploadUnavailable(error)) rethrow;
     }
     return _uploadPostPhotoRelay(
@@ -1190,6 +1277,7 @@ class SurfRepository {
         onSendProgress: onSendProgress,
       );
     } on DioException catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       if (!_directUploadUnavailable(error)) rethrow;
     }
     return _uploadPostVideoRelay(
@@ -1271,7 +1359,8 @@ class SurfRepository {
       uploadedToStorage = true;
       final completed = await _waitForCompletedUpload(reservationId);
       return SocialMediaAttachmentModel.fromJson(completed.data!);
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       // Do not race the server's verification/copy step with a cancellation if
       // the browser loses the response after the R2 upload already completed.
       // Abandoned reservations are removed by the normal cleanup job.
@@ -1285,7 +1374,8 @@ class SurfRepository {
               receiveTimeout: const Duration(seconds: 30),
             ),
           );
-        } catch (_) {
+        } catch (error) {
+          if (isEmailVerificationRequired(error)) rethrow;
           // The short-lived reservation expires and is cleaned up server-side.
         }
       }
@@ -1343,6 +1433,7 @@ class SurfRepository {
           ),
         );
       } on DioException catch (error) {
+        if (isEmailVerificationRequired(error)) rethrow;
         if (error.response?.statusCode != 425 || attempt == 59) rethrow;
         await Future<void>.delayed(const Duration(seconds: 5));
       }
@@ -1468,7 +1559,8 @@ class SurfRepository {
             (item) => BillingPlanModel.fromJson(item as Map<String, dynamic>),
           )
           .toList();
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       return DemoSeed.plans;
     }
   }
@@ -1497,12 +1589,14 @@ class SurfRepository {
       DemoSeed.me = profile;
       return profile;
     } on DioException catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       final detail = error.response?.data;
       if (detail is Map<String, dynamic> && detail['detail'] is String) {
         throw StateError(detail['detail'] as String);
       }
       throw StateError('Could not sync premium status right now.');
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       throw StateError('Could not sync premium status right now.');
     }
   }
@@ -1516,7 +1610,8 @@ class SurfRepository {
       return response.data!
           .map((item) => AdModel.fromJson(item as Map<String, dynamic>))
           .toList();
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       return DemoSeed.ads;
     }
   }
@@ -1533,7 +1628,8 @@ class SurfRepository {
       DemoSeed.me = DemoSeed.me.copyWith(favoriteSpotIds: favoriteSpotIds);
       await _demoPersistence.saveFavoriteSpotIds(favoriteSpotIds);
       return favoriteSpotIds;
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       final favoriteSpotIds = [...DemoSeed.me.favoriteSpotIds];
       if (!favoriteSpotIds.contains(spotId)) {
         favoriteSpotIds.add(spotId);
@@ -1555,7 +1651,8 @@ class SurfRepository {
       DemoSeed.me = DemoSeed.me.copyWith(favoriteSpotIds: favoriteSpotIds);
       await _demoPersistence.saveFavoriteSpotIds(favoriteSpotIds);
       return favoriteSpotIds;
-    } catch (_) {
+    } catch (error) {
+      if (isEmailVerificationRequired(error)) rethrow;
       final favoriteSpotIds = [
         for (final favoriteSpotId in DemoSeed.me.favoriteSpotIds)
           if (favoriteSpotId != spotId) favoriteSpotId,
@@ -1588,8 +1685,9 @@ class FavoriteSpotIdsNotifier extends StateNotifier<Set<String>> {
           ? await _repository.addFavoriteSpot(spotId)
           : await _repository.removeFavoriteSpot(spotId);
       state = nextIds.toSet();
-    } catch (_) {
+    } catch (error) {
       state = previous;
+      if (isEmailVerificationRequired(error)) rethrow;
     }
   }
 }

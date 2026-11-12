@@ -27,6 +27,7 @@ bool _complete(AsyncValue<UserProfile> me) =>
     !me.isLoading &&
     !me.hasError &&
     me.valueOrNull != null &&
+    me.valueOrNull!.emailVerified &&
     me.valueOrNull!.displayName.trim().isNotEmpty &&
     me.valueOrNull!.handle.trim().isNotEmpty &&
     me.valueOrNull!.surfSkill.trim().isNotEmpty;
@@ -37,7 +38,11 @@ class SharedSpotPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final me = ref.watch(meProvider);
-    if (_complete(me)) return SpotDetailPage(spotId: spotId);
+    final verificationRequired =
+        ref.watch(emailVerificationRequiredTokenProvider) != null;
+    if (!verificationRequired && _complete(me)) {
+      return SpotDetailPage(spotId: spotId);
+    }
     return _Frame(
       path: '/spot/$spotId',
       profile: me.hasError || me.isLoading ? null : me.valueOrNull,
@@ -65,7 +70,11 @@ class SharedEventPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final me = ref.watch(meProvider);
-    if (_complete(me)) return PostDetailPage(postId: postId);
+    final verificationRequired =
+        ref.watch(emailVerificationRequiredTokenProvider) != null;
+    if (!verificationRequired && _complete(me)) {
+      return PostDetailPage(postId: postId);
+    }
     return _Frame(
       path: '/post/$postId',
       profile: me.hasError || me.isLoading ? null : me.valueOrNull,

@@ -10,7 +10,9 @@ import 'package:go_router/go_router.dart';
 import 'package:mobile_flutter/app/app.dart';
 import 'package:mobile_flutter/app/router.dart';
 import 'package:mobile_flutter/core/network/demo_seed.dart';
+import 'package:mobile_flutter/core/network/surf_repository.dart';
 import 'package:mobile_flutter/core/theme/app_theme.dart';
+import 'package:mobile_flutter/features/alerts/alert_monitor.dart';
 import 'package:mobile_flutter/features/home/home_page.dart';
 import 'package:mobile_flutter/features/social/inbox_badges.dart';
 import 'package:mobile_flutter/features/social/social_feed.dart';
@@ -224,6 +226,59 @@ void main() {
         },
       );
     }
+  }
+
+  for (final latched in [false, true]) {
+    testWidgets(
+      'verification gate stops background monitors (latch=$latched)',
+      (tester) async {
+        var calls = 0;
+        final router = GoRouter(
+          routes: [
+            GoRoute(
+              path: '/',
+              builder: (_, _) => const Scaffold(body: _CountView()),
+            ),
+          ],
+        );
+        addTearDown(router.dispose);
+        final container = ProviderContainer(
+          overrides: [
+            appRouterProvider.overrideWithValue(router),
+            meProvider.overrideWith(
+              (_) async => DemoSeed.me.copyWith(emailVerified: latched),
+            ),
+            emailVerificationRequiredTokenProvider.overrideWith(
+              (_) => latched ? 'synthetic-blocked-session' : null,
+            ),
+            alertMonitorProvider.overrideWith(
+              (_) => throw StateError(
+                'A verification gate must not initialize alerts',
+              ),
+            ),
+            inboxUnreadApiProvider.overrideWithValue(
+              _FakeCounts((id) async {
+                calls++;
+                return InboxUnreadCounts(accountId: id, messages: 1);
+              }),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: const SurfTravelApp(),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(minutes: 2));
+        expect(calls, 0);
+        expect(container.read(inboxForegroundAccountProvider), isNull);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
   }
 
   testWidgets('foreground signed-in polling stops while hidden or signed out', (

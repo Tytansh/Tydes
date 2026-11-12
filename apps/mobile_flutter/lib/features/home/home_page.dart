@@ -13,9 +13,10 @@ import '../social/inbox_badges.dart';
 final dashboardProvider = FutureProvider(
   (ref) => ref.watch(surfRepositoryProvider).fetchDashboard(),
 );
-final meProvider = FutureProvider(
-  (ref) => ref.watch(surfRepositoryProvider).fetchMe(),
-);
+final meProvider = FutureProvider((ref) {
+  ref.watch(accountVerificationRefreshKeyProvider);
+  return ref.watch(surfRepositoryProvider).fetchMe();
+});
 final homeAdsProvider = FutureProvider(
   (ref) => ref.watch(surfRepositoryProvider).fetchAds(),
 );

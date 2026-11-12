@@ -12,6 +12,7 @@ import '../features/alerts/alert_monitor.dart';
 import '../features/home/home_page.dart';
 import '../features/social/inbox_badges.dart';
 import '../core/network/api_models.dart';
+import '../core/network/surf_repository.dart';
 import 'package:go_router/go_router.dart';
 import 'router.dart';
 
@@ -32,6 +33,7 @@ class SurfTravelApp extends ConsumerStatefulWidget {
 class _SurfTravelAppState extends ConsumerState<SurfTravelApp>
     with WidgetsBindingObserver {
   ProviderSubscription<AsyncValue<UserProfile>>? _accountSubscription;
+  ProviderSubscription<String?>? _verificationSubscription;
   GoRouter? _router;
   AlertMonitor? _monitor;
   String? _monitorAccount;
@@ -53,6 +55,10 @@ class _SurfTravelAppState extends ConsumerState<SurfTravelApp>
           (_, _) => _syncMonitors(),
           fireImmediately: true,
         );
+        _verificationSubscription = ref.listenManual(
+          emailVerificationRequiredTokenProvider,
+          (_, _) => _syncMonitors(),
+        );
       }
     });
   }
@@ -63,6 +69,7 @@ class _SurfTravelAppState extends ConsumerState<SurfTravelApp>
     _inboxTimer?.cancel();
     if (widget.enableAlertMonitor || widget.enableInboxPolling) {
       _accountSubscription?.close();
+      _verificationSubscription?.close();
       _router?.routeInformationProvider.removeListener(_syncMonitors);
       _monitor?.dispose();
     }
@@ -94,8 +101,12 @@ class _SurfTravelAppState extends ConsumerState<SurfTravelApp>
     final account =
         !_inboxForeground ||
             path == '/login' ||
+            path == '/verify-email' ||
+            path == '/account-check' ||
             path.startsWith('/explore') ||
             profile == null ||
+            !profile.emailVerified ||
+            ref.read(emailVerificationRequiredTokenProvider) != null ||
             profile.displayName.isEmpty ||
             profile.handle.isEmpty ||
             profile.surfSkill.isEmpty
@@ -152,8 +163,12 @@ class _SurfTravelAppState extends ConsumerState<SurfTravelApp>
     final profile = me.hasError || me.isLoading ? null : me.valueOrNull;
     final account =
         path == '/login' ||
+            path == '/verify-email' ||
+            path == '/account-check' ||
             path.startsWith('/explore') ||
             profile == null ||
+            !profile.emailVerified ||
+            ref.read(emailVerificationRequiredTokenProvider) != null ||
             profile.displayName.isEmpty ||
             profile.handle.isEmpty ||
             profile.surfSkill.isEmpty
