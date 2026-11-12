@@ -6,6 +6,7 @@ import 'package:mobile_flutter/core/network/api_models.dart';
 import 'package:mobile_flutter/core/network/demo_persistence.dart';
 import 'package:mobile_flutter/core/network/demo_seed.dart';
 import 'package:mobile_flutter/core/network/surf_repository.dart';
+import 'package:mobile_flutter/features/home/home_page.dart' show meProvider;
 import 'package:mobile_flutter/features/social/direct_messages_page.dart';
 import 'package:mobile_flutter/features/social/event_chat_page.dart';
 import 'package:mobile_flutter/features/social/social_feed.dart';
@@ -141,6 +142,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            meProvider.overrideWith((_) async => DemoSeed.me),
             surfRepositoryProvider.overrideWithValue(repository),
             directMessageThreadsProvider.overrideWith(
               (_) => DirectMessageThreadsNotifier.testing([]),

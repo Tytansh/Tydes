@@ -84,6 +84,8 @@ class SurfRepository {
 
   final Dio _dio;
   final DemoPersistence _demoPersistence;
+  String? _confirmedMeToken;
+  UserProfile? _confirmedMe;
 
   Future<List<PublicMapSpotPreview>> fetchPublicSpots() async {
     final response = await _dio.get<List<dynamic>>('/public/spots');
@@ -375,8 +377,14 @@ class SurfRepository {
       );
       if (await _demoPersistence.loadAccessToken() != token) return fetchMe();
       final profile = UserProfile.fromJson(response.data!);
+      if (profile.id.isEmpty || profile.email.isEmpty) {
+        throw StateError('Your account response was incomplete.');
+      }
+      _confirmedMeToken = token;
+      _confirmedMe = profile;
       DemoSeed.me = profile;
       await _demoPersistence.saveFavoriteSpotIds(profile.favoriteSpotIds);
+      if (await _demoPersistence.loadAccessToken() != token) return fetchMe();
       return profile;
     } on DioException catch (error) {
       if (await _demoPersistence.loadAccessToken() != token) return fetchMe();
@@ -385,27 +393,25 @@ class SurfRepository {
         if (!await _demoPersistence.clearAccessTokenIfMatches(token)) {
           return fetchMe();
         }
+        _confirmedMeToken = null;
+        _confirmedMe = null;
         throw StateError('Session expired. Please sign in again.');
       }
-      final persistedFavoriteSpotIds = await _demoPersistence
-          .loadFavoriteSpotIds();
-      if (persistedFavoriteSpotIds.isNotEmpty) {
-        DemoSeed.me = DemoSeed.me.copyWith(
-          favoriteSpotIds: persistedFavoriteSpotIds,
-        );
-      }
-      return DemoSeed.me;
+      return _confirmedAccountOrError(token);
     } catch (_) {
       if (await _demoPersistence.loadAccessToken() != token) return fetchMe();
-      final persistedFavoriteSpotIds = await _demoPersistence
-          .loadFavoriteSpotIds();
-      if (persistedFavoriteSpotIds.isNotEmpty) {
-        DemoSeed.me = DemoSeed.me.copyWith(
-          favoriteSpotIds: persistedFavoriteSpotIds,
-        );
-      }
-      return DemoSeed.me;
+      return _confirmedAccountOrError(token);
     }
+  }
+
+  UserProfile _confirmedAccountOrError(String token) {
+    // A default/demo profile is not evidence of who owns a saved session.
+    // Reuse only an account this repository confirmed with this exact token.
+    final confirmed = _confirmedMe;
+    if (_confirmedMeToken == token && confirmed != null) return confirmed;
+    throw StateError(
+      'Could not load your account. Check your connection and try again.',
+    );
   }
 
   Future<UserProfile> updateProfile({

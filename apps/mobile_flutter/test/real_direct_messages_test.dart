@@ -187,6 +187,53 @@ Future<DirectMessageThreadsNotifier> _controller(
 }
 
 void main() {
+  testWidgets('Messages retries a failed account lookup before loading inbox', (
+    tester,
+  ) async {
+    final backend = _Backend()..exists = true;
+    final memory = _Memory('alice');
+    var accountReads = 0;
+    final container = ProviderContainer(
+      overrides: [
+        directMessageApiProvider.overrideWithValue(backend.api(memory)),
+        meProvider.overrideWith((_) async {
+          if (++accountReads == 1) {
+            throw StateError('Your account is temporarily unavailable.');
+          }
+          return DemoSeed.me.copyWith(id: 'alice');
+        }),
+        joinedEventChatsProvider.overrideWith((_) async => []),
+        socialRelationshipHydrationProvider.overrideWith((_) async {}),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: DirectMessagesPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Could not load your account'), findsOneWidget);
+    expect(find.byKey(const ValueKey('messages-verify-email')), findsNothing);
+    expect(backend.calls, isEmpty);
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+    expect(accountReads, 2);
+    expect(find.text('Could not load your account'), findsNothing);
+    expect(find.text('Bob'), findsOneWidget);
+    expect(
+      container.read(directMessageThreadsProvider.notifier).ownerId,
+      'alice',
+    );
+    expect(
+      backend.calls.any((call) => call.path == '/messages/threads'),
+      isTrue,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(tester.takeException(), isNull);
+  });
+
   test(
     'two separate account clients exchange confirmed messages and count 12 inbound messages',
     () async {

@@ -63,6 +63,33 @@ class HomePage extends ConsumerWidget {
             : 'Loading your profile...',
       );
     }
+    if (user.hasError) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Tydes')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.cloud_off_outlined, size: 36),
+                const SizedBox(height: 16),
+                const Text(
+                  'Could not load your account. Your session is saved. '
+                  'Check your connection and try again.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: () => ref.invalidate(meProvider),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(

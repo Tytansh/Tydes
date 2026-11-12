@@ -43,6 +43,41 @@ class _FakeCounts extends InboxUnreadApi {
 }
 
 void main() {
+  testWidgets('startup account failure has an honest retry, not a demo feed', (
+    tester,
+  ) async {
+    var unavailable = true;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          meProvider.overrideWith((_) async {
+            if (unavailable) {
+              throw StateError('Account temporarily unavailable');
+            }
+            return DemoSeed.me;
+          }),
+          inboxUnreadCountsProvider.overrideWith(
+            (_) async => const InboxUnreadCounts(accountId: null),
+          ),
+          travelFeedPostsProvider.overrideWith((_) async => []),
+          travelFeedSpotsProvider.overrideWith((_) async => []),
+          socialEngagementHydrationProvider.overrideWith((_) async {}),
+          socialRelationshipHydrationProvider.overrideWith((_) async {}),
+        ],
+        child: const MaterialApp(home: HomePage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Could not load your account.'), findsOneWidget);
+    expect(find.byTooltip('Messages'), findsNothing);
+    unavailable = false;
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Messages'), findsOneWidget);
+    expect(find.textContaining('Could not load your account.'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final width in [320.0, 390.0, 1440.0]) {
     for (final theme in [AppTheme.light(), AppTheme.dark()]) {
       testWidgets(

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_flutter/core/network/demo_persistence.dart';
+import 'package:mobile_flutter/core/network/demo_seed.dart';
 import 'package:mobile_flutter/core/network/surf_repository.dart';
 import 'package:mobile_flutter/core/widgets/feed_refresh_indicator.dart';
 import 'package:mobile_flutter/features/home/home_page.dart';
@@ -79,7 +80,7 @@ Future<ProviderContainer> _show(
       demoPersistenceProvider.overrideWithValue(memory),
       joinedEventChatsProvider.overrideWith((_) => events()),
       socialRelationshipHydrationProvider.overrideWith((_) => relationships()),
-      meProvider.overrideWith((_) => throw StateError('Must not refresh auth')),
+      meProvider.overrideWith((_) async => DemoSeed.me),
     ],
   );
   addTearDown(container.dispose);

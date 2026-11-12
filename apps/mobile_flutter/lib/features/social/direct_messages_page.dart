@@ -444,13 +444,20 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage>
   Object? _initialError;
 
   Future<void> _refreshInbox() async {
-    // Refresh server-backed inbox discovery without recreating local direct
-    // threads, clearing drafts, or resetting the current search.
+    // Recover a failed account lookup before resolving its account-scoped
+    // inbox. A same-account profile refresh retains the notifier and drafts.
+    final account = await ref.refresh(meProvider.future);
+    if (!mounted || ref.read(meProvider).valueOrNull?.id != account.id) {
+      return;
+    }
     await Future.wait([
       ref.read(directMessageThreadsProvider.notifier).refresh(),
       ref.refresh(joinedEventChatsProvider.future),
       ref.refresh(socialRelationshipHydrationProvider.future),
     ]);
+    if (mounted && widget.initialThreadId != null && _initialError != null) {
+      await _openInitialConversation();
+    }
   }
 
   @override
@@ -461,6 +468,7 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage>
       if (!mounted ||
           !_foreground ||
           widget.initialThreadId != null ||
+          ref.read(meProvider).hasError ||
           ModalRoute.of(context)?.isCurrent != true) {
         return;
       }
@@ -478,15 +486,19 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage>
     }
   }
 
-  Future<void> _openInitialConversation() async {
+  Future<void> _openInitialConversation({bool reloadAccount = false}) async {
     if (_openingInitial) return;
     setState(() {
       _openingInitial = true;
       _initialError = null;
     });
     try {
-      await ref.read(meProvider.future);
-      if (!mounted) return;
+      final account = reloadAccount
+          ? await ref.refresh(meProvider.future)
+          : await ref.read(meProvider.future);
+      if (!mounted || ref.read(meProvider).valueOrNull?.id != account.id) {
+        return;
+      }
       final controller = ref.read(directMessageThreadsProvider.notifier);
       final profile = widget.seedProfile;
       final thread = profile == null
@@ -514,7 +526,36 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage>
 
   @override
   Widget build(BuildContext context) {
+    final me = ref.watch(meProvider);
     final threads = ref.watch(directMessageThreadsProvider);
+    if (me.hasError) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Messages')),
+        body: FeedRefreshIndicator(
+          onRefresh: _refreshInbox,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(24),
+            children: [
+              const Text('Could not load your account'),
+              const SizedBox(height: 8),
+              Text(friendlyErrorMessage(me.error)),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: () => _refreshInbox().catchError((Object _) {}),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (!me.hasValue) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Messages')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
     final inboxStatus = ref.watch(dmInboxStatusProvider);
     final eventChats = ref.watch(joinedEventChatsProvider);
     final followedUserIds = ref.watch(followedUserIdsProvider);
@@ -542,7 +583,8 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage>
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton(
-                    onPressed: _openInitialConversation,
+                    onPressed: () =>
+                        _openInitialConversation(reloadAccount: true),
                     child: const Text('Retry'),
                   ),
                 ],
@@ -637,10 +679,7 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage>
                 title: const Text('Could not refresh messages'),
                 subtitle: Text(friendlyErrorMessage(inboxStatus.error)),
                 trailing: TextButton(
-                  onPressed: () => ref
-                      .read(directMessageThreadsProvider.notifier)
-                      .refresh()
-                      .catchError((Object _) {}),
+                  onPressed: () => _refreshInbox().catchError((Object _) {}),
                   child: const Text('Retry'),
                 ),
               ),

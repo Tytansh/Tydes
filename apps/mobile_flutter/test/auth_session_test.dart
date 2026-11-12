@@ -69,12 +69,86 @@ class FakeTransport implements HttpClientAdapter {
 }
 
 void main() {
+  test(
+    'a startup failure never invents an account from the demo profile',
+    () async {
+      final sessions = MemorySessions();
+      final dio = Dio(BaseOptions(baseUrl: 'https://test.invalid'))
+        ..httpClientAdapter = FakeTransport((_) async => body({}, 503));
+      final demo = DemoSeed.me;
+      await expectLater(
+        SurfRepository(dio, sessions).fetchMe(),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('Could not load your account'),
+          ),
+        ),
+      );
+      expect(sessions.token, 'old-test-session');
+      expect(DemoSeed.me, same(demo));
+    },
+  );
+
+  test(
+    'an offline refresh preserves only the same confirmed session',
+    () async {
+      final sessions = MemorySessions();
+      var offline = false;
+      final dio = Dio(BaseOptions(baseUrl: 'https://test.invalid'))
+        ..httpClientAdapter = FakeTransport(
+          (_) async =>
+              offline ? body({}, 503) : body(profileJson('realaccount')),
+        );
+      final repo = SurfRepository(dio, sessions);
+      expect((await repo.fetchMe()).id, 'realaccount');
+      offline = true;
+      expect((await repo.fetchMe()).id, 'realaccount');
+      await sessions.saveAccessToken('different-account-token');
+      await expectLater(repo.fetchMe(), throwsStateError);
+      expect(sessions.token, 'different-account-token');
+    },
+  );
+
+  test(
+    'a transient startup failure can recover without signing in again',
+    () async {
+      final sessions = MemorySessions();
+      var offline = true;
+      final dio = Dio(BaseOptions(baseUrl: 'https://test.invalid'))
+        ..httpClientAdapter = FakeTransport(
+          (_) async => offline ? body({}, 503) : body(profileJson('recovered')),
+        );
+      final repo = SurfRepository(dio, sessions);
+      await expectLater(repo.fetchMe(), throwsStateError);
+      offline = false;
+      expect((await repo.fetchMe()).id, 'recovered');
+      expect(sessions.token, 'old-test-session');
+    },
+  );
+
+  test('a malformed profile cannot substitute the demo account', () async {
+    final sessions = MemorySessions();
+    final dio = Dio(BaseOptions(baseUrl: 'https://test.invalid'))
+      ..httpClientAdapter = FakeTransport((_) async => body({'id': ''}));
+    await expectLater(
+      SurfRepository(dio, sessions).fetchMe(),
+      throwsStateError,
+    );
+  });
+
   test('failed email login does not erase an existing session', () async {
     final sessions = MemorySessions();
     final dio = Dio(BaseOptions(baseUrl: 'https://test.invalid'))
       ..httpClientAdapter = FakeTransport((_) async => body({}, 400));
-    await expectLater(SurfRepository(dio, sessions).login('test@example.com',
-      'en', password: 'incorrect-test-password'), throwsStateError);
+    await expectLater(
+      SurfRepository(
+        dio,
+        sessions,
+      ).login('test@example.com', 'en', password: 'incorrect-test-password'),
+      throwsStateError,
+    );
     expect(sessions.token, 'old-test-session');
   });
   for (final oldStatus in [200, 401, 403]) {

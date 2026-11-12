@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile_flutter/core/network/demo_seed.dart';
+import 'package:mobile_flutter/features/home/home_page.dart' show meProvider;
 import 'package:mobile_flutter/features/social/direct_messages_page.dart';
 import 'package:mobile_flutter/features/social/event_chat_page.dart';
 
@@ -9,6 +11,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          meProvider.overrideWith((_) async => DemoSeed.me),
           directMessageThreadsProvider.overrideWith(
             (_) => DirectMessageThreadsNotifier.testing([]),
           ),
