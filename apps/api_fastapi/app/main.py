@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.core.auth import EMAIL_VERIFICATION_REQUIRED_DETAIL
 from app.core.runtime import (
     csv_env,
     media_dir_path,
@@ -144,14 +145,41 @@ MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 sync_seed_media_files()
 ALLOWED_ORIGINS = csv_env("ALLOWED_ORIGINS", "*")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials="*" not in ALLOWED_ORIGINS,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 app.add_middleware(RequestBodyLimitMiddleware)
+
+
+# Only identity bootstrap/recovery and explicitly public entry points may be
+# reached without a verified session. Recovery routes still require identity in
+# their own dependencies. Do not exempt whole auth/billing routers: future
+# private endpoints must inherit the gate even without a dependency.
+_UNVERIFIED_SESSION_ROUTES = frozenset({
+    ("GET", "/api/v1/users/me"),
+    ("GET", "/api/v1/auth/google/config"),
+    ("POST", "/api/v1/auth/google/challenge"),
+    ("POST", "/api/v1/auth/google"),
+    ("POST", "/api/v1/auth/login"),
+    ("POST", "/api/v1/auth/signup"),
+    ("POST", "/api/v1/auth/verify-email"),
+    ("POST", "/api/v1/auth/password-reset/request"),
+    ("POST", "/api/v1/auth/password-reset/confirm"),
+    ("POST", "/api/v1/auth/email-verification/request"),
+    ("POST", "/api/v1/auth/email-verification/confirm"),
+    ("POST", "/api/v1/auth/logout"),
+    ("DELETE", "/api/v1/auth/account"),
+    ("POST", "/api/v1/auth/waitlist"),
+    # Provider callbacks authenticate themselves, not via a user's session.
+    ("POST", "/api/v1/billing/webhooks/revenuecat"),
+})
+
+
+def _requires_verified_email(request) -> bool:
+    path = request.scope["path"].rstrip("/")
+    method = request.method.upper()
+    if method == "OPTIONS" or not (path == "/api/v1" or path.startswith("/api/v1/")):
+        return False
+    if path == "/api/v1/public" or path.startswith("/api/v1/public/"):
+        return False
+    return (method, path) not in _UNVERIFIED_SESSION_ROUTES
 
 
 @app.middleware("http")
@@ -163,8 +191,22 @@ async def bind_authenticated_user(request, call_next):
         authenticated_user = store.resolve_session_user(token.strip())
     request.state.user = authenticated_user
     request.state.authenticated_user = authenticated_user is not None
-    with store.request_user_context(authenticated_user):
-        response = await call_next(request)
+    verification_required = _requires_verified_email(request)
+    if verification_required and authenticated_user is None:
+        response = JSONResponse(
+            status_code=401,
+            content={"detail": "Sign in required"},
+            headers={"Cache-Control": "no-store"},
+        )
+    elif verification_required and not authenticated_user.email_verified:
+        response = JSONResponse(
+            status_code=403,
+            content={"detail": EMAIL_VERIFICATION_REQUIRED_DETAIL},
+            headers={"Cache-Control": "no-store"},
+        )
+    else:
+        with store.request_user_context(authenticated_user):
+            response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
@@ -176,6 +218,17 @@ async def bind_authenticated_user(request, call_next):
             "max-age=31536000; includeSubDomains"
         )
     return response
+
+
+# Keep CORS outside the early verification response so browser clients receive
+# and can distinguish the recoverable 403 from an invalid/expired session.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials="*" not in ALLOWED_ORIGINS,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def _request_is_https(request) -> bool:

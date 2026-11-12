@@ -41,9 +41,15 @@ def moderation(tmp_path, monkeypatch):
         "_default_user": store._default_user.model_copy(deep=True),
     }.items():
         monkeypatch.setattr(store, name, value)
+    delivered_codes = {}
+
+    def deliver(email, code):
+        delivered_codes[email] = code
+        return SimpleNamespace(configured=True, sent=True, error=None)
+
     monkeypatch.setattr(
         "app.core.store.send_verification_email",
-        lambda *_args: SimpleNamespace(configured=False, sent=False, error=None),
+        deliver,
     )
     monkeypatch.setattr("app.modules.social.router.send_moderation_report_email", lambda **_kwargs: None)
     api_rate_limiter.clear()
@@ -54,6 +60,12 @@ def moderation(tmp_path, monkeypatch):
         })
         assert response.status_code == 200, response.text
         token = response.json()["session"]["access_token"]
+        confirmed = client.post(
+            "/api/v1/auth/email-verification/confirm",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"code": delivered_codes[email]},
+        )
+        assert confirmed.status_code == 200, confirmed.text
         return {"Authorization": f"Bearer {token}"}, store.resolve_session_user(token)
 
     admin_headers, admin = account("owner@tydes.io")

@@ -23,6 +23,7 @@ from app.core.direct_messages import (
 )
 from app.core.models import build_seed
 from app.core.rate_limit import api_rate_limiter
+from app.core.store import store
 from app.main import app
 
 
@@ -62,8 +63,11 @@ def fixture(tmp_path):
 
 
 @pytest.fixture
-def api(fixture):
+def api(fixture, monkeypatch):
     accounts, _, service = fixture
+    # The global private-route middleware resolves identity before dependency
+    # overrides. These local fixture tokens represent explicitly verified users.
+    monkeypatch.setattr(store, "resolve_session_user", accounts.users.get)
     previous = dict(app.dependency_overrides)
 
     def viewer(request: Request):

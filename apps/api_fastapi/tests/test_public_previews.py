@@ -102,12 +102,13 @@ def test_past_events_are_labelled_and_undated_events_do_not_invent_dates():
     assert data["meetup_date"] is None and data["ended"] is False
 
 
-def test_guest_feed_and_authenticated_single_post_enforce_visibility():
-    assert {post["id"] for post in client.get("/api/v1/social/posts").json()} == {
-        "public_event", "general_post", "orphan_event"
-    }
+def test_private_feed_and_authenticated_single_post_enforce_visibility():
+    assert client.get("/api/v1/social/posts").status_code == 401
     assert client.get("/api/v1/social/posts/private_event").status_code == 401
     viewer = {"Authorization": "Bearer viewer-token"}
+    assert {post["id"] for post in client.get("/api/v1/social/posts", headers=viewer).json()} == {
+        "public_event", "general_post", "orphan_event"
+    }
     assert client.get("/api/v1/social/posts/private_event", headers=viewer).status_code == 404
     assert client.get("/api/v1/social/posts/private_event", headers={"Authorization": "Bearer host-token"}).status_code == 200
     store.followed_user_ids.add("host")

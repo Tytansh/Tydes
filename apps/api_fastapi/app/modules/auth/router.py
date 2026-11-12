@@ -1,7 +1,7 @@
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from app.core.auth import require_authenticated_user
+from app.core.auth import require_signed_in_user
 from app.core.media_cleanup import queue_account_media_deletion
 from app.core.rate_limit import (
     RateLimitRule,
@@ -188,7 +188,7 @@ def request_password_reset(payload: PasswordResetRequest, request: Request):
 def request_current_email_verification(
     request: Request,
     payload: CurrentEmailVerificationRequest | None = None,
-    user=Depends(require_authenticated_user),
+    user=Depends(require_signed_in_user),
 ):
     _limit_auth_request(
         request, "current-email-request", user.email,
@@ -212,7 +212,7 @@ def request_current_email_verification(
 def confirm_current_email_verification(
     payload: CurrentEmailVerificationConfirm,
     request: Request,
-    user=Depends(require_authenticated_user),
+    user=Depends(require_signed_in_user),
 ):
     _limit_auth_request(
         request, "current-email-confirm", user.email,
@@ -247,12 +247,12 @@ def confirm_password_reset(payload: PasswordResetConfirmRequest, request: Reques
 
 
 @router.post("/logout")
-def logout(_user=Depends(require_authenticated_user)):
+def logout(_user=Depends(require_signed_in_user)):
     return store.logout()
 
 
 @router.delete("/account")
-def delete_account(user=Depends(require_authenticated_user)):
+def delete_account(user=Depends(require_signed_in_user)):
     queue_account_media_deletion(user.id)
     deleted_user = store.delete_current_account()
     # The existing cleanup worker handles queued media. Do not keep a deletion

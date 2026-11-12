@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
+import secrets
 import sys
 import tempfile
 from threading import Barrier
@@ -40,26 +41,25 @@ def reset_api_rate_limits(monkeypatch):
 
 
 def _stub_email_senders(monkeypatch):
+    deliveries = {"verification": {}, "reset": {}}
+
+    def deliver(kind, email, code):
+        deliveries[kind][email] = code
+        return SimpleNamespace(configured=True, sent=True, error=None)
+
     monkeypatch.setattr(
         "app.core.store.send_verification_email",
-        lambda _email, _code: SimpleNamespace(
-            configured=False,
-            sent=False,
-            error=None,
-        ),
+        lambda email, code: deliver("verification", email, code),
     )
     monkeypatch.setattr(
         "app.core.store.send_password_reset_email",
-        lambda _email, _code: SimpleNamespace(
-            configured=False,
-            sent=False,
-            error=None,
-        ),
+        lambda email, code: deliver("reset", email, code),
     )
+    return deliveries
 
 
 def _signup_access_token(monkeypatch, email: str) -> str:
-    _stub_email_senders(monkeypatch)
+    deliveries = _stub_email_senders(monkeypatch)
     response = client.post(
         "/api/v1/auth/signup",
         json={
@@ -69,7 +69,28 @@ def _signup_access_token(monkeypatch, email: str) -> str:
         },
     )
     assert response.status_code == 200, response.text
-    return response.json()["session"]["access_token"]
+    # Feature tests use an explicitly verified account. Signup/verification
+    # behavior is tested separately with the original unverified session.
+    token = response.json()["session"]["access_token"]
+    verified = client.post(
+        "/api/v1/auth/email-verification/confirm",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"code": deliveries["verification"][email]},
+    )
+    assert verified.status_code == 200, verified.text
+    return token
+
+
+def _verified_headers(monkeypatch, *, premium=False, free_live_spot_id=None):
+    email = f"private-{secrets.token_hex(6)}@example.com"
+    if premium:
+        monkeypatch.setenv("TYDES_PREMIUM_EMAILS", email)
+    token = _signup_access_token(monkeypatch, email)
+    if free_live_spot_id is not None:
+        user = store.resolve_session_user(token)
+        user.free_live_spot_id = free_live_spot_id
+        store._save_auth_account_user(email, user)
+    return {"Authorization": f"Bearer {token}"}
 
 
 def test_subscription_sync_is_verified_and_scoped_to_signed_in_account(tmp_path, monkeypatch):
@@ -107,10 +128,11 @@ def test_premium_plan_is_ad_free_and_premium_accounts_receive_no_ads(tmp_path, m
     monkeypatch.setattr(store, "state_file", tmp_path / "ad-free.json")
     monkeypatch.setattr(store, "auth_accounts", {})
     monkeypatch.setattr(store, "session_tokens", {})
-    plan = next(item for item in client.get("/api/v1/billing/plans").json() if item["id"] == "premium")
+    token = _signup_access_token(monkeypatch, "ad-free-subscriber@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    plan = next(item for item in client.get("/api/v1/billing/plans", headers=headers).json() if item["id"] == "premium")
     assert "Ad-free experience" in plan["features"]
     assert "Ad-light experience" not in plan["features"]
-    token = _signup_access_token(monkeypatch, "ad-free-subscriber@example.com")
     user = store.resolve_session_user(token)
     with store.request_user_context(user):
         store.set_subscription_status(RevenueCatSubscription(True))
@@ -517,31 +539,33 @@ def test_email_delivery_hard_cap_stops_before_resend(monkeypatch):
     assert result.error == "Email delivery safety limit reached."
 
 
-def test_spots_list():
-    response = client.get("/api/v1/spots")
+def test_spots_list(monkeypatch):
+    response = client.get("/api/v1/spots", headers=_verified_headers(monkeypatch))
     assert response.status_code == 200
     assert len(response.json()) >= 1
     assert "max-age=3600" in response.headers["cache-control"]
 
 
-def test_social_feed_response_is_bounded():
-    response = client.get("/api/v1/social/posts", params={"limit": 1})
+def test_social_feed_response_is_bounded(monkeypatch):
+    headers = _verified_headers(monkeypatch)
+    response = client.get("/api/v1/social/posts", params={"limit": 1}, headers=headers)
 
     assert response.status_code == 200
     assert len(response.json()) <= 1
 
-    oversized_page = client.get("/api/v1/social/posts", params={"limit": 101})
+    oversized_page = client.get("/api/v1/social/posts", params={"limit": 101}, headers=headers)
     assert oversized_page.status_code == 422
 
     oversized_profiles = client.get(
         "/api/v1/social/profiles",
         params={"limit": 101},
+        headers=headers,
     )
     assert oversized_profiles.status_code == 422
 
 
-def test_taiwan_spot_coverage_includes_twenty_known_breaks():
-    response = client.get("/api/v1/spots")
+def test_taiwan_spot_coverage_includes_twenty_known_breaks(monkeypatch):
+    response = client.get("/api/v1/spots", headers=_verified_headers(monkeypatch))
     assert response.status_code == 200
 
     taiwan_spots = {
@@ -593,7 +617,7 @@ def test_password_reset_email_requests_are_rate_limited(monkeypatch):
         "app.core.store.send_password_reset_email",
         lambda _email, code: (
             sent_codes.append(code)
-            or SimpleNamespace(configured=False, sent=False, error=None)
+            or SimpleNamespace(configured=True, sent=True, error=None)
         ),
     )
 
@@ -968,6 +992,7 @@ def test_concurrent_requests_keep_account_context_isolated(monkeypatch):
 
 
 def test_forecasts_fallback_uses_estimated_spot_values(monkeypatch):
+    headers = _verified_headers(monkeypatch)
     def raise_provider_error(_spot, **_kwargs):
         raise RuntimeError("provider unavailable")
 
@@ -977,7 +1002,7 @@ def test_forecasts_fallback_uses_estimated_spot_values(monkeypatch):
         raise_provider_error,
     )
 
-    response = client.get("/api/v1/forecasts", params={"spot_id": "spot_balangan"})
+    response = client.get("/api/v1/forecasts", params={"spot_id": "spot_balangan"}, headers=headers)
 
     assert response.status_code == 200
     rows = response.json()
@@ -1140,7 +1165,7 @@ def test_tidecheck_uses_restart_safe_cached_tides(monkeypatch):
 
 
 def test_free_user_locked_spot_gets_real_forecast_on_five_day_cache(monkeypatch):
-    store.login("demo@surftravel.app")
+    headers = _verified_headers(monkeypatch)
     captured = {}
 
     def fake_live_forecast(spot, **kwargs):
@@ -1162,7 +1187,7 @@ def test_free_user_locked_spot_gets_real_forecast_on_five_day_cache(monkeypatch)
 
     monkeypatch.setattr(store.weather_provider, "fetch_spot_forecast", fake_live_forecast)
 
-    response = client.get("/api/v1/forecasts", params={"spot_id": "spot_balangan"})
+    response = client.get("/api/v1/forecasts", params={"spot_id": "spot_balangan"}, headers=headers)
 
     assert response.status_code == 200
     rows = response.json()
@@ -1179,6 +1204,7 @@ def test_free_user_locked_spot_gets_real_forecast_on_five_day_cache(monkeypatch)
 
 
 def test_next_swell_picks_one_best_destination_and_includes_australia(monkeypatch):
+    headers = _verified_headers(monkeypatch)
     store._next_swell_cache = None
     checked_spot_ids = set()
 
@@ -1208,7 +1234,7 @@ def test_next_swell_picks_one_best_destination_and_includes_australia(monkeypatc
         fake_live_forecast,
     )
 
-    response = client.get("/api/v1/forecasts/next-swell")
+    response = client.get("/api/v1/forecasts/next-swell", headers=headers)
 
     assert response.status_code == 200
     result = response.json()
@@ -1228,9 +1254,9 @@ def test_next_swell_picks_one_best_destination_and_includes_australia(monkeypatc
 
 
 def test_premium_user_hides_ads_and_can_use_live_data(monkeypatch):
-    store.login("demo+premium@surftravel.app")
+    headers = _verified_headers(monkeypatch, premium=True)
 
-    response = client.get("/api/v1/ads", params={"placement": "home_feed"})
+    response = client.get("/api/v1/ads", params={"placement": "home_feed"}, headers=headers)
     assert response.status_code == 200
     assert response.json() == []
 
@@ -1245,7 +1271,7 @@ def test_premium_user_hides_ads_and_can_use_live_data(monkeypatch):
         "fetch_spot_forecast",
         fake_live_forecast,
     )
-    forecast_response = client.get("/api/v1/forecasts", params={"spot_id": "spot_balangan"})
+    forecast_response = client.get("/api/v1/forecasts", params={"spot_id": "spot_balangan"}, headers=headers)
 
     assert forecast_response.status_code == 200
     assert called["value"] is True
@@ -1300,7 +1326,7 @@ def test_premium_email_override_applies_to_existing_session(monkeypatch):
 
 
 def test_preview_forecasts_use_longer_cache_window(monkeypatch):
-    store.login("demo+premium@surftravel.app")
+    headers = _verified_headers(monkeypatch, premium=True)
     captured = {}
 
     def fake_live_forecast(spot, **kwargs):
@@ -1325,6 +1351,7 @@ def test_preview_forecasts_use_longer_cache_window(monkeypatch):
     response = client.get(
         "/api/v1/forecasts",
         params={"spot_id": "spot_balangan", "freshness": "preview"},
+        headers=headers,
     )
 
     assert response.status_code == 200
@@ -1332,7 +1359,7 @@ def test_preview_forecasts_use_longer_cache_window(monkeypatch):
 
 
 def test_bulk_forecasts_do_not_fetch_every_premium_spot(monkeypatch):
-    store.login("demo+premium@surftravel.app")
+    headers = _verified_headers(monkeypatch, premium=True)
 
     def fail_if_called(_spot, **_kwargs):
         raise AssertionError("bulk forecasts should stay fast and estimated")
@@ -1343,15 +1370,14 @@ def test_bulk_forecasts_do_not_fetch_every_premium_spot(monkeypatch):
         fail_if_called,
     )
 
-    bulk_response = client.get("/api/v1/forecasts")
+    bulk_response = client.get("/api/v1/forecasts", headers=headers)
 
     assert bulk_response.status_code == 200
     assert all(row["confidence"] == "estimated" for row in bulk_response.json())
 
 
 def test_bulk_forecasts_include_free_unlocked_live_spot_only(monkeypatch):
-    store.login("demo@surftravel.app")
-    store.user.free_live_spot_id = "spot_bondi"
+    headers = _verified_headers(monkeypatch, free_live_spot_id="spot_bondi")
     called_spot_ids = []
 
     def fake_live_forecast(spot, **_kwargs):
@@ -1376,7 +1402,7 @@ def test_bulk_forecasts_include_free_unlocked_live_spot_only(monkeypatch):
         fake_live_forecast,
     )
 
-    bulk_response = client.get("/api/v1/forecasts")
+    bulk_response = client.get("/api/v1/forecasts", headers=headers)
 
     assert bulk_response.status_code == 200
     bulk_rows = bulk_response.json()
@@ -1389,7 +1415,7 @@ def test_bulk_forecasts_include_free_unlocked_live_spot_only(monkeypatch):
 
 
 def test_tides_surface_provider_unavailable_note(monkeypatch):
-    store.login("demo+premium@surftravel.app")
+    headers = _verified_headers(monkeypatch, premium=True)
 
     def unavailable_tides(_spot, _start_day, days=3):
         return TideForecast(
@@ -1400,7 +1426,7 @@ def test_tides_surface_provider_unavailable_note(monkeypatch):
 
     monkeypatch.setattr(store.tide_provider, "fetch_spot_tides", unavailable_tides)
 
-    response = client.get("/api/v1/forecasts/tides", params={"spot_id": "spot_bondi"})
+    response = client.get("/api/v1/forecasts/tides", params={"spot_id": "spot_bondi"}, headers=headers)
 
     assert response.status_code == 200
     payload = response.json()
@@ -1411,8 +1437,7 @@ def test_tides_surface_provider_unavailable_note(monkeypatch):
 
 
 def test_balangan_surf_window_is_locked_for_free_users(monkeypatch):
-    store.login("demo@surftravel.app")
-    store.user.free_live_spot_id = None
+    headers = _verified_headers(monkeypatch)
 
     def fail_if_called(_spot, **_kwargs):
         raise AssertionError("Locked free users should not fetch surf windows")
@@ -1422,6 +1447,7 @@ def test_balangan_surf_window_is_locked_for_free_users(monkeypatch):
     response = client.get(
         "/api/v1/forecasts/surf-window",
         params={"spot_id": "spot_balangan"},
+        headers=headers,
     )
 
     assert response.status_code == 200
@@ -1431,7 +1457,7 @@ def test_balangan_surf_window_is_locked_for_free_users(monkeypatch):
 
 
 def test_premium_surf_window_available_for_any_spot(monkeypatch):
-    store.login("demo+premium@surftravel.app")
+    headers = _verified_headers(monkeypatch, premium=True)
 
     def fake_surf_window(spot, **_kwargs):
         return SurfWindowForecast(
@@ -1459,6 +1485,7 @@ def test_premium_surf_window_available_for_any_spot(monkeypatch):
     response = client.get(
         "/api/v1/forecasts/surf-window",
         params={"spot_id": "spot_bondi"},
+        headers=headers,
     )
 
     assert response.status_code == 200
@@ -1579,22 +1606,7 @@ def test_signup_creates_pending_email_verification(tmp_path, monkeypatch):
     store.password_reset_codes = {}
     store.auth_accounts = {}
     store.session_tokens = {}
-    monkeypatch.setattr(
-        "app.core.store.send_verification_email",
-        lambda _email, _code: SimpleNamespace(
-            configured=False,
-            sent=False,
-            error=None,
-        ),
-    )
-    monkeypatch.setattr(
-        "app.core.store.send_password_reset_email",
-        lambda _email, _code: SimpleNamespace(
-            configured=False,
-            sent=False,
-            error=None,
-        ),
-    )
+    deliveries = _stub_email_senders(monkeypatch)
 
     signup_response = client.post(
         "/api/v1/auth/signup",
@@ -1617,10 +1629,11 @@ def test_signup_creates_pending_email_verification(tmp_path, monkeypatch):
     assert payload["session"]["user"]["home_region"] == ""
     assert payload["session"]["user"]["surf_skill"] == ""
     assert payload["session"]["access_token"]
-    verification_code = store.email_verification_codes["newsurfer@example.com"]
+    verification_code = deliveries["verification"]["newsurfer@example.com"]
     assert len(verification_code) == 6
     assert verification_code.isdigit()
-    assert verification_code in payload["verification_hint"]
+    assert verification_code not in store.email_verification_codes["newsurfer@example.com"]
+    assert payload["verification_hint"] is None
 
     wrong_response = client.post(
         "/api/v1/auth/verify-email",
@@ -1681,8 +1694,8 @@ def test_signup_creates_pending_email_verification(tmp_path, monkeypatch):
         json={"email": "newsurfer@example.com"},
     )
     assert reset_request_response.status_code == 200
-    reset_code = store.password_reset_codes["newsurfer@example.com"]
-    assert reset_code in reset_request_response.json()["reset_hint"]
+    reset_code = deliveries["reset"]["newsurfer@example.com"]
+    assert reset_request_response.json()["reset_hint"] is None
 
     missing_reset_response = client.post(
         "/api/v1/auth/password-reset/request",
@@ -1783,8 +1796,9 @@ def test_signup_creates_pending_email_verification(tmp_path, monkeypatch):
         },
     )
     assert other_signup_response.status_code == 200
+    store.verify_email("othersurfer@example.com", deliveries["verification"]["othersurfer@example.com"])
     other_token = other_signup_response.json()["session"]["access_token"]
-    public_profiles_response = client.get("/api/v1/social/profiles")
+    public_profiles_response = client.get("/api/v1/social/profiles", headers={"Authorization": f"Bearer {other_token}"})
     assert public_profiles_response.status_code == 200
     assert any(
         profile["handle"] == "samehandle"
@@ -1848,21 +1862,14 @@ def test_admin_users_requires_token_and_lists_accounts(tmp_path, monkeypatch):
     store.password_reset_codes = {}
     store.auth_accounts = {}
     store.session_tokens = {}
-    monkeypatch.setattr(
-        "app.core.store.send_verification_email",
-        lambda _email, _code: SimpleNamespace(
-            configured=False,
-            sent=False,
-            error=None,
-        ),
-    )
+    deliveries = _stub_email_senders(monkeypatch)
 
     disabled_response = client.get("/api/v1/admin/users")
-    assert disabled_response.status_code == 404
+    assert disabled_response.status_code == 401
 
     monkeypatch.setenv("TYDES_ADMIN_TOKEN", "dev-admin-token")
     blocked_response = client.get("/api/v1/admin/users")
-    assert blocked_response.status_code == 403
+    assert blocked_response.status_code == 401
 
     signup_response = client.post(
         "/api/v1/auth/signup",
@@ -1873,10 +1880,17 @@ def test_admin_users_requires_token_and_lists_accounts(tmp_path, monkeypatch):
         },
     )
     assert signup_response.status_code == 200
+    token = signup_response.json()["session"]["access_token"]
+    confirmed = client.post(
+        "/api/v1/auth/email-verification/confirm",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"code": deliveries["verification"]["admincheck@example.com"]},
+    )
+    assert confirmed.status_code == 200, confirmed.text
 
     users_response = client.get(
         "/api/v1/admin/users",
-        headers={"X-Tydes-Admin-Token": "dev-admin-token"},
+        headers={"X-Tydes-Admin-Token": "dev-admin-token", "Authorization": f"Bearer {token}"},
     )
 
     assert users_response.status_code == 200
@@ -2014,14 +2028,7 @@ def test_user_profile_requires_valid_session(tmp_path, monkeypatch):
     store.session_tokens = {}
     store.verified_emails = set()
     store.email_verification_codes = {}
-    monkeypatch.setattr(
-        "app.core.store.send_verification_email",
-        lambda _email, _code: SimpleNamespace(
-            configured=False,
-            sent=False,
-            error=None,
-        ),
-    )
+    _stub_email_senders(monkeypatch)
 
     signup_response = client.post(
         "/api/v1/auth/signup",
@@ -2069,7 +2076,7 @@ def test_user_profile_requires_valid_session(tmp_path, monkeypatch):
 
 def test_social_feed_and_create_post(monkeypatch):
     access_token = _signup_access_token(monkeypatch, "socialpost@example.com")
-    friends_response = client.get("/api/v1/social/friends")
+    friends_response = client.get("/api/v1/social/friends", headers={"Authorization": f"Bearer {access_token}"})
     assert friends_response.status_code == 200
     assert friends_response.json() == []
 
@@ -2123,11 +2130,7 @@ def test_social_feed_and_create_post(monkeypatch):
     assert rejected_comment_response.status_code == 400
 
     posts_response = client.get("/api/v1/social/posts")
-    assert posts_response.status_code == 200
-    assert not any(
-        post["body"].startswith("Anyone surfing")
-        for post in posts_response.json()
-    )
+    assert posts_response.status_code == 401
     # Followers-only posts must not be available to anonymous visitors.
     owner_posts = client.get("/api/v1/social/posts", headers={"Authorization": f"Bearer {access_token}"})
     created_post = next(
@@ -2195,7 +2198,7 @@ def test_social_feed_and_create_post(monkeypatch):
     monkeypatch.setenv("TYDES_ADMIN_TOKEN", "dev-admin-token")
     reports_response = client.get(
         "/api/v1/admin/reports",
-        headers={"X-Tydes-Admin-Token": "dev-admin-token"},
+        headers={"X-Tydes-Admin-Token": "dev-admin-token", "Authorization": f"Bearer {actor_token}"},
     )
     assert reports_response.status_code == 200
     assert any(
@@ -2361,7 +2364,7 @@ def test_direct_r2_video_upload_is_verified_before_posting(monkeypatch):
     signed_in_user = store.resolve_session_user(access_token)
     assert signed_in_user is not None
     assert signed_in_user.premium is True
-    assert signed_in_user.email_verified is False
+    assert signed_in_user.email_verified is True
     storage = FakeR2Storage()
     monkeypatch.setattr(social_router_module, "configured_media_storage", lambda: storage)
 

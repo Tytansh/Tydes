@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 import re
 
-from app.core.auth import require_authenticated_user
+from app.core.auth import require_authenticated_user, require_signed_in_user
 from app.core.media_cleanup import queue_post_media_deletion
 from app.core.media_uploads import upload_ledger
 from app.core.moderation import ensure_allowed_content
@@ -33,7 +33,9 @@ class UpdateProfileRequest(BaseModel):
 
 
 @router.get("/me")
-async def me(user=Depends(require_authenticated_user)):
+async def me(user=Depends(require_signed_in_user)):
+    if not user.email_verified:
+        return user
     return await refresh_subscription_if_stale(user)
 
 

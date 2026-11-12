@@ -22,6 +22,7 @@ from app.integrations import google_identity as google
 CLIENT_ID = "123456-test.apps.googleusercontent.com"
 ORIGIN = {"Origin": "https://tydes.io"}
 client = TestClient(app)
+delivered_verification_codes = {}
 
 
 @pytest.fixture(autouse=True)
@@ -35,7 +36,13 @@ def isolated_google_accounts(monkeypatch, tmp_path):
         monkeypatch.setattr(store, name, {})
     monkeypatch.setattr(store, "verified_emails", set())
     monkeypatch.setattr(store, "_default_user", store._default_user.model_copy(deep=True))
-    monkeypatch.setattr("app.core.store.send_verification_email", lambda *args: SimpleNamespace(configured=False, sent=False))
+    delivered_verification_codes.clear()
+
+    def deliver(email, code):
+        delivered_verification_codes[email] = code
+        return SimpleNamespace(configured=True, sent=True)
+
+    monkeypatch.setattr("app.core.store.send_verification_email", deliver)
     google._challenges.clear()
     api_rate_limiter.clear()
     yield
@@ -111,6 +118,7 @@ def test_google_signin_does_not_recreate_a_deleted_account(monkeypatch):
     assert client.delete("/api/v1/auth/account", headers=headers).status_code == 200
     assert "surfer@gmail.com" not in store.auth_accounts
     assert client.get("/api/v1/users/me", headers=headers).status_code == 401
+    assert client.get("/api/v1/trips", headers=headers).status_code == 401
     missing = sign_in(monkeypatch, allow_signup=False)
     assert missing.status_code == 409 and "Choose Sign up" in missing.json()["detail"]
     assert "surfer@gmail.com" not in store.auth_accounts
@@ -135,7 +143,7 @@ def test_explicit_google_signup_after_deletion_has_a_new_identity(monkeypatch):
 
 def test_signin_mode_still_links_an_existing_verified_email(monkeypatch):
     signup = store.signup("surfer@gmail.com", "existing-long-password")
-    store.verify_email("surfer@gmail.com", store.email_verification_codes["surfer@gmail.com"])
+    store.verify_email("surfer@gmail.com", delivered_verification_codes["surfer@gmail.com"])
     result = sign_in(monkeypatch, allow_signup=False)
     assert result.status_code == 200, result.text
     assert result.json()["session"]["user"]["id"] == signup["session"].user.id
@@ -143,7 +151,7 @@ def test_signin_mode_still_links_an_existing_verified_email(monkeypatch):
 
 def test_existing_verified_account_preserves_id_password_profile_and_premium(monkeypatch):
     signup = store.signup("surfer@gmail.com", "existing-long-password")
-    store.verify_email("surfer@gmail.com", store.email_verification_codes["surfer@gmail.com"])
+    store.verify_email("surfer@gmail.com", delivered_verification_codes["surfer@gmail.com"])
     account = store.auth_accounts["surfer@gmail.com"]
     account["user"].update(display_name="Existing Surfer", handle="existing", admin_premium=True, premium=True)
     password_hash = account["password_hash"]
@@ -174,9 +182,14 @@ def test_external_google_email_must_complete_tydes_verification(monkeypatch):
     assert result["verification_required"]
     token = result["session"]["access_token"]
     headers = {"Authorization": "Bearer " + token}
-    assert client.get("/api/v1/users/me", headers=headers).status_code == 401
-    code = store.email_verification_codes["surfer@example.com"]
-    assert client.post("/api/v1/auth/verify-email", json={"email": "surfer@example.com", "code": code}).status_code == 200
+    bootstrap = client.get("/api/v1/users/me", headers=headers)
+    assert bootstrap.status_code == 200
+    assert bootstrap.json()["email_verified"] is False
+    blocked = client.get("/api/v1/trips", headers=headers)
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"]["code"] == "email_verification_required"
+    code = delivered_verification_codes["surfer@example.com"]
+    assert client.post("/api/v1/auth/email-verification/confirm", headers=headers, json={"code": code}).status_code == 200
     assert client.get("/api/v1/users/me", headers=headers).status_code == 200
 
 
@@ -187,7 +200,7 @@ def test_workspace_identity_is_authoritative(monkeypatch):
 
 def test_non_authoritative_email_cannot_auto_link_existing_verified_account(monkeypatch):
     store.signup("surfer@example.com", "existing-long-password")
-    store.verify_email("surfer@example.com", store.email_verification_codes["surfer@example.com"])
+    store.verify_email("surfer@example.com", delivered_verification_codes["surfer@example.com"])
     assert sign_in(monkeypatch, claim_updates={"email": "surfer@example.com"}).status_code == 409
 
 

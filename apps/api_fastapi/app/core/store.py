@@ -254,22 +254,9 @@ class DemoStore:
             self._save_state()
             return Session(access_token=token, user=self.user)
 
-        if password is not None and not self._can_use_demo_login(normalized_email):
-            raise ValueError("No account found for that email.")
-
-        self.user.email = email
-        self.user.locale = locale
-        self.user.premium = self._email_has_premium_override(normalized_email)
-        self.user.email_verified = (
-            self._is_verified_email(normalized_email)
-            or normalized_email.endswith("@surftravel.app")
-            or self.user.premium
-        )
-        self.user.ads_enabled = not self.user.premium
-        self.capture_email(email)
-        token = self._create_session_token(normalized_email)
-        self._save_state()
-        return Session(access_token=token, user=self.user)
+        # Neither a special email domain, a premium override, nor an omitted
+        # password is proof of identity. Unknown accounts must explicitly sign up.
+        raise ValueError("Invalid email or password.")
 
     def signup(self, email: str, password: str, locale: str = "en") -> dict[str, object]:
         normalized_email = email.strip().lower()
@@ -278,7 +265,7 @@ class DemoStore:
 
         verification_code = _generate_verification_code()
         email_result = send_verification_email(normalized_email, verification_code)
-        if email_result.configured and not email_result.sent:
+        if not email_result.configured or not email_result.sent:
             raise RuntimeError("Could not send verification email right now.")
 
         user = self.user.model_copy(
@@ -313,37 +300,38 @@ class DemoStore:
         }
         self._create_auth_account(normalized_email, account)
         self.capture_email(normalized_email)
-        self._set_email_verification_code(normalized_email, verification_code)
+        from app.core.current_email_verification import make_current_email_proof
+        self._set_email_verification_code(
+            normalized_email,
+            make_current_email_proof(user.id, normalized_email, verification_code),
+        )
         token = self._create_session_token(normalized_email)
         self._save_state()
         return {
             "session": Session(access_token=token, user=self.user),
             "verification_required": True,
             "verification_sent_to": normalized_email,
-            "verification_hint": None
-            if email_result.sent
-            else f"Demo verification code: {verification_code}",
+            "verification_hint": None,
         }
 
     def verify_email(self, email: str, code: str) -> User:
         normalized_email = email.strip().lower()
-        expected_code = self._get_email_verification_code(normalized_email)
-        if expected_code is None and self.postgres_auth is None:
-            expected_code = "123456"
-        if code.strip() != expected_code:
-            raise ValueError("Invalid verification code.")
-        self._set_verified_email(normalized_email)
-        self._delete_email_verification_code(normalized_email)
         account = self._get_auth_account(normalized_email)
-        if account is not None and isinstance(account.get("user"), dict):
-            user = User.model_validate(account["user"])
-            user.email_verified = True
-            self._save_auth_account_user(normalized_email, user)
-            self.user = user
-        elif self.user.email.strip().lower() == normalized_email:
-            self.user.email_verified = True
-        self._save_state()
-        return self.user
+        if account is None or not isinstance(account.get("user"), dict):
+            raise ValueError("Invalid or expired verification code. Request a new code.")
+        # The legacy email+code endpoint uses the same expiring, identity-bound
+        # proof as signed-in confirmation. Old raw/demo codes require a resend.
+        user = User.model_validate(account["user"])
+        from app.core.current_email_verification import matches_current_email_proof
+        if not matches_current_email_proof(
+            self._get_email_verification_code(normalized_email), user.id, normalized_email, code,
+        ):
+            # Unlike signed-in confirmation, this public endpoint must not be
+            # idempotent with an arbitrary code or disclose a verified profile.
+            raise ValueError("Invalid or expired verification code. Request a new code.")
+        updated = self.confirm_current_email_verification(user, code)
+        self.user = updated
+        return updated
 
     def _current_verification_account(self, authenticated_user: User) -> User:
         email = authenticated_user.email.strip().lower()
@@ -477,9 +465,12 @@ class DemoStore:
                 ))
                 verification_code = _generate_verification_code()
                 email_result = send_verification_email(email, verification_code)
-                if email_result.configured and not email_result.sent:
+                if not email_result.configured or not email_result.sent:
                     raise RuntimeError("Could not send verification email right now. Please try again.")
-                self._set_email_verification_code(email, verification_code)
+                from app.core.current_email_verification import make_current_email_proof
+                self._set_email_verification_code(
+                    email, make_current_email_proof(user.id, email, verification_code),
+                )
             else:
                 self._set_verified_email(email)
             self._save_current_account_user()
@@ -489,8 +480,7 @@ class DemoStore:
                 "session": Session(access_token=token, user=self.user),
                 "verification_required": not self.user.email_verified,
                 "verification_sent_to": email if verification_code else None,
-                "verification_hint": f"Demo verification code: {verification_code}"
-                if verification_code and email_result and not email_result.sent else None,
+                "verification_hint": None,
             }
 
     def logout(self) -> User:
@@ -549,15 +539,13 @@ class DemoStore:
 
         reset_code = _generate_verification_code()
         email_result = send_password_reset_email(normalized_email, reset_code)
-        if email_result.configured and not email_result.sent:
+        if not email_result.configured or not email_result.sent:
             raise RuntimeError("Could not send password reset email right now.")
         self._set_password_reset_code(normalized_email, reset_code)
         self._save_state()
         return {
             "reset_sent_to": normalized_email,
-            "reset_hint": None
-            if email_result.sent
-            else f"Demo password reset code: {reset_code}",
+            "reset_hint": None,
         }
 
     def reset_password(self, email: str, code: str, new_password: str) -> Session:
@@ -681,12 +669,6 @@ class DemoStore:
         self.user.ads_enabled = ads_enabled
         return changed
 
-    def _can_use_demo_login(self, email: str) -> bool:
-        return (
-            email.endswith("@surftravel.app")
-            or self._email_has_premium_override(email)
-        )
-
     def _create_session_token(self, email: str) -> str:
         token = secrets.token_urlsafe(32)
         token_hash = _hash_token(token)
@@ -717,10 +699,10 @@ class DemoStore:
         resolved_user = User.model_validate(user_payload)
         if resolved_user.banned:
             return None
-        if account.get("google_subject") and not resolved_user.email_verified:
-            # Google is not authoritative for all account email domains. Such
-            # new users cannot use a session until Tydes email confirmation.
-            return None
+        if not resolved_user.email_verified:
+            # Preserve a valid identity for verification/recovery without doing
+            # paid-access refreshes or writes for requests the API will reject.
+            return resolved_user
         with self.request_user_context(resolved_user):
             access_changed = self._apply_email_access_overrides(email)
             if access_changed:

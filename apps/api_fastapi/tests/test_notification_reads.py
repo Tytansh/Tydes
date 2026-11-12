@@ -41,9 +41,15 @@ def notification_accounts(tmp_path, monkeypatch):
         "_default_user": store._default_user.model_copy(deep=True),
     }.items():
         monkeypatch.setattr(store, name, value)
+    delivered_codes = {}
+
+    def deliver(email, code):
+        delivered_codes[email] = code
+        return SimpleNamespace(configured=True, sent=True, error=None)
+
     monkeypatch.setattr(
         "app.core.store.send_verification_email",
-        lambda *_args: SimpleNamespace(configured=False, sent=False, error=None),
+        deliver,
     )
     api_rate_limiter.clear()
 
@@ -53,6 +59,12 @@ def notification_accounts(tmp_path, monkeypatch):
         })
         assert result.status_code == 200, result.text
         token = result.json()["session"]["access_token"]
+        confirmed = client.post(
+            "/api/v1/auth/email-verification/confirm",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"code": delivered_codes[email]},
+        )
+        assert confirmed.status_code == 200, confirmed.text
         return {"Authorization": f"Bearer {token}"}, store.resolve_session_user(token)
 
     first_headers, first = account("first-notification@example.com")
