@@ -440,6 +440,40 @@ class PostgresAuthRepository:
     def delete_email_verification_code(self, email: str) -> None:
         self._delete_code("auth_email_verification_codes", email)
 
+    def verify_current_account_email(self, user_id: str, email: str, code: str) -> User:
+        """Consume a current-account proof and verify that same identity atomically."""
+        from app.core.current_email_verification import matches_current_email_proof
+        normalized_email = _normalize_email(email)
+        with self._connect() as connection, connection.transaction():
+            row = connection.execute(
+                "SELECT user_payload FROM auth_accounts WHERE email=%s FOR UPDATE",
+                (normalized_email,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Your account is unavailable. Sign in again.")
+            user = User.model_validate(dict(row["user_payload"]))
+            if user.id != user_id or user.email.strip().lower() != normalized_email or user.banned:
+                raise ValueError("Your account is unavailable. Sign in again.")
+            if user.email_verified:
+                return user
+            proof = connection.execute(
+                "SELECT code FROM auth_email_verification_codes WHERE email=%s FOR UPDATE",
+                (normalized_email,),
+            ).fetchone()
+            if proof is None or not matches_current_email_proof(proof["code"], user.id, normalized_email, code):
+                raise ValueError("Invalid or expired verification code. Request a new code.")
+            user.email_verified = True
+            connection.execute(
+                "UPDATE auth_accounts SET user_payload=%s, updated_at=NOW() WHERE email=%s",
+                (self._jsonb(user.model_dump(mode="json")), normalized_email),
+            )
+            connection.execute(
+                "INSERT INTO auth_verified_emails(email) VALUES(%s) ON CONFLICT DO NOTHING",
+                (normalized_email,),
+            )
+            connection.execute("DELETE FROM auth_email_verification_codes WHERE email=%s", (normalized_email,))
+            return user
+
     def set_password_reset_code(self, email: str, code: str) -> None:
         self._upsert_code("auth_password_reset_codes", email, code)
 

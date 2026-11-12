@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.core.auth import require_authenticated_user
@@ -32,6 +32,15 @@ class SignupRequest(BaseModel):
 class VerifyEmailRequest(BaseModel):
     email: EmailStr
     code: str = Field(min_length=4, max_length=12)
+
+
+class CurrentEmailVerificationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class CurrentEmailVerificationConfirm(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: str = Field(pattern=r"^[0-9]{6}$")
 
 
 class PasswordResetRequest(BaseModel):
@@ -173,6 +182,52 @@ def request_password_reset(payload: PasswordResetRequest, request: Request):
         raise HTTPException(status_code=400, detail=str(error)) from error
     except RuntimeError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
+
+
+@router.post("/email-verification/request")
+def request_current_email_verification(
+    request: Request,
+    payload: CurrentEmailVerificationRequest | None = None,
+    user=Depends(require_authenticated_user),
+):
+    _limit_auth_request(
+        request, "current-email-request", user.email,
+        client_limit=12, account_limit=3, window_seconds=60 * 60,
+    )
+    api_rate_limiter.enforce(RateLimitRule(
+        scope="auth:current-email-request:global", key="all",
+        limit=80, window_seconds=60 * 60,
+    ))
+    try:
+        return store.request_current_email_verification(user)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        # Never expose mail-provider responses, credentials, codes, or storage
+        # details, and never claim delivery when sending/persistence failed.
+        raise HTTPException(status_code=503, detail="Could not send verification email right now. Please try again later.") from error
+
+
+@router.post("/email-verification/confirm")
+def confirm_current_email_verification(
+    payload: CurrentEmailVerificationConfirm,
+    request: Request,
+    user=Depends(require_authenticated_user),
+):
+    _limit_auth_request(
+        request, "current-email-confirm", user.email,
+        client_limit=30, account_limit=10, window_seconds=15 * 60,
+    )
+    api_rate_limiter.enforce(RateLimitRule(
+        scope="auth:current-email-confirm:global", key="all",
+        limit=1000, window_seconds=60 * 60,
+    ))
+    try:
+        return store.confirm_current_email_verification(user, payload.code)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=503, detail="Could not verify your email right now. Please try again later.") from error
 
 
 @router.post("/password-reset/confirm")

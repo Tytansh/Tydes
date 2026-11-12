@@ -345,6 +345,85 @@ class DemoStore:
         self._save_state()
         return self.user
 
+    def _current_verification_account(self, authenticated_user: User) -> User:
+        email = authenticated_user.email.strip().lower()
+        account = self._get_auth_account(email)
+        payload = account.get("user") if account is not None else None
+        if not isinstance(payload, dict):
+            raise ValueError("Your account is unavailable. Sign in again.")
+        current = User.model_validate(payload)
+        if current.id != authenticated_user.id or current.email.strip().lower() != email or current.banned:
+            raise ValueError("Your account is unavailable. Sign in again.")
+        return current
+
+    def request_current_email_verification(self, authenticated_user: User) -> dict[str, object]:
+        from app.core.current_email_verification import make_current_email_proof
+        current = self._current_verification_account(authenticated_user)
+        email = current.email.strip().lower()
+        if current.email_verified:
+            return {"sent": False, "already_verified": True, "verification_sent_to": email}
+        code = _generate_verification_code()
+        delivery = send_verification_email(email, code)
+        # This authenticated flow has no demo hint or bypass. Missing delivery
+        # configuration is a hard failure, not a successful verification email.
+        if not delivery.configured or not delivery.sent:
+            raise RuntimeError("Could not send verification email right now. Please try again later.")
+        proof = make_current_email_proof(current.id, email, code)
+        with self._state_lock:
+            self._current_verification_account(authenticated_user)
+            previous = self.email_verification_codes.get(email)
+            try:
+                self._set_email_verification_code(email, proof)
+                if self.postgres_auth is None:
+                    self._save_state()
+            except Exception:
+                if previous is None:
+                    self.email_verification_codes.pop(email, None)
+                else:
+                    self.email_verification_codes[email] = previous
+                raise
+        return {"sent": True, "verification_sent_to": email}
+
+    def confirm_current_email_verification(self, authenticated_user: User, code: str) -> User:
+        from copy import deepcopy
+        from app.core.current_email_verification import matches_current_email_proof
+        current = self._current_verification_account(authenticated_user)
+        email = current.email.strip().lower()
+        if current.email_verified:
+            return current
+        if self.postgres_auth is not None:
+            updated = self.postgres_auth.verify_current_account_email(current.id, email, code)
+            account = self.auth_accounts.get(email)
+            if account is not None:
+                account["user"] = updated.model_dump(mode="json")
+            self.verified_emails.add(email)
+            self.email_verification_codes.pop(email, None)
+            return updated
+        with self._state_lock:
+            current = self._current_verification_account(authenticated_user)
+            if current.email_verified:
+                return current
+            stored = self._get_email_verification_code(email)
+            if not matches_current_email_proof(stored, current.id, email, code):
+                raise ValueError("Invalid or expired verification code. Request a new code.")
+            account_before = deepcopy(self.auth_accounts[email])
+            verified_before = set(self.verified_emails)
+            updated = current.model_copy(update={"email_verified": True})
+            try:
+                self.auth_accounts[email]["user"] = updated.model_dump(mode="json")
+                self.verified_emails.add(email)
+                self.email_verification_codes.pop(email, None)
+                # Write the same authenticated identity, never a caller-supplied
+                # email or a temporary sign-in/account replacement.
+                with self.request_user_context(updated):
+                    self._save_state()
+            except Exception:
+                self.auth_accounts[email] = account_before
+                self.verified_emails = verified_before
+                self.email_verification_codes[email] = stored
+                raise
+            return updated
+
     def login_google(self, identity, locale: str = "en", *, allow_signup: bool = True) -> dict[str, object]:
         """Resolve Google's stable subject without replacing existing account data."""
         email = identity.email
@@ -2353,6 +2432,14 @@ class DemoStore:
                 if str(email).strip() and str(code).strip()
             }
 
+        verification_codes = data.get("email_verification_codes")
+        if isinstance(verification_codes, dict):
+            self.email_verification_codes = {
+                str(email).strip().lower(): code
+                for email, code in verification_codes.items()
+                if isinstance(code, str) and str(email).strip()
+            }
+
         auth_accounts = data.get("auth_accounts")
         if isinstance(auth_accounts, dict):
             self.auth_accounts = {
@@ -2423,6 +2510,7 @@ class DemoStore:
             "waitlist_emails": self.waitlist_emails,
             "verified_emails": sorted(self.verified_emails),
             "password_reset_codes": self.password_reset_codes,
+            "email_verification_codes": self.email_verification_codes,
             "auth_accounts": self.auth_accounts,
             "billing_webhook_receipts": self.billing_webhook_receipts,
             "session_tokens": self.session_tokens,
