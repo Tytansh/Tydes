@@ -17,6 +17,10 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
 from app.core.email_sender import send_password_reset_email, send_verification_email
+from app.core.feed_pagination import (
+    FEED_PAGE_MAX_SIZE, FeedEntry, FeedPage, decode_feed_cursor,
+    feed_datetime, feed_position, finish_feed_page,
+)
 from app.core.models import (
     AdCard,
     Alert,
@@ -1723,6 +1727,49 @@ class DemoStore:
             for post in posts
         ]
 
+    def list_feed_page(self, viewer_id: str, *, limit: int = 25, cursor: str | None = None) -> FeedPage:
+        if not 1 <= limit <= FEED_PAGE_MAX_SIZE:
+            raise ValueError("Invalid feed page size.")
+        window = decode_feed_cursor(cursor, viewer_id)
+        if self.postgres_social is not None:
+            entries = self.postgres_social.list_feed_entries(viewer_id, window=window, limit=limit + 1)
+        else:
+            visible_posts, _blocked = self._local_feed_visible_posts(viewer_id)
+            visible = {
+                post.id: post for post in visible_posts.values()
+                if feed_datetime(post.created_at) <= window.snapshot_at
+            }
+            entries = [
+                FeedEntry(entry_id=f"post:{post.id}", post=post, kind="post", activity_at=feed_datetime(post.created_at))
+                for post in visible.values()
+            ]
+            entries.extend(
+                FeedEntry(entry_id=f"repost:{repost.post_id}", post=visible[repost.post_id], kind="repost",
+                          activity_at=feed_datetime(repost.created_at))
+                for repost in (self.reposts if viewer_id == self._default_user.id else ())
+                if repost.post_id in visible and feed_datetime(repost.created_at) <= window.snapshot_at
+            )
+            entries = sorted(
+                (entry for entry in entries if window.after is None or feed_position(entry).key < window.after.key),
+                key=lambda entry: feed_position(entry).key,
+                reverse=True,
+            )[:limit + 1]
+            entries = [entry.model_copy(update={"post": entry.post.model_copy(update={
+                "like_count": 0,
+                "repost_count": 0,
+                "rsvp_count": len(self.rsvp_user_ids_by_post.get(entry.post.id, set()) - {entry.post.user_id}),
+            })}) for entry in entries]
+        if not uses_local_media_storage():
+            entries = [entry.model_copy(update={"post": entry.post.model_copy(update={
+                "media": [media for media in entry.post.media if not is_legacy_backend_media_url(media.url)],
+            })}) for entry in entries]
+        page = finish_feed_page(entries, viewer_id=viewer_id, window=window, limit=limit)
+        scoped_ids = list(dict.fromkeys(entry.post.id for entry in page.items))
+        return page.model_copy(update={
+            "engagement": self.social_engagement_state(post_ids=set(scoped_ids)),
+            "scoped_post_ids": scoped_ids,
+        })
+
     def list_upcoming_events(self, *, limit: int = 300) -> list[SocialPost]:
         today = datetime.now(timezone.utc).date()
         if self.postgres_social is not None:
@@ -1807,36 +1854,56 @@ class DemoStore:
         self._save_state()
         return post
 
-    def social_engagement_state(self) -> SocialEngagementState:
+    def social_engagement_state(self, post_ids: set[str] | None = None) -> SocialEngagementState:
         if self.postgres_social is not None:
-            return self.postgres_social.engagement_state(self.user.id)
-        return self._local_social_engagement_state()
+            return self.postgres_social.engagement_state(self.user.id, post_ids=post_ids)
+        return self._local_social_engagement_state(post_ids=post_ids)
 
-    def _local_social_engagement_state(self) -> SocialEngagementState:
+    def _local_feed_visible_posts(self, viewer_id: str) -> tuple[dict[str, SocialPost], set[str]]:
+        from pathlib import Path
+        from app.core.direct_messages import JsonDirectMessageRepository
+
+        legacy_owner = viewer_id == self._default_user.id
+        # Legacy JSON sets have no owner column. Only the persisted local
+        # owner's requests may inherit them; another signed-in user fails closed.
+        blocked = set(self.blocked_user_ids) if legacy_owner else set()
+        blocked.update(JsonDirectMessageRepository(
+            Path(self.state_file).with_name("direct_messages.json")
+        ).blocked_users_either_direction(viewer_id))
+        followed = set(self.followed_user_ids) if legacy_owner else set()
+        return ({post.id: post for post in self.posts if post.user_id not in blocked
+                 and (post.visibility == "public" or post.user_id == viewer_id or post.user_id in followed)}, blocked)
+
+    def _local_social_engagement_state(self, post_ids: set[str] | None = None) -> SocialEngagementState:
+        visible, blocked = self._local_feed_visible_posts(self.user.id)
+        legacy_owner = self.user.id == self._default_user.id
+        allowed = set(visible) if post_ids is None else set(visible) & post_ids
+        comments = sorted(
+            (comment for comment in self.comments if comment.post_id in allowed and comment.user_id not in blocked),
+            key=lambda comment: (feed_datetime(comment.created_at), comment.id),
+            reverse=True,
+        )[:500]
+        allowed_comment_ids = {comment.id for comment in comments}
+        reposts = sorted(
+            (repost for repost in self.reposts if legacy_owner and repost.post_id in allowed),
+            key=lambda repost: (feed_datetime(repost.created_at), repost.post_id), reverse=True,
+        )
         return SocialEngagementState(
-            liked_post_ids=sorted(self.liked_post_ids),
-            reposted_post_ids=[repost.post_id for repost in self.reposts],
-            reposts=sorted(
-                self.reposts,
-                key=lambda repost: repost.created_at,
-                reverse=True,
-            ),
-            liked_comment_ids=sorted(self.liked_comment_ids),
+            liked_post_ids=sorted(self.liked_post_ids & allowed) if legacy_owner else [],
+            reposted_post_ids=[repost.post_id for repost in reposts],
+            reposts=reposts,
+            liked_comment_ids=sorted(self.liked_comment_ids & allowed_comment_ids) if legacy_owner else [],
             rsvp_post_ids=sorted(
                 {
                     post_id
                     for post_id, user_ids in self.rsvp_user_ids_by_post.items()
-                    if self.user.id in user_ids
+                    if self.user.id in user_ids and post_id in allowed
                 } | {
-                    post.id for post in self.posts if post.user_id == self.user.id
+                    post.id for post in self.posts if post.id in allowed and post.user_id == self.user.id
                     and post.post_type in {"surf_plan", "looking_for_buddy"}
                 }
             ),
-            comments=sorted(
-                self.comments,
-                key=lambda comment: comment.created_at,
-                reverse=True,
-            ),
+            comments=comments,
         )
 
     def set_post_like(self, post_id: str, liked: bool) -> SocialEngagementState | None:

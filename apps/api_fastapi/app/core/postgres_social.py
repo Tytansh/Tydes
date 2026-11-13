@@ -15,6 +15,7 @@ from app.core.models import (
     SocialRepost,
     User,
 )
+from app.core.feed_pagination import FeedEntry, FeedWindow, feed_datetime
 
 
 class PostgresSocialRepository:
@@ -138,6 +139,79 @@ class PostgresSocialRepository:
             payload["rsvp_count"] = int(row["rsvp_count"])
             posts.append(SocialPost.model_validate(payload))
         return posts
+
+    def list_feed_entries(self, viewer_user_id: str, *, window: FeedWindow, limit: int) -> list[FeedEntry]:
+        """Keyset-bound candidates first; count engagement for at most one page."""
+        parameters: list[Any] = []
+
+        def candidate(kind: str) -> str:
+            activity = "posts.created_at" if kind == "post" else "activity.created_at"
+            source = "social_posts AS posts" if kind == "post" else "social_reposts AS activity JOIN social_posts AS posts ON posts.id = activity.post_id"
+            query = f"""
+                SELECT posts.id AS post_id, posts.user_id, posts.payload,
+                       {activity} AS activity_at, '{kind}' AS kind
+                FROM {source}
+                WHERE posts.created_at <= %s AND {activity} <= %s
+                  AND (posts.payload->>'visibility' = 'public' OR posts.user_id = %s OR EXISTS (
+                      SELECT 1 FROM social_follows
+                      WHERE follower_user_id = %s AND followed_user_id = posts.user_id
+                  ))
+                  AND NOT EXISTS (
+                      SELECT 1 FROM social_blocks
+                      WHERE (user_id = %s AND blocked_user_id = posts.user_id)
+                         OR (blocked_user_id = %s AND user_id = posts.user_id)
+                  )
+            """
+            parameters.extend([window.snapshot_at, window.snapshot_at, viewer_user_id,
+                               viewer_user_id, viewer_user_id, viewer_user_id])
+            if kind == "repost":
+                query += " AND activity.user_id = %s"
+                parameters.append(viewer_user_id)
+            if window.after is not None:
+                query += f" AND ({activity}, '{kind}', posts.id) < (%s, %s, %s)"
+                parameters.extend([window.after.activity_at, window.after.kind, window.after.post_id])
+            query += f" ORDER BY {activity} DESC, posts.id DESC LIMIT %s"
+            parameters.append(limit)
+            return query
+
+        posts = candidate("post")
+        reposts = candidate("repost")
+        query = f"""
+            WITH original_candidates AS ({posts}),
+                 repost_candidates AS ({reposts}),
+                 candidates AS (
+                    SELECT * FROM (
+                        SELECT * FROM original_candidates
+                        UNION ALL
+                        SELECT * FROM repost_candidates
+                    ) AS activities
+                    ORDER BY activity_at DESC, kind DESC, post_id DESC LIMIT %s
+                 )
+            SELECT candidates.payload, candidates.activity_at, candidates.kind,
+                (SELECT COUNT(*) FROM social_post_likes
+                 WHERE post_id = candidates.post_id AND user_id <> %s) AS like_count,
+                (SELECT COUNT(*) FROM social_reposts
+                 WHERE post_id = candidates.post_id AND user_id <> %s) AS repost_count,
+                (SELECT COUNT(*) FROM social_rsvps
+                 WHERE post_id = candidates.post_id AND user_id <> candidates.user_id) AS rsvp_count
+            FROM candidates
+            ORDER BY candidates.activity_at DESC, candidates.kind DESC, candidates.post_id DESC
+        """
+        parameters.extend([limit, viewer_user_id, viewer_user_id])
+        with self._connect() as connection:
+            rows = connection.execute(query, tuple(parameters)).fetchall()
+        entries = []
+        for row in rows:
+            payload = _payload_dict(row["payload"])
+            payload.update(like_count=int(row["like_count"]), repost_count=int(row["repost_count"]),
+                           rsvp_count=int(row["rsvp_count"]))
+            post = SocialPost.model_validate(payload)
+            activity_at = row["activity_at"]
+            if isinstance(activity_at, str):
+                activity_at = datetime.fromisoformat(activity_at)
+            entries.append(FeedEntry(entry_id=f"{row['kind']}:{post.id}", post=post,
+                                     kind=row["kind"], activity_at=feed_datetime(activity_at)))
+        return entries
 
     def list_public_events(self, today: date, limit: int = 100) -> list[tuple[SocialPost, User]]:
         # No viewer state, engagement aggregates or per-event author queries.
@@ -737,47 +811,93 @@ class PostgresSocialRepository:
             ],
         }
 
-    def engagement_state(self, user_id: str) -> SocialEngagementState:
+    def engagement_state(self, user_id: str, post_ids: set[str] | None = None) -> SocialEngagementState:
+        if post_ids is not None and not post_ids:
+            return SocialEngagementState()
+
+        def visible_posts() -> tuple[str, list[Any]]:
+            predicate = """
+                (posts.payload->>'visibility' = 'public' OR posts.user_id = %s OR EXISTS (
+                    SELECT 1 FROM social_follows
+                    WHERE follower_user_id = %s AND followed_user_id = posts.user_id
+                ))
+                AND NOT EXISTS (
+                    SELECT 1 FROM social_blocks
+                    WHERE (user_id = %s AND blocked_user_id = posts.user_id)
+                       OR (blocked_user_id = %s AND user_id = posts.user_id)
+                )
+            """
+            values: list[Any] = [user_id, user_id, user_id, user_id]
+            if post_ids is not None:
+                ids = sorted(post_ids)
+                predicate += " AND posts.id IN (" + ",".join("%s" for _ in ids) + ")"
+                values.extend(ids)
+            return predicate, values
+
+        def visible_comments() -> tuple[str, list[Any]]:
+            predicate, values = visible_posts()
+            predicate += """
+                AND NOT EXISTS (
+                    SELECT 1 FROM social_blocks
+                    WHERE (user_id = %s AND blocked_user_id = comments.user_id)
+                       OR (blocked_user_id = %s AND user_id = comments.user_id)
+                )
+            """
+            return predicate, values + [user_id, user_id]
+
+        post_predicate, post_values = visible_posts()
+        comment_predicate, comment_values = visible_comments()
         with self._connect() as connection:
             liked_posts = connection.execute(
-                """
-                SELECT post_id FROM social_post_likes
-                WHERE user_id = %s
-                ORDER BY post_id
+                f"""
+                SELECT likes.post_id FROM social_post_likes AS likes
+                JOIN social_posts AS posts ON posts.id = likes.post_id
+                WHERE likes.user_id = %s AND {post_predicate}
+                ORDER BY likes.post_id
                 """,
-                (user_id,),
+                (user_id, *post_values),
             ).fetchall()
             repost_rows = connection.execute(
-                """
-                SELECT post_id, created_at FROM social_reposts
-                WHERE user_id = %s
-                ORDER BY created_at DESC
+                f"""
+                SELECT reposts.post_id, reposts.created_at FROM social_reposts AS reposts
+                JOIN social_posts AS posts ON posts.id = reposts.post_id
+                WHERE reposts.user_id = %s AND {post_predicate}
+                ORDER BY reposts.created_at DESC, reposts.post_id DESC
                 """,
-                (user_id,),
+                (user_id, *post_values),
             ).fetchall()
+            comment_rows = connection.execute(
+                f"""
+                SELECT comments.payload FROM social_comments AS comments
+                JOIN social_posts AS posts ON posts.id = comments.post_id
+                WHERE {comment_predicate}
+                ORDER BY comments.created_at DESC, comments.id DESC LIMIT 500
+                """,
+                tuple(comment_values),
+            ).fetchall()
+            visible_comment_ids = [_payload_dict(row["payload"])["id"] for row in comment_rows]
             liked_comments = connection.execute(
-                """
-                SELECT comment_id FROM social_comment_likes
-                WHERE user_id = %s
-                ORDER BY comment_id
-                """,
-                (user_id,),
-            ).fetchall()
+                "SELECT comment_id FROM social_comment_likes WHERE user_id = %s AND comment_id IN ("
+                + ",".join("%s" for _ in visible_comment_ids) + ") ORDER BY comment_id",
+                (user_id, *visible_comment_ids),
+            ).fetchall() if visible_comment_ids else []
             rsvp_rows = connection.execute(
-                """
-                SELECT post_id FROM social_rsvps
-                WHERE user_id = %s
+                f"""
+                SELECT rsvps.post_id FROM social_rsvps AS rsvps
+                JOIN social_posts AS posts ON posts.id = rsvps.post_id
+                WHERE rsvps.user_id = %s AND {post_predicate}
                 UNION
-                SELECT id AS post_id FROM social_posts
-                WHERE user_id = %s AND payload->>'post_type' IN ('surf_plan', 'looking_for_buddy')
+                SELECT posts.id AS post_id FROM social_posts AS posts
+                WHERE posts.user_id = %s AND posts.payload->>'post_type' IN ('surf_plan', 'looking_for_buddy')
+                  AND {post_predicate}
                 ORDER BY post_id
                 """,
-                (user_id, user_id),
+                (user_id, *post_values, user_id, *post_values),
             ).fetchall()
         reposts = [
             SocialRepost(
                 post_id=row["post_id"],
-                created_at=_aware_datetime(row["created_at"]),
+                created_at=feed_datetime(datetime.fromisoformat(row["created_at"]) if isinstance(row["created_at"], str) else row["created_at"]),
             )
             for row in repost_rows
         ]
@@ -787,7 +907,7 @@ class PostgresSocialRepository:
             reposts=reposts,
             liked_comment_ids=[row["comment_id"] for row in liked_comments],
             rsvp_post_ids=[row["post_id"] for row in rsvp_rows],
-            comments=self.list_comments(),
+            comments=[SocialComment.model_validate(_payload_dict(row["payload"])) for row in comment_rows],
         )
 
     def update_author_snapshots(self, user: User) -> None:
@@ -963,6 +1083,9 @@ class PostgresSocialRepository:
                 "CREATE INDEX IF NOT EXISTS social_posts_created_at_idx ON social_posts (created_at DESC)"
             )
             connection.execute(
+                "CREATE INDEX IF NOT EXISTS social_posts_feed_cursor_idx ON social_posts (created_at DESC, id DESC)"
+            )
+            connection.execute(
                 "CREATE INDEX IF NOT EXISTS social_posts_user_id_idx ON social_posts (user_id)"
             )
             connection.execute(
@@ -985,6 +1108,9 @@ class PostgresSocialRepository:
             )
             self._create_user_post_table(connection, "social_post_likes")
             self._create_user_post_table(connection, "social_reposts")
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS social_reposts_feed_cursor_idx ON social_reposts (user_id, created_at DESC, post_id DESC)"
+            )
             self._create_user_post_table(connection, "social_rsvps")
             connection.execute(
                 """

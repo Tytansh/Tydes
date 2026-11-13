@@ -2180,7 +2180,9 @@ def test_social_feed_and_create_post(monkeypatch):
         headers={"Authorization": f"Bearer {actor_token}"},
     )
     assert actor_like_response.status_code == 200
-    assert post_id in actor_like_response.json()["liked_post_ids"]
+    # The JSON fallback's legacy engagement sets have no account owner column.
+    # Do not expose them as personal state for another signed-in account.
+    assert actor_like_response.json()["liked_post_ids"] == []
 
     report_response = client.post(
         "/api/v1/social/reports",

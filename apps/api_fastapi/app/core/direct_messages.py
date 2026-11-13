@@ -182,6 +182,13 @@ class JsonDirectMessageRepository:
         with self._state() as state:
             return list(state.get("blocks", {}).get(user_id, []))
 
+    def blocked_users_either_direction(self, user_id: str) -> set[str]:
+        with self._state() as state:
+            blocks = state.get("blocks", {})
+            return set(blocks.get(user_id, [])) | {
+                owner for owner, peers in blocks.items() if user_id in peers
+            }
+
 
 def _unread(thread: dict, user_id: str) -> int:
     participant = thread["participants"][user_id]

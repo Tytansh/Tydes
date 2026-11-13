@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.core.auth import optional_authenticated_user, require_authenticated_user
 from app.core.bunny_stream import BunnyStreamClient, bunny_stream_enabled
 from app.core.email_sender import send_moderation_report_email
+from app.core.feed_pagination import FEED_CURSOR_MAX_LENGTH, FEED_PAGE_MAX_SIZE, FeedPage
 from app.core.media_cleanup import queue_post_media_deletion, run_media_cleanup
 from app.core.media_storage import R2MediaStorage, configured_media_storage
 from app.core.media_uploads import (
@@ -138,6 +139,20 @@ def list_posts(
     current_user = optional_authenticated_user(request)
     current_user_id = current_user.id if current_user is not None else None
     return list(store.list_posts(current_user_id=current_user_id, limit=limit))
+
+
+@router.get("/feed", response_model=FeedPage)
+def list_feed(
+    request: Request,
+    limit: int = Query(default=25, ge=1, le=FEED_PAGE_MAX_SIZE),
+    cursor: str | None = Query(default=None, max_length=FEED_CURSOR_MAX_LENGTH),
+    user=Depends(require_authenticated_user),
+):
+    _limit_public_read(request, "feed", limit=240)
+    try:
+        return store.list_feed_page(user.id, limit=limit, cursor=cursor)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="Invalid feed cursor. Refresh the feed and try again.") from error
 
 
 @router.get("/engagement")
