@@ -154,7 +154,7 @@ cached-start blocking work, adaptive mobile video delivery, and an actual
 iPhone Safari frame/interaction benchmark. No additional paid product is
 required to investigate those items.
 
-## Playback follow-up — 13 November 2026 (not yet published)
+## Playback follow-up — 13 November 2026 (published)
 
 The live player was observing only its nearest Scrollable, which is the
 horizontal photo/video carousel, not the outer vertical feed. This prevented
@@ -162,7 +162,7 @@ scrolling from triggering both visible autoplay and off-screen silence. A live
 390 × 844 check showed a loaded, ready video still paused at 0 seconds after
 scrolling fully into view.
 
-The working-tree repair observes all enclosing scroll positions, clips playback
+The published repair observes all enclosing scroll positions, clips playback
 visibility to actual painted viewports, starts new controllers muted, and
 reconciles playback after every asynchronous command. It immediately mutes and
 pauses off-screen/hidden players even when a play promise is pending. Browser
@@ -181,12 +181,20 @@ billing-plugin, public-page, and appearance checks pass. Initial JS is 4,732,906
 bytes (1,352,568 gzip bytes). Release output is available locally at
 `/private/tmp/tydes-feed-playback-fixed`; the Site checkout's `dist/` contains it.
 
-Publication is blocked by the Sites service response: `Sites Git is not yet
-enabled for this client`. The Sites plugin is installed/enabled, but it cannot
-mint source access here. No new Site version was saved/deployed, and live
-version 93 remains unchanged. Do not claim this repair is live until the existing
-Site source is pushed and a new native deployment succeeds in a supported
-Sites session. See [official Sites guidance](https://learn.chatgpt.com/docs/sites/creating-a-site).
+Published as Site version 94 at 2026-11-13 04:59 UTC after source access recovered.
+Site source commit: `b2b1d7eda723484f436398870587d900a5481e88`.
+Deployment: `appgdep_6af699139a388191b73b81732f27de0f` (succeeded).
+The public `https://tydes.io/main.dart.js` matches the tested release SHA-256:
+`322ba1e700f8a51963d295357c3785cc9ca5c20f5d20cefb2f6902656bf0b30b`.
+
+Live Chrome verification at 390 × 844 showed an existing feed video advancing
+without a play tap, initially muted (`paused: false`, `readyState: 4`). After
+unmuting and scrolling away, the old video element was removed. Returning to
+the video resumed playback; switching to Profile left its retained HTML video
+paused and muted. Returning to Feed resumed playback again. The browser was
+left muted and its temporary viewport override reset. Evidence:
+`output/tydes-feed-playback-live.png` (local only). This does not certify iPhone
+Safari performance or establish a sustained 60 FPS result.
 
 A local release browser check used the production player and retained-tab stack
 inside the same nested vertical-list/horizontal-carousel structure, with an
