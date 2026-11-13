@@ -4,7 +4,8 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show RenderViewport, RenderShrinkWrappingViewport;
+import 'package:flutter/rendering.dart'
+    show RenderViewport, RenderShrinkWrappingViewport;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image/image.dart' deferred as image_tools;
@@ -14,6 +15,8 @@ import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../app/router.dart';
+import '../../core/media/native_hls_support.dart';
+import '../../core/media/video_playback_sources.dart';
 import '../../core/moderation/content_moderation.dart';
 import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
@@ -2595,11 +2598,16 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
               itemBuilder: (context, index) {
                 final item = media[index];
                 if (item.mediaType == 'video') {
+                  final sources = videoPlaybackSources(
+                    url: item.url,
+                    fallbackUrl: item.fallbackUrl,
+                    isWeb: kIsWeb,
+                    supportsNativeHls: kIsWeb && nativeHlsPlaybackSupported(),
+                  );
                   return AutoplayVideoPlayer(
                     key: ValueKey(item.id),
-                    url: kIsWeb && item.fallbackUrl != null
-                        ? item.fallbackUrl!
-                        : item.url,
+                    url: sources.primary,
+                    fallbackUrl: sources.fallback,
                     thumbnailUrl: item.thumbnailUrl,
                     borderRadius: 0,
                     expand: true,
@@ -2814,6 +2822,7 @@ class AutoplayVideoPlayer extends ConsumerStatefulWidget {
   const AutoplayVideoPlayer({
     super.key,
     required this.url,
+    this.fallbackUrl,
     this.thumbnailUrl,
     this.borderRadius = 18,
     this.expand = false,
@@ -2823,6 +2832,7 @@ class AutoplayVideoPlayer extends ConsumerStatefulWidget {
   });
 
   final String url;
+  final String? fallbackUrl;
   final String? thumbnailUrl;
   final double borderRadius;
   final bool expand;
@@ -2855,6 +2865,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
   bool _lastPlaying = false;
   bool _lastBuffering = false;
   bool _disposing = false;
+  bool _usingFallback = false;
   int _playbackRevision = 0;
   int _completedLoops = 0;
   Duration _lastVideoPosition = Duration.zero;
@@ -2873,7 +2884,10 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
   @override
   void didUpdateWidget(covariant AutoplayVideoPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.url != widget.url) {
+    final sourceChanged =
+        oldWidget.url != widget.url ||
+        oldWidget.fallbackUrl != widget.fallbackUrl;
+    if (sourceChanged) {
       _loadGeneration++;
       final previous = _controller;
       _controller = null;
@@ -2884,6 +2898,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
       _soundNeedsGesture = false;
       _policyRetryAttempted = false;
       _hasStartedPlayback = false;
+      _usingFallback = false;
       _playbackRevision++;
       previous?.removeListener(_handleVideoProgress);
       _silence(previous);
@@ -2894,7 +2909,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
       _silence(_controller);
       return;
     }
-    if (!oldWidget.active || oldWidget.url != widget.url) {
+    if (!oldWidget.active || sourceChanged) {
       _userPaused = false;
       _completedLoops = 0;
       _lastVideoPosition = Duration.zero;
@@ -3147,7 +3162,11 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
     }
   }
 
-  void _handlePlaybackError(VideoPlayerController controller, {Object? error}) {
+  void _handlePlaybackError(
+    VideoPlayerController controller, {
+    Object? error,
+    bool initializationFailed = false,
+  }) {
     if (!mounted || _disposing || !identical(_controller, controller)) return;
     final description =
         '${controller.value.errorDescription ?? ''} ${error ?? ''}'
@@ -3161,10 +3180,35 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
         description.contains('user activation') ||
         description.contains('user gesture');
     final retryMuted = policyError && !_policyRetryAttempted;
+    final sourceError =
+        initializationFailed ||
+        // video_player retains only PlatformException.message in its value,
+        // dropping the web media-error code. Treat that error event as a source
+        // failure, but exclude gesture/policy denials above from failover.
+        controller.value.hasError ||
+        description.contains('media_err_network') ||
+        description.contains('media_err_decode') ||
+        description.contains('media_err_src_not_supported') ||
+        description.contains('notsupportederror');
+    final fallbackUrl = widget.fallbackUrl;
+    final retryFallback =
+        !policyError &&
+        sourceError &&
+        !_usingFallback &&
+        fallbackUrl != null &&
+        fallbackUrl.trim().isNotEmpty &&
+        fallbackUrl != widget.url;
     if (retryMuted) {
       _policyRetryAttempted = true;
       _soundNeedsGesture = true;
       _soundGestureAuthorized = false;
+    }
+    if (retryFallback) {
+      // Try only the API-supplied alternative, once. A new element still starts
+      // muted, and visibility/lifecycle checks govern whether it may play.
+      _usingFallback = true;
+      _soundGestureAuthorized = false;
+      _lastVideoPosition = Duration.zero;
     }
     _playbackRevision++;
     _loadGeneration++;
@@ -3176,9 +3220,9 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
       _loadRequested = false;
       _initializing = false;
       _hasStartedPlayback = false;
-      _videoFailed = !retryMuted;
+      _videoFailed = !retryMuted && !retryFallback;
     });
-    if (retryMuted) _scheduleVisibilityCheck();
+    if (retryMuted || retryFallback) _scheduleVisibilityCheck();
   }
 
   Widget _fittedVideo(VideoPlayerController controller) {
@@ -3210,7 +3254,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
     });
 
     final controller = VideoPlayerController.networkUrl(
-      Uri.parse(widget.url),
+      Uri.parse(_usingFallback ? widget.fallbackUrl! : widget.url),
       videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
     );
     _controller = controller;
@@ -3224,16 +3268,13 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
       controller.addListener(_handleVideoProgress);
       setState(() => _initializing = false);
       _syncPlaybackToVisibility();
-    } catch (_) {
-      if (!mounted || generation != _loadGeneration) return;
-      await controller.dispose();
-      if (!mounted || generation != _loadGeneration) return;
-      setState(() {
-        _controller = null;
-        _loadRequested = false;
-        _initializing = false;
-        _videoFailed = true;
-      });
+    } catch (error) {
+      if (!_isCurrent(controller, generation)) return;
+      _handlePlaybackError(
+        controller,
+        error: error,
+        initializationFailed: true,
+      );
     }
   }
 

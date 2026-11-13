@@ -16,6 +16,7 @@ class _RecordingVideoPlatform extends VideoPlayerPlatform {
   final volumes = <int, double>{};
   final playing = <int>{};
   final volumesAtPlay = <double>[];
+  final sources = <String>[];
   bool initializeImmediately = true;
   Completer<void>? pendingPlay;
   final pendingPlays = <int, Completer<void>>{};
@@ -33,6 +34,7 @@ class _RecordingVideoPlatform extends VideoPlayerPlatform {
       },
     );
     volumes[id] = 1;
+    sources.add(options.dataSource.uri!);
     calls.add('create:$id');
     if (initializeImmediately) initialize(id);
     await pendingCreations[id]?.future;
@@ -53,6 +55,16 @@ class _RecordingVideoPlatform extends VideoPlayerPlatform {
     playing.remove(playerId);
     streams[playerId]!.addError(
       PlatformException(code: 'VideoError', message: message),
+    );
+  }
+
+  void failSource(int playerId) {
+    playing.remove(playerId);
+    streams[playerId]!.addError(
+      PlatformException(
+        code: 'MEDIA_ERR_NETWORK',
+        message: 'The media source could not be loaded.',
+      ),
     );
   }
 
@@ -108,6 +120,7 @@ Widget _feedHost({
   double topSpacer = 120,
   GlobalKey<NavigatorState>? navigatorKey,
   String url = 'https://video.example.invalid/clip.mp4',
+  String? fallbackUrl,
 }) => ProviderScope(
   overrides: [videoSoundEnabledProvider.overrideWith((ref) => soundEnabled)],
   child: MaterialApp(
@@ -133,7 +146,12 @@ Widget _feedHost({
               // position must still control playback and clipping visibility.
               child: PageView(
                 children: [
-                  AutoplayVideoPlayer(key: _videoKey, url: url, expand: true),
+                  AutoplayVideoPlayer(
+                    key: _videoKey,
+                    url: url,
+                    fallbackUrl: fallbackUrl,
+                    expand: true,
+                  ),
                 ],
               ),
             ),
@@ -168,6 +186,8 @@ Future<void> _mountFeed(
   bool soundEnabled = false,
   double topSpacer = 120,
   GlobalKey<NavigatorState>? navigatorKey,
+  String url = 'https://video.example.invalid/clip.mp4',
+  String? fallbackUrl,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = const Size(400, 800);
@@ -192,6 +212,8 @@ Future<void> _mountFeed(
       soundEnabled: soundEnabled,
       topSpacer: topSpacer,
       navigatorKey: navigatorKey,
+      url: url,
+      fallbackUrl: fallbackUrl,
     ),
   );
   await _flushPlayback(tester);
@@ -208,6 +230,10 @@ Future<void> _enableSound(
 }
 
 void main() {
+  const hls =
+      'https://video.example.invalid/clip/playlist.m3u8?token=A%2FB&expires=123';
+  const fallback =
+      'https://video.example.invalid/clip/play_720p.mp4?token=C%2FD&expires=456';
   late VideoPlayerPlatform original;
   late _RecordingVideoPlatform platform;
 
@@ -223,6 +249,225 @@ void main() {
       await stream.close();
     }
   });
+
+  testWidgets('HLS initialization failure tries the supplied MP4 once', (
+    tester,
+  ) async {
+    platform.initializeImmediately = false;
+    await _mountFeed(
+      tester,
+      platform,
+      scrollController: ScrollController(),
+      url: hls,
+      fallbackUrl: fallback,
+    );
+    platform.failSource(0);
+    await _flushPlayback(tester);
+    platform.initialize(1);
+    await _flushPlayback(tester);
+    await _flushDisposals(tester);
+
+    expect(platform.sources, [hls, fallback]);
+    expect(platform.calls, contains('dispose:0'));
+    expect(platform.playing, {1});
+    expect(platform.volumesAtPlay, everyElement(0));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('runtime media failure falls back but never cycles to HLS', (
+    tester,
+  ) async {
+    final scrollController = ScrollController();
+    await _mountFeed(
+      tester,
+      platform,
+      scrollController: scrollController,
+      url: hls,
+      fallbackUrl: fallback,
+    );
+    platform.failSource(0);
+    await _flushPlayback(tester);
+    expect(platform.sources, [hls, fallback]);
+    expect(platform.playing, {1});
+
+    platform.failSource(1);
+    await _flushPlayback(tester);
+    scrollController.jumpTo(520);
+    await _flushPlayback(tester);
+    scrollController.jumpTo(0);
+    await _flushPlayback(tester);
+    expect(platform.sources, [hls, fallback]);
+    expect(platform.playing, isEmpty);
+    expect(find.byIcon(Icons.videocam_off_outlined), findsOneWidget);
+
+    await tester.tap(find.byKey(_videoKey));
+    await _flushPlayback(tester);
+    expect(platform.sources, [hls, fallback, fallback]);
+    expect(platform.playing, {2});
+  });
+
+  testWidgets('autoplay denial retries HLS muted without downloading MP4', (
+    tester,
+  ) async {
+    await _mountFeed(
+      tester,
+      platform,
+      scrollController: ScrollController(),
+      soundEnabled: true,
+      url: hls,
+      fallbackUrl: fallback,
+    );
+    const denial = 'NotAllowedError: autoplay requires a user gesture';
+    platform.denyAutoplay(0, denial);
+    await _flushPlayback(tester);
+    expect(platform.sources, [hls, hls]);
+    expect(platform.volumes[1], 0);
+    platform.denyAutoplay(1, denial);
+    await _flushPlayback(tester);
+    expect(platform.sources, [hls, hls]);
+    expect(platform.playing, isEmpty);
+  });
+
+  testWidgets(
+    'offscreen initialization failure defers fallback until visible',
+    (tester) async {
+      platform.initializeImmediately = false;
+      final scrollController = ScrollController();
+      await _mountFeed(
+        tester,
+        platform,
+        scrollController: scrollController,
+        url: hls,
+        fallbackUrl: fallback,
+      );
+      scrollController.jumpTo(1000);
+      await _flushPlayback(tester);
+      platform.failSource(0);
+      await _flushPlayback(tester);
+      expect(platform.sources, [hls]);
+      expect(platform.playing, isEmpty);
+
+      scrollController.jumpTo(0);
+      await _flushPlayback(tester);
+      platform.initialize(1);
+      await _flushPlayback(tester);
+      expect(platform.sources, [hls, fallback]);
+      expect(platform.playing, {1});
+      expect(platform.volumesAtPlay, everyElement(0));
+    },
+  );
+
+  testWidgets('fallback video retains offscreen and hidden-route silence', (
+    tester,
+  ) async {
+    final scrollController = ScrollController();
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await _mountFeed(
+      tester,
+      platform,
+      scrollController: scrollController,
+      navigatorKey: navigatorKey,
+      soundEnabled: true,
+      url: hls,
+      fallbackUrl: fallback,
+    );
+    platform.failSource(0);
+    await _flushPlayback(tester);
+    expect(platform.playing, {1});
+    expect(platform.volumes[1], 1);
+    scrollController.jumpTo(520);
+    await _flushPlayback(tester);
+    expect(platform.playing, isEmpty);
+    expect(platform.volumes[1], 0);
+    scrollController.jumpTo(0);
+    await _flushPlayback(tester);
+    expect(platform.playing, {1});
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await _flushPlayback(tester);
+    expect(platform.playing, isEmpty);
+    expect(platform.volumes[1], 0);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await _flushPlayback(tester);
+    expect(platform.playing, {1});
+
+    unawaited(
+      navigatorKey.currentState!.push<void>(
+        MaterialPageRoute<void>(
+          builder: (context) => const Scaffold(body: Text('Another route')),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await _flushPlayback(tester);
+    expect(platform.playing, isEmpty);
+    expect(platform.volumes[1], 0);
+  });
+
+  testWidgets('changing an attachment resets its bounded fallback state', (
+    tester,
+  ) async {
+    final scrollController = ScrollController();
+    await _mountFeed(
+      tester,
+      platform,
+      scrollController: scrollController,
+      url: hls,
+      fallbackUrl: fallback,
+    );
+    platform.failSource(0);
+    await _flushPlayback(tester);
+    await tester.pumpWidget(
+      _feedHost(
+        scrollController: scrollController,
+        url: hls,
+        fallbackUrl: '$fallback&updated=1',
+      ),
+    );
+    await _flushPlayback(tester);
+    expect(platform.sources, [hls, fallback, hls]);
+    platform.failSource(2);
+    await _flushPlayback(tester);
+    expect(platform.sources, [hls, fallback, hls, '$fallback&updated=1']);
+    expect(platform.playing, {3});
+  });
+
+  testWidgets(
+    'stale HLS play failure cannot fail over a replacement attachment',
+    (tester) async {
+      final stalePlay = Completer<void>();
+      platform.pendingPlays[0] = stalePlay;
+      final scrollController = ScrollController();
+      await _mountFeed(
+        tester,
+        platform,
+        scrollController: scrollController,
+        url: hls,
+        fallbackUrl: fallback,
+      );
+      final replacement = '$hls&replacement=1';
+      await tester.pumpWidget(
+        _feedHost(
+          scrollController: scrollController,
+          url: replacement,
+          fallbackUrl: '$fallback&replacement=1',
+        ),
+      );
+      await _flushPlayback(tester);
+      stalePlay.completeError(
+        PlatformException(
+          code: 'NotSupportedError',
+          message: 'Media unsupported',
+        ),
+      );
+      await _flushPlayback(tester);
+      await _flushDisposals(tester);
+      expect(platform.sources, [hls, replacement]);
+      expect(platform.playing, {1});
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'visible feed autoplays muted even with sound preference enabled',

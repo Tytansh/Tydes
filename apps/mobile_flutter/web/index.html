@@ -31,6 +31,15 @@
   <link rel="preconnect" href="https://media.tydes.io" crossorigin>
   <link rel="preload" as="script" href="main.dart.js">
   <link rel="preload" as="image" href="assets/assets/branding/tydes-wave-blue-256.png" fetchpriority="high">
+  <!-- Flutter fetches these as bytes, not CSS fonts. Discover its first-frame
+       manifests/fonts before the app script finishes, using the same request
+       mode as fetch() so the engine can reuse the preload responses. -->
+  <link rel="preload" as="fetch" href="assets/FontManifest.json" crossorigin="anonymous">
+  <link rel="preload" as="fetch" href="assets/AssetManifest.bin.json" crossorigin="anonymous">
+  <link rel="preload" as="fetch" href="assets/fonts/MaterialIcons-Regular.otf" crossorigin="anonymous">
+  <link rel="preload" as="fetch" href="assets/assets/fonts/Pacifico-Regular.ttf" crossorigin="anonymous">
+  <link rel="preload" as="fetch" href="assets/assets/fonts/Sora-Variable.ttf" crossorigin="anonymous">
+  <link rel="preload" as="fetch" href="assets/packages/cupertino_icons/assets/CupertinoIcons.ttf" crossorigin="anonymous">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -115,15 +124,9 @@
       <span>Loading surf spots and forecasts…</span>
     </div>
   </div>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
-
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
-  <script src="flutter_bootstrap.js" async></script>
+  <!-- Flutter expands this supported token at build time. Inlining removes
+       a sequential bootstrap request without changing engine configuration. -->
+  <script>{{flutter_bootstrap_js}}</script>
   <script>
     window.addEventListener('flutter-first-frame', function () {
       const loader = document.getElementById('tydes-loader');
