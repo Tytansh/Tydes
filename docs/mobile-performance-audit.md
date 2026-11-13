@@ -321,3 +321,94 @@ iPhone CPU performance, or sustained 60 FPS. Local screenshots:
 
 Implementation references: [Flutter web initialization](https://docs.flutter.dev/platform-integration/web/initialization)
 and [Apple HTTP Live Streaming](https://developer.apple.com/streaming/).
+
+## On-demand maps, logo reuse and lazy own-profile posts — version 98
+
+Published 13 November 2026, 07:44:55 UTC. This increment keeps the design,
+post sizing, account/verification gates, billing, map controls/events and media
+playback behaviour intact. No provider plan, credentials, security settings or
+customer content changed.
+
+### Measured changes
+
+1. **Map code is downloaded on demand on the web.** Both the guest and signed-in
+   map entrypoints share one deferred module. Native navigation remains
+   synchronous. The web loader shares concurrent downloads, retains loaded page
+   state, caches code only (not account data), and permits retry after failure.
+   A release guard checks that both map entrypoints remain outside initial JS.
+   The 158,477-byte map chunk was absent from both live feed startup waterfalls,
+   then loaded successfully when opening the map. The guest map was verified on
+   the already-allowed `http://127.0.0.1:4173` preview origin; the live signed-in
+   map retained the events and saved-spots switches. A preliminary 4198 preview
+   could load code but was not an allowed API origin; no CORS policy was relaxed.
+2. **The awaited logo no longer makes two differently classified requests.**
+   The old image preload was followed by a second Flutter Fetch around 570 ms
+   long in the before traces. Matching the preload to Fetch reuses the request.
+   Both before reports show two logo requests, both after reports show one.
+   The local server also observed one logo GET. Logo readiness, the inline
+   branded loader and theme-first behaviour remain unchanged.
+3. **Own-profile posts are now lazy rows.** The previous single Column mounted
+   every post and its media. At 390x844, a 100-photo fixture mounted 100 media
+   carousels before and one initially after; fewer than eight remained mounted
+   after scrolling to post 25. Stable post/repost keys and index lookup preserve
+   ordering; tests retain an unsaved comment when scrolling away and returning.
+   Refresh and account-isolation assertions still pass. This change is specific
+   to the current user's profile; the other-user profile list is not yet lazy.
+
+### Incremental release payloads
+
+| Build | Initial JS | Deterministic gzip |
+| --- | ---: | ---: |
+| v97 baseline | 4,733,803 B | 1,353,152 B |
+| Map split | 4,579,693 B | 1,305,729 B |
+| Final, including lazy profile | 4,585,276 B | 1,307,265 B |
+
+The final initial script saves 148,527 bytes / 45,887 gzip bytes relative to v97
+(about 3.1% / 3.4%). The map's code still exists and is fetched on first map
+use; this is not feature removal. First map use can briefly show a small loading
+indicator. Successful code loads are cached for subsequent visits.
+
+### Repeated live mobile lab checks
+
+Same Chrome Incognito account, Lighthouse 13.5, Moto G Power, DevTools Slow 4G
+and 4x CPU slowdown as above; storage clearing stayed off and both application
+bundles were warmed before recording. These are two cached runs per stage,
+not physical iPhone or field measurements. No Lighthouse run warnings occurred.
+
+| Release/run | FCP | LCP | Speed Index | Total blocking time |
+| --- | ---: | ---: | ---: | ---: |
+| v97 before 1 | 0.88 s | 6.54 s | 4.53 s | 1.30 s |
+| v97 before 2 | 1.50 s | 12.02 s | 3.78 s | 1.37 s |
+| v98 after 1 | 0.69 s | 5.47 s | 3.89 s | 1.32 s |
+| v98 after 2 | 0.70 s | 6.45 s | 4.58 s | 1.31 s |
+
+The second baseline had substantially slower API requests (about 3.1–3.9 s for
+account/spots/posts versus about 0.6–2.0 s in the first). Do not turn these
+variable two-run LCP samples into a blanket percentage speed claim. Speed Index
+was not consistently better and blocking time remains around 1.3 s. The
+deterministic payload, logo-request and mounted-widget reductions are stronger
+evidence for these changes than the small timing sample.
+
+Private raw reports remain local under `output/`:
+`tydes-mobile-v97-before-1.json`, `tydes-mobile-v97-before-2.json`,
+`tydes-mobile-v98-after-1.json`, `tydes-mobile-v98-after-2.json`.
+The visual audit screenshot is `output/tydes-mobile-v98-audit.jpg`.
+
+### Validation and provenance
+
+- Flutter analysis: clean. Full Flutter suite: 455 passed.
+- Startup/chunk Node checks: seven passed. Billing plugin/vendor and public
+  pages/assets checks passed. Independent review found no blocking issue.
+- GitHub source: `ab3493e`; Site source:
+  `0011799c6a6b97d588b8014aee9400c249ab0182`.
+- Site version 98 deployment:
+  `appgdep_6af6bfeebef48191bd2eeb13e89b5ff3` (succeeded).
+- Live initial script matches release SHA-256:
+  `32bdfb29abcb1f6166b9bd32b9c8d4e5b4507aa098d4514c61191245c64c2c90`.
+
+Next: investigate remaining main-thread blocking, public-profile lazy rendering,
+and duplicated account-scoped data fetches. Physical iPhone Safari scroll/frame
+testing and older MOV migration remain separate work; this release does not
+certify sustained 60 FPS or Instagram-level performance.
+
+Implementation reference: [Dart deferred loading](https://dart.dev/language/libraries#lazily-loading-a-library).
