@@ -240,107 +240,132 @@ class SettingsPage extends ConsumerWidget {
     return Scaffold(
       body: FeedRefreshIndicator(
         onRefresh: () => _refreshProfile(ref),
-        child: ListView(
+        child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-          children: [
-            me.when(
-              skipLoadingOnReload: true,
-              data: (profile) => _ProfileHero(
-                profile: profile,
-                friends: followingPeople,
-                followers: followerPeople,
-                postsCount: _profileVisiblePostCount(
-                  profile,
-                  posts.valueOrNull ?? const [],
-                  visibleRepostedPostIds,
-                  visibleRepostActivityTimes,
-                ),
-                onSettingsPressed: () => _openProfileSettings(context, ref, me),
-                onMessagesPressed: () => context.push('/messages'),
-                onNotificationsPressed: () {
-                  ref.invalidate(socialNotificationsProvider);
-                  context.push('/notifications');
-                },
-                unreadMessageThreads: inboxCounts.messages,
-                unreadNotifications: inboxCounts.notifications,
-              ),
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => _SignedOutProfileCard(
-                message: _profileErrorMessage(error),
-                onSignIn: () => context.go('/login'),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Suggested for you',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 10),
-            if (suggestions.isEmpty)
-              const _NoSuggestionsCard()
-            else
-              SizedBox(
-                height: 134,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: suggestions.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 12),
-                  itemBuilder: (context, index) => _SuggestedPersonCard(
-                    person: suggestions[index],
-                    onTap: () {
-                      final person = suggestions[index];
-                      context.push(
-                        '/profile/${person.userId}',
-                        extra: person.profile,
-                      );
-                    },
-                  ),
-                ),
-              ),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Your posts',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                ),
-                FilledButton.icon(
-                  style: tydesPostButtonStyle(),
-                  onPressed: me.hasError
-                      ? () => context.go('/login')
-                      : () => showCreatePostSheet(
-                          context,
-                          spots.valueOrNull ?? const [],
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+              sliver: SliverMainAxisGroup(
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        me.when(
+                          skipLoadingOnReload: true,
+                          data: (profile) => _ProfileHero(
+                            profile: profile,
+                            friends: followingPeople,
+                            followers: followerPeople,
+                            postsCount: _profileVisiblePostCount(
+                              profile,
+                              posts.valueOrNull ?? const [],
+                              visibleRepostedPostIds,
+                              visibleRepostActivityTimes,
+                            ),
+                            onSettingsPressed: () =>
+                                _openProfileSettings(context, ref, me),
+                            onMessagesPressed: () => context.push('/messages'),
+                            onNotificationsPressed: () {
+                              ref.invalidate(socialNotificationsProvider);
+                              context.push('/notifications');
+                            },
+                            unreadMessageThreads: inboxCounts.messages,
+                            unreadNotifications: inboxCounts.notifications,
+                          ),
+                          loading: () =>
+                              const Center(child: CircularProgressIndicator()),
+                          error: (error, _) => _SignedOutProfileCard(
+                            message: _profileErrorMessage(error),
+                            onSignIn: () => context.go('/login'),
+                          ),
                         ),
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Post'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            me.when(
-              skipLoadingOnReload: true,
-              data: (profile) => posts.when(
-                skipLoadingOnReload: true,
-                data: (items) => _ProfilePostFeed(
-                  profile: profile,
-                  allPosts: items,
-                  posts: items
-                      .where((post) => post.userId == profile.id)
-                      .toList(),
-                  spots: spots.valueOrNull ?? const [],
-                  repostedPostIds: visibleRepostedPostIds,
-                  repostActivityTimes: visibleRepostActivityTimes,
-                ),
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (error, _) =>
-                    Text(friendlyLoadErrorMessage(error, label: 'posts')),
+                        const SizedBox(height: 24),
+                        Text(
+                          'Suggested for you',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const SizedBox(height: 10),
+                        if (suggestions.isEmpty)
+                          const _NoSuggestionsCard()
+                        else
+                          SizedBox(
+                            height: 134,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: suggestions.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(width: 12),
+                              itemBuilder: (context, index) =>
+                                  _SuggestedPersonCard(
+                                    person: suggestions[index],
+                                    onTap: () {
+                                      final person = suggestions[index];
+                                      context.push(
+                                        '/profile/${person.userId}',
+                                        extra: person.profile,
+                                      );
+                                    },
+                                  ),
+                            ),
+                          ),
+                        const SizedBox(height: 24),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Your posts',
+                                style: Theme.of(context).textTheme.titleLarge,
+                              ),
+                            ),
+                            FilledButton.icon(
+                              style: tydesPostButtonStyle(),
+                              onPressed: me.hasError
+                                  ? () => context.go('/login')
+                                  : () => showCreatePostSheet(
+                                      context,
+                                      spots.valueOrNull ?? const [],
+                                    ),
+                              icon: const Icon(Icons.add, size: 18),
+                              label: const Text('Post'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                    ),
+                  ),
+                  me.when(
+                    skipLoadingOnReload: true,
+                    data: (profile) => posts.when(
+                      skipLoadingOnReload: true,
+                      data: (items) => _ProfilePostFeed(
+                        profile: profile,
+                        allPosts: items,
+                        posts: items
+                            .where((post) => post.userId == profile.id)
+                            .toList(),
+                        spots: spots.valueOrNull ?? const [],
+                        repostedPostIds: visibleRepostedPostIds,
+                        repostActivityTimes: visibleRepostActivityTimes,
+                      ),
+                      loading: () => const SliverToBoxAdapter(
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                      error: (error, _) => SliverToBoxAdapter(
+                        child: Text(
+                          friendlyLoadErrorMessage(error, label: 'posts'),
+                        ),
+                      ),
+                    ),
+                    loading: () => const SliverToBoxAdapter(
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                    error: (_, _) =>
+                        const SliverToBoxAdapter(child: _SignedOutPostsCard()),
+                  ),
+                ],
               ),
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (_, _) => const _SignedOutPostsCard(),
             ),
           ],
         ),
@@ -1875,20 +1900,22 @@ class _ProfilePostFeed extends StatelessWidget {
       myRepostActivityTimes: repostActivityTimes,
     );
     if (posts.isEmpty && reposts.isEmpty) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Row(
-            children: [
-              const Icon(Icons.forum_outlined),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Your posts, photos, and surf notes will show up here.',
-                  style: Theme.of(context).textTheme.bodyMedium,
+      return SliverToBoxAdapter(
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Row(
+              children: [
+                const Icon(Icons.forum_outlined),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Your posts, photos, and surf notes will show up here.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       );
@@ -1899,13 +1926,18 @@ class _ProfilePostFeed extends StatelessWidget {
       for (final post in posts) _ProfilePostFeedItem.post(post),
     ]..sort((a, b) => b.activityAt.compareTo(a.activityAt));
 
-    return TydesDesktopPostWidth(
-      child: Column(
-        children: [
-          for (final item in items)
-            Padding(
-              key: ValueKey(item.key),
-              padding: const EdgeInsets.only(bottom: 14),
+    final indexes = {
+      for (var index = 0; index < items.length; index++)
+        items[index].key: index,
+    };
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (_, index) {
+          final item = items[index];
+          return Padding(
+            key: ValueKey(item.key),
+            padding: const EdgeInsets.only(bottom: 14),
+            child: TydesDesktopPostWidth(
               child: _ProfilePostCard(
                 profile: profile,
                 post: item.post,
@@ -1914,7 +1946,11 @@ class _ProfilePostFeed extends StatelessWidget {
                 usePostAuthor: item.repostHeader != null,
               ),
             ),
-        ],
+          );
+        },
+        childCount: items.length,
+        findChildIndexCallback: (key) =>
+            key is ValueKey<String> ? indexes[key.value] : null,
       ),
     );
   }

@@ -16,6 +16,7 @@ export function verifyStartupAssetHints(html, fontManifest, { template = false }
     ))
     .filter(attributes => attributes.rel === 'preload');
   const expected = [
+    'assets/assets/branding/tydes-wave-blue-256.png',
     'assets/FontManifest.json',
     'assets/AssetManifest.bin.json',
     ...fontManifest.flatMap(family => family.fonts.map(font => `assets/${font.asset}`)),
@@ -38,6 +39,22 @@ export function verifyStartupAssetHints(html, fontManifest, { template = false }
   return expected;
 }
 
+// Both public and signed-in map entrypoints must stay out of the first bundle.
+// These existing UI strings are retained in compiled code, unlike class names.
+export function verifyDeferredMapCode(main, chunks) {
+  const markers = [
+    'Tap a pin to explore a break or a host photo to see events.',
+    'Show saved spots only',
+    'Popular spots',
+  ];
+  for (const marker of markers) {
+    assert(!main.includes(marker), `Map code returned to the initial bundle: ${marker}`);
+  }
+  const mapChunks = chunks.filter(chunk => markers.every(marker => chunk.source.includes(marker)));
+  assert.equal(mapChunks.length, 1, 'Both map entrypoints must share one deferred map chunk.');
+  return mapChunks.map(chunk => chunk.file);
+}
+
 // Repeatable release-size guard. Browser timings/FPS are measured separately;
 // neither bundle size nor widget counts are substitutes for frame profiling.
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
@@ -47,17 +64,21 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   const fontManifest = JSON.parse(fs.readFileSync(path.join(directory, 'assets/FontManifest.json'), 'utf8'));
   const startupFetchPreloads = verifyStartupAssetHints(html, fontManifest);
   const chunks = fs.readdirSync(directory).filter(name => name.endsWith('.part.js'));
-  assert(main.length <= 4_800_000, 'Initial JS exceeds the mobile release budget.');
-  assert(gzipSync(main).length <= 1_400_000, 'Compressed initial JS exceeds budget.');
+  assert(main.length <= 4_650_000, 'Initial JS exceeds the mobile release budget.');
+  assert(gzipSync(main).length <= 1_330_000, 'Compressed initial JS exceeds budget.');
   assert(chunks.length > 0, 'Deferred image-processing chunks must be shipped.');
   for (const chunk of chunks) {
     assert(fs.statSync(path.join(directory, chunk)).size > 0, `Empty deferred chunk: ${chunk}`);
   }
+  const deferredMapChunks = verifyDeferredMapCode(main.toString('utf8'), chunks.map(file => ({
+    file, source: fs.readFileSync(path.join(directory, file), 'utf8'),
+  })));
   assert(html.includes('as="script" href="main.dart.js"'), 'Missing early app-script discovery.');
   console.log(JSON.stringify({
     initialJavaScriptBytes: main.length,
     initialJavaScriptGzipBytes: gzipSync(main).length,
     deferredChunks: chunks.map(file => ({ file, bytes: fs.statSync(path.join(directory, file)).size })),
+    deferredMapChunks,
     startupFetchPreloads,
     bootstrap: 'inline',
     status: 'Mobile release-size budget passed',

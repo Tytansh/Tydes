@@ -208,7 +208,7 @@ void main() {
         find
             .descendant(
               of: find.byType(SettingsPage),
-              matching: find.byType(ListView),
+              matching: find.byType(CustomScrollView),
             )
             .first,
       );

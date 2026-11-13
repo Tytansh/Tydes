@@ -12,7 +12,7 @@ import '../social/social_profile.dart';
 import '../social/inbox_badges.dart';
 import '../alerts/alerts_page.dart';
 import '../settings/settings_page.dart';
-import '../spots/spots_map_page.dart';
+import '../spots/map_feature_page.dart';
 import '../trips/trips_page.dart';
 
 class AppScaffold extends ConsumerStatefulWidget {
@@ -86,7 +86,7 @@ class _AppScaffoldState extends ConsumerState<AppScaffold>
         if (desktopWeb) {
           const desktopPages = <Widget>[
             HomePage(),
-            SpotsMapPage(),
+            MapFeaturePage(),
             TripsPage(),
             AlertsPage(),
             SettingsPage(),

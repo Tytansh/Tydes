@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { verifyStartupAssetHints } from './verify_mobile_performance.mjs';
+import { verifyDeferredMapCode, verifyStartupAssetHints } from './verify_mobile_performance.mjs';
 
 const html = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
 const fontManifest = [
@@ -14,9 +14,9 @@ const fontManifest = [
 const options = { template: true };
 
 test('startup hints retain the app script, logo, fonts and both manifests', () => {
-  assert.equal(verifyStartupAssetHints(html, fontManifest, options).length, 6);
+  assert.equal(verifyStartupAssetHints(html, fontManifest, options).length, 7);
   assert(html.includes('as="script" href="main.dart.js"'));
-  assert(html.includes('as="image" href="assets/assets/branding/tydes-wave-blue-256.png"'));
+  assert(html.includes('as="fetch" href="assets/assets/branding/tydes-wave-blue-256.png" crossorigin="anonymous"'));
 });
 
 test('release guard detects a missing or duplicated startup asset hint', () => {
@@ -27,7 +27,7 @@ test('release guard detects a missing or duplicated startup asset hint', () => {
 
 test('font hints use fetch-compatible destination and credentials', () => {
   assert.throws(() => verifyStartupAssetHints(html.replace('as="fetch"', 'as="font"'), fontManifest, options), /wrong destination/);
-  assert.throws(() => verifyStartupAssetHints(html.replace('crossorigin="anonymous"', 'crossorigin="use-credentials"'), fontManifest, options), /wrong credentials/);
+  assert.throws(() => verifyStartupAssetHints(html.replace('href="assets/assets/branding/tydes-wave-blue-256.png" crossorigin="anonymous"', 'href="assets/assets/branding/tydes-wave-blue-256.png" crossorigin="use-credentials"'), fontManifest, options), /wrong credentials/);
 });
 
 test('new manifest fonts must receive a matching preload', () => {
@@ -39,5 +39,17 @@ test('bootstrap is expanded exactly once and never requested separately', () => 
   assert.throws(() => verifyStartupAssetHints(html.replace('{{flutter_bootstrap_js}}', ''), fontManifest, options), /bootstrap token/);
   assert.throws(() => verifyStartupAssetHints(html + '<script src="flutter_bootstrap.js" async></script>', fontManifest, options), /must be inlined/);
   assert.throws(() => verifyStartupAssetHints(html, fontManifest), /not expanded/);
-  assert.equal(verifyStartupAssetHints(html.replace('{{flutter_bootstrap_js}}', '_flutter.loader.load();'), fontManifest).length, 6);
+  assert.equal(verifyStartupAssetHints(html.replace('{{flutter_bootstrap_js}}', '_flutter.loader.load();'), fontManifest).length, 7);
+});
+
+test('logo hint matches the engine fetch rather than creating a second image request', () => {
+  const original = 'as="fetch" href="assets/assets/branding/tydes-wave-blue-256.png"';
+  assert.throws(() => verifyStartupAssetHints(html.replace(original, original.replace('fetch', 'image')), fontManifest, options), /wrong destination/);
+});
+
+test('both map entrypoints share one non-startup chunk', () => {
+  const mapSource = 'Tap a pin to explore a break or a host photo to see events. Show saved spots only Popular spots';
+  assert.deepEqual(verifyDeferredMapCode('app code', [{ file: 'maps.part.js', source: mapSource }]), ['maps.part.js']);
+  assert.throws(() => verifyDeferredMapCode(mapSource, []), /initial bundle/);
+  assert.throws(() => verifyDeferredMapCode('app code', []), /one deferred map chunk/);
 });

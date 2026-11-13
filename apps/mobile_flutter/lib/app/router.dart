@@ -11,7 +11,6 @@ import '../features/auth/auth_page.dart';
 import '../features/auth/auth_return_path.dart';
 import '../features/auth/verification_gate_page.dart';
 import '../features/public_previews/public_preview_page.dart';
-import '../features/guest/guest_explore_page.dart';
 import '../features/home/home_page.dart';
 import '../features/paywall/paywall_page.dart';
 import '../features/settings/settings_page.dart';
@@ -20,7 +19,7 @@ import '../features/social/event_chat_page.dart';
 import '../features/social/notifications_page.dart';
 import '../features/social/public_profile_page.dart';
 import '../features/social/social_profile.dart';
-import '../features/spots/spots_map_page.dart';
+import '../features/spots/map_feature_page.dart';
 import '../features/spots/spots_page.dart';
 import '../features/trips/trips_page.dart';
 import '../features/core/app_scaffold.dart';
@@ -126,7 +125,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
         ),
       ),
-      GoRoute(path: '/explore', builder: (_, _) => const GuestExplorePage()),
+      GoRoute(
+        path: '/explore',
+        builder: (_, _) => const MapFeaturePage(guest: true),
+      ),
       GoRoute(path: '/explore/map', redirect: (_, _) => '/explore'),
       GoRoute(path: '/explore/events', redirect: (_, _) => '/explore'),
       GoRoute(
@@ -145,7 +147,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: 'spots-map',
-            builder: (context, state) => SpotsMapPage(
+            builder: (context, state) => MapFeaturePage(
               initialSpotId: state.uri.queryParameters['spotId'],
             ),
           ),
