@@ -21,11 +21,16 @@ void main() {
                   width: double.infinity,
                   child: Padding(
                     padding: EdgeInsets.symmetric(horizontal: 22),
-                    child: SocialPostMediaFrame(
-                      child: ColoredBox(
-                        key: ValueKey('media'),
-                        color: Colors.blue,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SocialPostMediaFrame(
+                          child: ColoredBox(
+                            key: ValueKey('media'),
+                            color: Colors.blue,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),

@@ -427,9 +427,12 @@ class SocialPostMediaFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final desktop = MediaQuery.sizeOf(context).width >= 980;
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: maxHeight),
-      child: AspectRatio(aspectRatio: desktop ? 1 : 4 / 5, child: child),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final height = (width / (desktop ? 1 : 4 / 5)).clamp(0.0, maxHeight);
+        return SizedBox(width: width, height: height, child: child);
+      },
     );
   }
 }
