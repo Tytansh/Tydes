@@ -148,16 +148,18 @@ class PublicProfilePage extends ConsumerWidget {
                   for (final item in profileItems) ...[
                     KeyedSubtree(
                       key: ValueKey(item.key),
-                      child: _PublicProfilePostCard(
-                        profile: item.repostHeader == null
-                            ? profile
-                            : _profileFromPost(item.post),
-                        post: item.post,
-                        spot: _spotForId(data.spots, item.post.spotId),
-                        isMe: item.repostHeader == null
-                            ? isMe
-                            : data.me.id == item.post.userId,
-                        repostHeader: item.repostHeader,
+                      child: TydesDesktopPostWidth(
+                        child: _PublicProfilePostCard(
+                          profile: item.repostHeader == null
+                              ? profile
+                              : _profileFromPost(item.post),
+                          post: item.post,
+                          spot: _spotForId(data.spots, item.post.spotId),
+                          isMe: item.repostHeader == null
+                              ? isMe
+                              : data.me.id == item.post.userId,
+                          repostHeader: item.repostHeader,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 12),

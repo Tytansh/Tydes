@@ -399,21 +399,37 @@ class TravelFeedSection extends ConsumerWidget {
 class TydesDesktopPostWidth extends StatelessWidget {
   const TydesDesktopPostWidth({super.key, required this.child});
 
+  static const maxWidth = 680.0;
+
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth < 980) return child;
-        return Align(
-          alignment: Alignment.topCenter,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 680),
-            child: child,
-          ),
-        );
-      },
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: maxWidth),
+        child: child,
+      ),
+    );
+  }
+}
+
+/// Preserve phone proportions without growing taller than the desktop media.
+class SocialPostMediaFrame extends StatelessWidget {
+  const SocialPostMediaFrame({super.key, required this.child});
+
+  // A 680px post has 4px card margins and 18px content padding on each side.
+  static const maxHeight = TydesDesktopPostWidth.maxWidth - 44;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final desktop = MediaQuery.sizeOf(context).width >= 980;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: maxHeight),
+      child: AspectRatio(aspectRatio: desktop ? 1 : 4 / 5, child: child),
     );
   }
 }
@@ -2576,7 +2592,6 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
     final media = widget.media;
     if (media.isEmpty) return const SizedBox.shrink();
     if (_pageIndex >= media.length) _pageIndex = media.length - 1;
-    final desktop = MediaQuery.sizeOf(context).width >= 980;
     final showWebArrows = socialPostMediaCarouselShowsArrows(
       isWeb: kIsWeb,
       mediaCount: media.length,
@@ -2584,8 +2599,7 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(widget.borderRadius),
-      child: AspectRatio(
-        aspectRatio: desktop ? 1 : 4 / 5,
+      child: SocialPostMediaFrame(
         child: Stack(
           children: [
             PageView.builder(

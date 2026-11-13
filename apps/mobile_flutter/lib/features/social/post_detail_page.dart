@@ -49,7 +49,11 @@ class PostDetailPage extends ConsumerWidget {
         data: (data) {
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-            children: [_PostDetailCard(post: data.post, spot: data.spot)],
+            children: [
+              TydesDesktopPostWidth(
+                child: _PostDetailCard(post: data.post, spot: data.spot),
+              ),
+            ],
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
