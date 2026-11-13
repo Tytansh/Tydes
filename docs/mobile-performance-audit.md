@@ -412,3 +412,53 @@ testing and older MOV migration remain separate work; this release does not
 certify sustained 60 FPS or Instagram-level performance.
 
 Implementation reference: [Dart deferred loading](https://dart.dev/language/libraries#lazily-loading-a-library).
+
+## Cursor-paged feed — version 99
+
+Published 13 November 2026, 18:47:10 UTC. The signed-in feed now requests at
+most 25 activity rows, then appends another page when the outer feed scroll is
+within 900 logical pixels of the bottom. The previous endpoint returned only
+the latest 50 posts; it did not provide access to subsequent pages. Profiles,
+maps, travel and people search retain their existing independent data paths.
+
+- Server-side keyset pagination applies visibility and bidirectional block
+  checks before the page limit. A snapshot and activity tie-breaker avoid
+  duplicate/omitted rows when newer posts arrive. Original posts and recent
+  reposts have distinct stable row IDs, including reposts of older originals.
+- Page-scoped comments/likes/RSVP state arrive with the page, avoiding the
+  feed's separate global engagement hydration request. Legacy engagement reads
+  were also corrected to filter comment visibility before their existing cap.
+- Appends preserve loaded rows, scroll position and drafts. Requests coalesce;
+  failed pages retain their cursor and require explicit retry. Account changes
+  and refresh generations reject late responses. An overlapping original on a
+  later page cannot overwrite more recent engagement on an already loaded row.
+- This bounds initial feed work and future database reads. It is not a claim
+  that the Flutter engine startup or sustained 60 FPS has been solved. There
+  are not enough real posts to exercise a second 25-row production page without
+  creating filler content; multi-page coverage uses isolated test fixtures.
+
+### Verification
+
+- Full Flutter suite: 474 passed; analysis clean. Backend suite: 412 passed,
+  three skipped. Tests cover 25/25/5 batches, history beyond the old 50-row
+  cutoff, deleted cursor rows, account isolation, private/blocked content,
+  stable repost ordering, retry, stale responses and retained drafts.
+- Actual nested scroll widget tests prove that only the outer near-bottom
+  vertical viewport requests another page; horizontal media scrolling and
+  nested vertical scrolling do not trigger it.
+- Live backend commit `573c4ba93ba1deed4e49ba2e8e6b77279f134614` confirmed by
+  Render. OpenAPI exposes `/api/v1/social/feed`; anonymous access returns 401
+  with `Cache-Control: private, no-store` and Cloudflare `DYNAMIC`.
+- Production release checked locally before publication, then signed-in live
+  feed checked at 390x844 and desktop widths, scrolling down and back up.
+  Temporary viewport override restored. No real posts/accounts were created
+  or deleted, no provider plans changed, and no credentials exposed.
+- Initial JS: 4,597,716 bytes / 1,311,316 deterministic gzip bytes, versus
+  v98's 4,585,276 / 1,307,265 (+12,440 / +4,051). Release-size, seven startup
+  checks, billing and public-page guards pass. This increment trades a small
+  code increase for bounded data loading; no new timing/60 FPS claim is made.
+- Site source `2c8a9db4c3dc03f5467d7cff85802c88b10b0c87`; version 99 deployment
+  `appgdep_6af75b273edc8191b1ae4f6d3bb8bca6` succeeded. Live initial script
+  SHA-256 matches the release:
+  `f64e742d54515477e85531193b711f147072451c5a596ef690b1d7d4f7bd54aa`.
+- Visual check: `output/tydes-feed-pagination-mobile.jpg`.

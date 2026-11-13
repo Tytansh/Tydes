@@ -14,6 +14,7 @@ Future<void> _show(WidgetTester tester, ThemeData theme, Widget page) async {
         meProvider.overrideWith((_) async => DemoSeed.me),
         socialProfilesProvider.overrideWith((_) async => []),
         travelFeedPostsProvider.overrideWith((_) async => []),
+        peopleSearchPostsProvider.overrideWith((_) async => []),
         travelFeedSpotsProvider.overrideWith((_) async => []),
         socialEngagementHydrationProvider.overrideWith((_) async {}),
         socialRelationshipHydrationProvider.overrideWith((_) async {}),

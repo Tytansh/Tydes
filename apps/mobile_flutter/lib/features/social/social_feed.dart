@@ -26,13 +26,22 @@ import 'direct_messages_page.dart';
 import 'event_chat_page.dart';
 import 'post_media_zoom.dart';
 import 'social_profile.dart';
+import 'feed_pagination.dart';
+export 'feed_pagination.dart'
+    show feedPaginationProvider, FeedPaginationController, FeedPaginationState;
 import '../auth/auth_return_path.dart';
 import '../home/home_page.dart' show meProvider;
 import '../public_previews/public_link_button.dart';
 
-final travelFeedPostsProvider = FutureProvider((ref) {
+final travelFeedPostsProvider = FutureProvider<List<SocialPostModel>>((
+  ref,
+) async {
   ref.watch(socialRefreshKeyProvider);
-  return ref.watch(surfRepositoryProvider).fetchSocialPosts();
+  final pagination = ref.watch(feedPaginationProvider.notifier);
+  return AccountScopedFeedPosts(
+    accountId: pagination.accountId,
+    posts: await pagination.refreshInitial(),
+  );
 });
 final travelFeedSpotsProvider = FutureProvider(
   (ref) => ref.watch(surfRepositoryProvider).fetchSpots(),
@@ -283,42 +292,66 @@ class TravelFeedSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final posts = ref.watch(travelFeedPostsProvider);
+    final pagination = ref.watch(feedPaginationProvider);
     final spots = ref.watch(travelFeedSpotsProvider);
     final spotItems = spots.valueOrNull ?? const <SpotModel>[];
-    ref.watch(socialEngagementHydrationProvider);
+    if (compact) ref.watch(socialEngagementHydrationProvider);
     ref.watch(socialRelationshipHydrationProvider);
     final blockedUserIds = ref.watch(blockedUserIdsProvider);
 
     Widget box(Widget child) =>
         asSliver ? SliverToBoxAdapter(child: child) : child;
 
-    final content = posts.when(
+    final previousPosts = posts.valueOrNull;
+    final belongsToPreviousAccount =
+        previousPosts is AccountScopedFeedPosts &&
+        previousPosts.accountId !=
+            ref.watch(feedPaginationProvider.notifier).accountId;
+    final displayedPosts = belongsToPreviousAccount && !posts.hasError
+        ? const AsyncLoading<List<SocialPostModel>>()
+        : !compact && pagination.initialized
+        ? AsyncData<List<SocialPostModel>>([
+            for (final entry in pagination.entries) entry.post,
+          ])
+        : posts;
+    final content = displayedPosts.when(
       skipLoadingOnReload: true,
       data: (items) {
         final visiblePosts = items
             .where((post) => !blockedUserIds.contains(post.userId))
             .toList();
         if (visiblePosts.isEmpty) return box(const _EmptyFeedCard());
-        final repostedItems = compact
+        final repostedItems = compact || pagination.initialized
             ? const <RepostedPostItem>[]
             : repostedItemsForFeed(
                 visiblePosts,
                 ref.watch(visibleRepostedPostIdsProvider),
                 ref.watch(visibleRepostActivityTimesProvider),
               );
-        final feedItems = [
-          for (final item in repostedItems)
-            _FeedPostItem(
-              post: item.post,
-              repostHeader: item.header,
-              activityAt: item.activityAt,
-            ),
-          for (final post in visiblePosts)
-            _FeedPostItem(post: post, activityAt: _postCreatedAt(post)),
-        ]..sort((a, b) => b.activityAt.compareTo(a.activityAt));
+        final feedItems = !compact && pagination.initialized
+            ? [
+                for (final entry in pagination.entries)
+                  if (!blockedUserIds.contains(entry.post.userId))
+                    _FeedPostItem(
+                      entryId: entry.entryId,
+                      post: entry.post,
+                      activityAt: entry.activityAt,
+                      repostHeader: entry.isRepost ? 'You reposted' : null,
+                    ),
+              ]
+            : ([
+                for (final item in repostedItems)
+                  _FeedPostItem(
+                    post: item.post,
+                    repostHeader: item.header,
+                    activityAt: item.activityAt,
+                  ),
+                for (final post in visiblePosts)
+                  _FeedPostItem(post: post, activityAt: _postCreatedAt(post)),
+              ]..sort((a, b) => b.activityAt.compareTo(a.activityAt)));
         final shown = compact ? feedItems.take(4).toList() : feedItems;
         String rowId(_FeedPostItem item) =>
-            '${item.repostHeader ?? 'post'}_${item.post.id}';
+            item.entryId ?? '${item.repostHeader ?? 'post'}_${item.post.id}';
         Widget row(int index) {
           final item = shown[index];
           return Padding(
@@ -362,7 +395,17 @@ class TravelFeedSection extends ConsumerWidget {
       error: (error, _) =>
           box(Text(friendlyLoadErrorMessage(error, label: 'posts'))),
     );
-    if (!showHeader) return content;
+    final pagedContent = compact
+        ? content
+        : asSliver
+        ? SliverMainAxisGroup(
+            slivers: [
+              content,
+              const SliverToBoxAdapter(child: FeedPaginationFooter()),
+            ],
+          )
+        : Column(children: [content, const FeedPaginationFooter()]);
+    if (!showHeader) return pagedContent;
     final header = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -391,8 +434,63 @@ class TravelFeedSection extends ConsumerWidget {
       ],
     );
     return asSliver
-        ? SliverMainAxisGroup(slivers: [box(header), content])
-        : Column(children: [header, content]);
+        ? SliverMainAxisGroup(slivers: [box(header), pagedContent])
+        : Column(children: [header, pagedContent]);
+  }
+}
+
+class FeedPaginationFooter extends ConsumerWidget {
+  const FeedPaginationFooter({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pagination = ref.watch(feedPaginationProvider);
+    if (pagination.error != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 18),
+        child: Column(
+          children: [
+            Text(
+              pagination.refreshFailed && pagination.entries.isNotEmpty
+                  ? 'Could not refresh posts. Your loaded posts are still here.'
+                  : pagination.initialized
+                  ? 'Could not load more posts. Please try again.'
+                  : 'Could not load posts. Please try again.',
+              textAlign: TextAlign.center,
+            ),
+            TextButton.icon(
+              onPressed: () =>
+                  unawaited(ref.read(feedPaginationProvider.notifier).retry()),
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Retry posts'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (!pagination.initialized) return const SizedBox.shrink();
+    if (pagination.isLoadingMore || pagination.isLoadingInitial) {
+      return const Padding(
+        padding: EdgeInsets.all(18),
+        child: Center(
+          child: SizedBox.square(
+            dimension: 22,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+    if (pagination.nextCursor == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Center(
+        child: TextButton(
+          onPressed: () =>
+              unawaited(ref.read(feedPaginationProvider.notifier).loadMore()),
+          child: const Text('Load more posts'),
+        ),
+      ),
+    );
   }
 }
 
@@ -442,11 +540,13 @@ class _FeedPostItem {
     required this.post,
     required this.activityAt,
     this.repostHeader,
+    this.entryId,
   });
 
   final SocialPostModel post;
   final DateTime activityAt;
   final String? repostHeader;
+  final String? entryId;
 }
 
 enum _PostSafetyAction { report, block }

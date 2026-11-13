@@ -12,6 +12,7 @@ import 'api_error_message.dart';
 import 'api_models.dart';
 import 'detailed_forecast_models.dart';
 import 'public_preview_models.dart';
+import 'social_feed_page.dart';
 import 'demo_persistence.dart';
 import 'demo_seed.dart';
 
@@ -860,6 +861,18 @@ class SurfRepository {
       if (isEmailVerificationRequired(error)) rethrow;
       return DemoSeed.posts;
     }
+  }
+
+  /// A confirmed page of feed activity; errors never fall back to demo posts.
+  Future<SocialFeedPage> fetchSocialFeedPage({
+    String? cursor,
+    int limit = 25,
+  }) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/social/feed',
+      queryParameters: {'limit': limit, 'cursor': ?cursor},
+    );
+    return SocialFeedPage.fromJson(response.data!);
   }
 
   Future<SocialPostModel> fetchSocialPost(String id) async {

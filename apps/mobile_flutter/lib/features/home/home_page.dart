@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -25,6 +27,14 @@ final socialProfilesProvider = FutureProvider((ref) {
   return ref.watch(surfRepositoryProvider).fetchSocialProfiles();
 });
 
+// Search is not a feed page: retain its existing author-discovery data rather
+// than accidentally treating the first 25 feed activities as a complete list.
+final peopleSearchPostsProvider = FutureProvider((ref) {
+  ref.watch(socialRefreshKeyProvider);
+  ref.watch(meProvider.select((account) => account.valueOrNull?.id));
+  return ref.watch(surfRepositoryProvider).fetchSocialPosts();
+});
+
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
 
@@ -34,7 +44,6 @@ class HomePage extends ConsumerWidget {
     await Future.wait([
       ref.read(travelFeedPostsProvider.future),
       ref.read(travelFeedSpotsProvider.future),
-      ref.refresh(socialEngagementHydrationProvider.future),
     ]);
   }
 
@@ -142,18 +151,55 @@ class HomePage extends ConsumerWidget {
       ),
       body: FeedRefreshIndicator(
         onRefresh: () => _refreshFeed(ref),
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: const [
-            SliverPadding(
-              padding: EdgeInsets.all(20),
-              sliver: TravelFeedSection(showHeader: false, asSliver: true),
-            ),
-          ],
+        child: FeedPaginationScrollListener(
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: const [
+              SliverPadding(
+                padding: EdgeInsets.all(20),
+                sliver: TravelFeedSection(showHeader: false, asSliver: true),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
+}
+
+/// Fetch the next batch only while scrolling the outer vertical feed. Deferring
+/// the provider write until after layout avoids rebuilding inside a scroll pass.
+class FeedPaginationScrollListener extends ConsumerWidget {
+  const FeedPaginationScrollListener({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) =>
+      NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          if (notification.depth != 0 ||
+              notification.metrics.axis != Axis.vertical ||
+              notification.metrics.pixels <= 0 ||
+              notification.metrics.extentAfter > 900 ||
+              !ref.read(feedPaginationProvider).canLoadMore) {
+            return false;
+          }
+          final controller = ref.read(feedPaginationProvider.notifier);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (context.mounted &&
+                identical(
+                  ref.read(feedPaginationProvider.notifier),
+                  controller,
+                ) &&
+                ref.read(feedPaginationProvider).canLoadMore) {
+              unawaited(controller.loadMore());
+            }
+          });
+          return false;
+        },
+        child: child,
+      );
 }
 
 bool _isSessionExpiredError(Object? error) {
@@ -321,7 +367,7 @@ class _PeopleSearchPageState extends ConsumerState<PeopleSearchPage> {
   Widget build(BuildContext context) {
     final me = ref.watch(meProvider);
     final socialProfiles = ref.watch(socialProfilesProvider);
-    final posts = ref.watch(travelFeedPostsProvider);
+    final posts = ref.watch(peopleSearchPostsProvider);
     ref.watch(socialRelationshipHydrationProvider);
     final blockedUserIds = ref.watch(blockedUserIdsProvider);
     final profiles = _searchProfiles(
