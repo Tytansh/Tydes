@@ -153,3 +153,48 @@ the Instagram-level performance target. Next priorities are cold startup,
 cached-start blocking work, adaptive mobile video delivery, and an actual
 iPhone Safari frame/interaction benchmark. No additional paid product is
 required to investigate those items.
+
+## Playback follow-up — 13 November 2026 (not yet published)
+
+The live player was observing only its nearest Scrollable, which is the
+horizontal photo/video carousel, not the outer vertical feed. This prevented
+scrolling from triggering both visible autoplay and off-screen silence. A live
+390 × 844 check showed a loaded, ready video still paused at 0 seconds after
+scrolling fully into view.
+
+The working-tree repair observes all enclosing scroll positions, clips playback
+visibility to actual painted viewports, starts new controllers muted, and
+reconciles playback after every asynchronous command. It immediately mutes and
+pauses off-screen/hidden players even when a play promise is pending. Browser
+policy-error events now get one muted recovery attempt, then an explicit retry;
+stale-controller errors cannot disable a replacement player. Volume is no longer
+mutated from build. Nearby preloading and the existing ten-loop limit remain.
+
+Startup also overlaps independent theme/logo/native-favorites preparation and
+skips unsupported web file restoration. The existing logo readiness gate and
+theme-first behavior are retained. No measured startup-time reduction is claimed
+for this small change; the major engine/billing-SDK startup work remains.
+
+Validation: full Flutter analysis clean; 427 tests pass, including 14 nested-feed
+playback regressions and four startup tests. Release-size, deferred-chunk,
+billing-plugin, public-page, and appearance checks pass. Initial JS is 4,732,906
+bytes (1,352,568 gzip bytes). Release output is available locally at
+`/private/tmp/tydes-feed-playback-fixed`; the Site checkout's `dist/` contains it.
+
+Publication is blocked by the Sites service response: `Sites Git is not yet
+enabled for this client`. The Sites plugin is installed/enabled, but it cannot
+mint source access here. No new Site version was saved/deployed, and live
+version 93 remains unchanged. Do not claim this repair is live until the existing
+Site source is pushed and a new native deployment succeeds in a supported
+Sites session. See [official Sites guidance](https://learn.chatgpt.com/docs/sites/creating-a-site).
+
+A local release browser check used the production player and retained-tab stack
+inside the same nested vertical-list/horizontal-carousel structure, with an
+existing in-scope feed video. Chrome showed Clip A advancing without a play tap;
+after unmuting and scrolling it away, its actual HTML video was paused/muted
+while Clip B advanced. Switching to Profile left both video elements paused and
+muted. This was a local desktop Chrome check, not a live-site deployment or an
+iPhone Safari certification. The test-only entrypoint is
+`tool/feed_video_playback_preview.dart`; it accepts the video URL as a build
+define rather than storing personal media URLs in source. The temporary preview
+and viewport overrides were cleaned up after verification.

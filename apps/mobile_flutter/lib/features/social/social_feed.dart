@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderViewport, RenderShrinkWrappingViewport;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image/image.dart' deferred as image_tools;
@@ -2837,7 +2838,7 @@ class AutoplayVideoPlayer extends ConsumerStatefulWidget {
 class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
     with WidgetsBindingObserver {
   VideoPlayerController? _controller;
-  ScrollPosition? _scrollPosition;
+  final Set<ScrollPosition> _scrollPositions = {};
   bool _loadRequested = false;
   bool _initializing = false;
   bool _userPaused = false;
@@ -2845,6 +2846,16 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
   bool _visibilityCheckQueued = false;
   bool _pageActive = true;
   bool _foreground = true;
+  bool _playbackSyncRunning = false;
+  bool _playbackSyncPending = false;
+  bool _soundNeedsGesture = false;
+  bool _soundGestureAuthorized = false;
+  bool _hasStartedPlayback = false;
+  bool _policyRetryAttempted = false;
+  bool _lastPlaying = false;
+  bool _lastBuffering = false;
+  bool _disposing = false;
+  int _playbackRevision = 0;
   int _completedLoops = 0;
   Duration _lastVideoPosition = Duration.zero;
   bool _loopLimitReached = false;
@@ -2853,9 +2864,10 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
   @override
   void initState() {
     super.initState();
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    _foreground = lifecycle == null || lifecycle == AppLifecycleState.resumed;
     WidgetsBinding.instance.addObserver(this);
     _scheduleVisibilityCheck();
-    _scheduleActiveAutoplayCheck();
   }
 
   @override
@@ -2868,11 +2880,18 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
       _loadRequested = false;
       _initializing = false;
       _videoFailed = false;
+      _soundGestureAuthorized = false;
+      _soundNeedsGesture = false;
+      _policyRetryAttempted = false;
+      _hasStartedPlayback = false;
+      _playbackRevision++;
+      previous?.removeListener(_handleVideoProgress);
+      _silence(previous);
       unawaited(previous?.dispose());
     }
     if (!widget.active) {
-      _controller?.setVolume(0);
-      _controller?.pause();
+      _playbackRevision++;
+      _silence(_controller);
       return;
     }
     if (!oldWidget.active || oldWidget.url != widget.url) {
@@ -2880,8 +2899,8 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
       _completedLoops = 0;
       _lastVideoPosition = Duration.zero;
       _loopLimitReached = false;
-      _scheduleActiveAutoplayCheck();
     }
+    _scheduleVisibilityCheck();
   }
 
   @override
@@ -2890,14 +2909,29 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
     _pageActive =
         TickerMode.valuesOf(context).enabled &&
         (ModalRoute.of(context)?.isCurrent ?? true);
-    final nextPosition = Scrollable.maybeOf(context)?.position;
-    if (_scrollPosition != nextPosition) {
-      _scrollPosition?.removeListener(_handleScroll);
-      _scrollPosition = nextPosition;
-      _scrollPosition?.addListener(_handleScroll);
+    // The nearest Scrollable is the horizontal media carousel. Listen to the
+    // outer vertical feed too, including nested/retained scroll viewports.
+    final nextPositions = <ScrollPosition>{};
+    context.visitAncestorElements((element) {
+      if (element is StatefulElement && element.state is ScrollableState) {
+        nextPositions.add((element.state as ScrollableState).position);
+      }
+      return true;
+    });
+    for (final position in _scrollPositions.difference(nextPositions)) {
+      position.removeListener(_handleScroll);
+    }
+    for (final position in nextPositions.difference(_scrollPositions)) {
+      position.addListener(_handleScroll);
+    }
+    _scrollPositions
+      ..clear()
+      ..addAll(nextPositions);
+    if (!_active) {
+      _playbackRevision++;
+      _silence(_controller);
     }
     _scheduleVisibilityCheck();
-    _scheduleActiveAutoplayCheck();
   }
 
   void _scheduleVisibilityCheck() {
@@ -2909,19 +2943,17 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
     });
   }
 
-  void _scheduleActiveAutoplayCheck() {
-    if (!_active) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_active) return;
-      _syncPlaybackToVisibility();
-    });
-  }
-
   @override
   void dispose() {
+    _disposing = true;
     _loadGeneration++;
+    _playbackRevision++;
     WidgetsBinding.instance.removeObserver(this);
-    _scrollPosition?.removeListener(_handleScroll);
+    for (final position in _scrollPositions) {
+      position.removeListener(_handleScroll);
+    }
+    _controller?.removeListener(_handleVideoProgress);
+    _silence(_controller);
     _controller?.dispose();
     super.dispose();
   }
@@ -2938,39 +2970,73 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
     _syncPlaybackToVisibility();
   }
 
+  @override
+  void didChangeMetrics() => _scheduleVisibilityCheck();
+
+  void _silence(VideoPlayerController? controller) {
+    if (controller == null) return;
+    // Do not trust isPlaying while an asynchronous play command is in flight.
+    unawaited(controller.setVolume(0).catchError((Object _) {}));
+    unawaited(controller.pause().catchError((Object _) {}));
+  }
+
+  ({Rect media, Rect viewport, Rect preloadViewport})? _visibilityGeometry() {
+    if (!mounted || _disposing) return null;
+    final object = context.findRenderObject();
+    if (object is! RenderBox || !object.attached || !object.hasSize) {
+      return null;
+    }
+    final media = object.localToGlobal(Offset.zero) & object.size;
+    var viewport = Offset.zero & MediaQuery.sizeOf(context);
+    var preloadViewport = viewport;
+    RenderObject child = object;
+    while (child.parent != null) {
+      final parent = child.parent!;
+      if ((parent is RenderViewport && parent.axis == Axis.vertical) ||
+          (parent is RenderShrinkWrappingViewport &&
+              parent.axis == Axis.vertical)) {
+        final box = parent as RenderBox;
+        preloadViewport = preloadViewport.intersect(
+          box.localToGlobal(Offset.zero) & box.size,
+        );
+      }
+      final clip = parent.describeApproximatePaintClip(child);
+      if (clip != null) {
+        viewport = viewport.intersect(
+          MatrixUtils.transformRect(parent.getTransformTo(null), clip),
+        );
+      }
+      child = parent;
+    }
+    return (media: media, viewport: viewport, preloadViewport: preloadViewport);
+  }
+
   double? _visibleFraction() {
-    if (!mounted) return null;
-    final renderObject = context.findRenderObject();
-    if (renderObject is! RenderBox || !renderObject.hasSize) return null;
-
-    final topLeft = renderObject.localToGlobal(Offset.zero);
-    final size = renderObject.size;
-    if (size.width == 0 || size.height == 0) return 0.0;
-
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
-    final visibleLeft = topLeft.dx.clamp(0.0, screenWidth);
-    final visibleRight = (topLeft.dx + size.width).clamp(0.0, screenWidth);
-    final visibleWidth = (visibleRight - visibleLeft).clamp(0.0, size.width);
-    final visibleTop = topLeft.dy.clamp(0.0, screenHeight);
-    final visibleBottom = (topLeft.dy + size.height).clamp(0.0, screenHeight);
-    final visibleHeight = (visibleBottom - visibleTop).clamp(0.0, size.height);
-    return (visibleWidth * visibleHeight) / (size.width * size.height);
+    final geometry = _visibilityGeometry();
+    if (geometry == null) return null;
+    if (geometry.media.isEmpty || geometry.viewport.isEmpty) return 0;
+    final visible = geometry.media.intersect(geometry.viewport);
+    if (visible.isEmpty) return 0;
+    return visible.width *
+        visible.height /
+        (geometry.media.width * geometry.media.height);
   }
 
   bool _isMostlyVisible() =>
       (_visibleFraction() ?? 0.0) >= _videoPlayVisibilityThreshold;
 
   bool _isNearViewport() {
-    if (!mounted) return false;
-    final renderObject = context.findRenderObject();
-    if (renderObject is! RenderBox || !renderObject.hasSize) return false;
-
-    final topLeft = renderObject.localToGlobal(Offset.zero);
-    final size = renderObject.size;
-    final screenHeight = MediaQuery.of(context).size.height;
-    return topLeft.dy < screenHeight * 1.35 &&
-        topLeft.dy + size.height > -screenHeight * 0.35;
+    final geometry = _visibilityGeometry();
+    if (geometry == null || geometry.preloadViewport.isEmpty) return false;
+    final viewport = geometry.preloadViewport;
+    return geometry.media.overlaps(
+      Rect.fromLTRB(
+        viewport.left,
+        viewport.top - viewport.height * 0.35,
+        viewport.right,
+        viewport.bottom + viewport.height * 0.35,
+      ),
+    );
   }
 
   String? get _usableThumbnailUrl {
@@ -2984,9 +3050,14 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
   }
 
   void _syncPlaybackToVisibility() {
+    if (!mounted || _disposing) return;
     final mostlyVisible = _isMostlyVisible();
     final shouldPreload = _active && (mostlyVisible || _isNearViewport());
     final controller = _controller;
+    if (!_shouldPlay) {
+      _playbackRevision++;
+      _silence(controller);
+    }
 
     if (shouldPreload &&
         controller == null &&
@@ -3001,24 +3072,113 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
       return;
     }
 
-    final shouldPlay = socialVideoShouldPlay(
-      active: _active,
-      userPaused: _userPaused,
-      mostlyVisible: mostlyVisible,
-    );
-    final soundEnabled = ref.read(videoSoundEnabledProvider);
-    final targetVolume = soundEnabled && shouldPlay ? 1.0 : 0.0;
-    if (controller.value.volume != targetVolume) {
-      unawaited(controller.setVolume(targetVolume));
-    }
+    _playbackSyncPending = true;
+    if (!_playbackSyncRunning) unawaited(_reconcilePlayback());
+  }
 
-    if (shouldPlay && !controller.value.isPlaying) {
-      controller.play();
-      if (mounted) setState(() {});
-    } else if (!shouldPlay && controller.value.isPlaying) {
-      controller.pause();
-      if (mounted) setState(() {});
+  bool get _shouldPlay => socialVideoShouldPlay(
+    active: _active,
+    userPaused: _userPaused,
+    mostlyVisible: _isMostlyVisible(),
+  );
+
+  bool get _wantsSound =>
+      ref.read(videoSoundEnabledProvider) &&
+      (!_soundNeedsGesture || _soundGestureAuthorized);
+
+  bool _isCurrent(VideoPlayerController controller, int generation) =>
+      mounted &&
+      !_disposing &&
+      generation == _loadGeneration &&
+      identical(_controller, controller);
+
+  Future<void> _reconcilePlayback() async {
+    _playbackSyncRunning = true;
+    VideoPlayerController? operatingController;
+    try {
+      while (mounted && !_disposing && _playbackSyncPending) {
+        _playbackSyncPending = false;
+        final controller = _controller;
+        operatingController = controller;
+        final generation = _loadGeneration;
+        if (controller == null || !controller.value.isInitialized) continue;
+        if (!_shouldPlay) {
+          _silence(controller);
+          continue;
+        }
+        final revision = _playbackRevision;
+        if (!controller.value.isPlaying) {
+          // New elements must first play muted. A remembered sound preference
+          // is not browser permission to start an audible autoplay.
+          await controller.setVolume(0);
+          if (!_isCurrent(controller, generation) || !_shouldPlay) {
+            _silence(controller);
+            continue;
+          }
+          await controller.play();
+          if (!_isCurrent(controller, generation) ||
+              revision != _playbackRevision ||
+              !_shouldPlay) {
+            _silence(controller);
+            continue;
+          }
+          _hasStartedPlayback = true;
+        }
+        final volume = _wantsSound ? 1.0 : 0.0;
+        if (controller.value.volume != volume) {
+          await controller.setVolume(volume);
+        }
+        // A scroll/route change can happen during either platform operation.
+        if (!_isCurrent(controller, generation) ||
+            revision != _playbackRevision ||
+            !_shouldPlay) {
+          _silence(controller);
+        }
+      }
+    } catch (error) {
+      if (operatingController != null) {
+        _handlePlaybackError(operatingController, error: error);
+      }
+    } finally {
+      _playbackSyncRunning = false;
+      if (mounted && !_disposing && _playbackSyncPending) {
+        unawaited(_reconcilePlayback());
+      }
     }
+  }
+
+  void _handlePlaybackError(VideoPlayerController controller, {Object? error}) {
+    if (!mounted || _disposing || !identical(_controller, controller)) return;
+    final description =
+        '${controller.value.errorDescription ?? ''} ${error ?? ''}'
+            .toLowerCase();
+    final policyError =
+        description.contains('notallowed') ||
+        description.contains('not allowed') ||
+        description.contains('autoplay') ||
+        description.contains("didn't interact") ||
+        description.contains('user interaction') ||
+        description.contains('user activation') ||
+        description.contains('user gesture');
+    final retryMuted = policyError && !_policyRetryAttempted;
+    if (retryMuted) {
+      _policyRetryAttempted = true;
+      _soundNeedsGesture = true;
+      _soundGestureAuthorized = false;
+    }
+    _playbackRevision++;
+    _loadGeneration++;
+    _controller = null;
+    controller.removeListener(_handleVideoProgress);
+    _silence(controller);
+    unawaited(controller.dispose());
+    setState(() {
+      _loadRequested = false;
+      _initializing = false;
+      _hasStartedPlayback = false;
+      _videoFailed = !retryMuted;
+    });
+    if (retryMuted) _scheduleVisibilityCheck();
   }
 
   Widget _fittedVideo(VideoPlayerController controller) {
@@ -3055,26 +3215,15 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
     );
     _controller = controller;
     try {
+      await controller.setVolume(0);
+      if (!_isCurrent(controller, generation)) return;
       await controller.setLooping(true);
+      if (!_isCurrent(controller, generation)) return;
       await controller.initialize();
-      if (!mounted || generation != _loadGeneration) return;
+      if (!_isCurrent(controller, generation)) return;
       controller.addListener(_handleVideoProgress);
-      final soundEnabled = ref.read(videoSoundEnabledProvider);
-      final shouldPlay = socialVideoShouldPlay(
-        active: _active,
-        userPaused: _userPaused,
-        mostlyVisible: _isMostlyVisible(),
-      );
-      await controller.setVolume(soundEnabled && shouldPlay ? 1.0 : 0.0);
-      if (!mounted) return;
       setState(() => _initializing = false);
-      if (shouldPlay) {
-        await controller.play();
-        if (mounted) setState(() {});
-      }
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _syncPlaybackToVisibility();
-      });
+      _syncPlaybackToVisibility();
     } catch (_) {
       if (!mounted || generation != _loadGeneration) return;
       await controller.dispose();
@@ -3090,8 +3239,35 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
 
   void _handleVideoProgress() {
     final controller = _controller;
-    if (!mounted || controller == null || !controller.value.isInitialized) {
+    if (!mounted || _disposing || controller == null) return;
+    if (controller.value.hasError) {
+      _handlePlaybackError(controller);
       return;
+    }
+    if (!controller.value.isInitialized) {
+      return;
+    }
+    final value = controller.value;
+    if (_lastPlaying != value.isPlaying ||
+        _lastBuffering != value.isBuffering) {
+      final unexpectedlyPaused = _lastPlaying && !value.isPlaying;
+      _lastPlaying = value.isPlaying;
+      _lastBuffering = value.isBuffering;
+      if (unexpectedlyPaused &&
+          kIsWeb &&
+          _hasStartedPlayback &&
+          !_playbackSyncRunning &&
+          _shouldPlay &&
+          _wantsSound &&
+          !_soundGestureAuthorized &&
+          !value.isBuffering) {
+        // Safari may pause rather than throw when an autoplay is unmuted.
+        _soundNeedsGesture = true;
+        _syncPlaybackToVisibility();
+      } else if (value.isPlaying && !_shouldPlay) {
+        _silence(controller);
+      }
+      setState(() {});
     }
     final position = controller.value.position;
     if (_lastVideoPosition - position > const Duration(milliseconds: 500)) {
@@ -3109,32 +3285,27 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
   @override
   Widget build(BuildContext context) {
     final soundEnabled = ref.watch(videoSoundEnabledProvider);
+    ref.listen(videoSoundEnabledProvider, (_, _) {
+      _syncPlaybackToVisibility();
+    });
     final controller = _controller;
     final ready = controller?.value.isInitialized ?? false;
     final readyController = ready ? controller : null;
     final isPlaying = readyController?.value.isPlaying ?? false;
-    final targetVolume =
-        soundEnabled &&
-            socialVideoShouldPlay(
-              active: _active,
-              userPaused: _userPaused,
-              mostlyVisible: _isMostlyVisible(),
-            )
-        ? 1.0
-        : 0.0;
-    if (readyController != null &&
-        readyController.value.volume != targetVolume) {
-      readyController.setVolume(targetVolume);
-    }
+    final soundOn =
+        soundEnabled && (!_soundNeedsGesture || _soundGestureAuthorized);
     final videoBody = GestureDetector(
       onTap: () {
         if (readyController == null) {
+          if (!_active || !_isMostlyVisible()) return;
+          _policyRetryAttempted = false;
           _loadVideo();
           return;
         }
         if (readyController.value.isPlaying) {
           _userPaused = true;
-          readyController.pause();
+          _playbackRevision++;
+          _silence(readyController);
         } else {
           if (_loopLimitReached) {
             _completedLoops = 0;
@@ -3143,8 +3314,14 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
           }
           _userPaused = false;
           if (_active && _isMostlyVisible()) {
+            _soundGestureAuthorized = soundEnabled;
+            _soundNeedsGesture = false;
             readyController.setVolume(soundEnabled ? 1.0 : 0.0);
-            readyController.play();
+            unawaited(
+              readyController.play().catchError((Object _) {
+                _handlePlaybackError(readyController);
+              }),
+            );
           }
         }
         setState(() {});
@@ -3202,14 +3379,29 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
                 shape: const CircleBorder(),
                 child: IconButton(
                   onPressed: () {
-                    ref.read(videoSoundEnabledProvider.notifier).state =
-                        !soundEnabled;
+                    if (!_active || !_isMostlyVisible()) return;
+                    final enable = !soundOn;
+                    _soundGestureAuthorized = enable;
+                    _soundNeedsGesture = false;
+                    // Invoke under the actual tap, not from build, so Safari
+                    // recognizes the user's request to hear this element.
+                    readyController!.setVolume(enable ? 1.0 : 0.0);
+                    if (enable && !_userPaused) {
+                      unawaited(
+                        readyController.play().catchError((Object _) {
+                          _handlePlaybackError(readyController);
+                        }),
+                      );
+                    }
+                    ref.read(videoSoundEnabledProvider.notifier).state = enable;
+                    setState(() {});
                   },
+                  tooltip: soundOn ? 'Mute video' : 'Unmute video',
                   color: Colors.white,
                   iconSize: 20,
                   visualDensity: VisualDensity.compact,
                   icon: Icon(
-                    soundEnabled
+                    soundOn
                         ? Icons.volume_up_rounded
                         : Icons.volume_off_rounded,
                   ),

@@ -7,25 +7,28 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app/app.dart';
 import 'core/network/demo_persistence.dart';
 import 'core/network/demo_seed.dart';
+import 'core/startup/app_startup.dart';
 import 'core/theme/theme_preference.dart';
 import 'core/theme/theme_preference_store.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final themeMode = await loadThemeMode(ThemePreferenceStore());
-  if (kIsWeb) {
-    await _warmBrandLogo();
-  }
-  final persistedFavoriteSpotIds = await DemoPersistence()
-      .loadFavoriteSpotIds();
-  if (persistedFavoriteSpotIds.isNotEmpty) {
+  final startup = await prepareAppStartup(
+    isWeb: kIsWeb,
+    loadTheme: () => loadThemeMode(ThemePreferenceStore()),
+    loadFavoriteSpotIds: DemoPersistence().loadFavoriteSpotIds,
+    warmBrandLogo: _warmBrandLogo,
+  );
+  if (startup.favoriteSpotIds.isNotEmpty) {
     DemoSeed.me = DemoSeed.me.copyWith(
-      favoriteSpotIds: persistedFavoriteSpotIds,
+      favoriteSpotIds: startup.favoriteSpotIds,
     );
   }
   runApp(
     ProviderScope(
-      overrides: [initialThemeModeProvider.overrideWithValue(themeMode)],
+      overrides: [
+        initialThemeModeProvider.overrideWithValue(startup.themeMode),
+      ],
       child: const SurfTravelApp(),
     ),
   );
