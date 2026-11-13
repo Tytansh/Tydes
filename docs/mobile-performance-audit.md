@@ -206,3 +206,118 @@ iPhone Safari certification. The test-only entrypoint is
 `tool/feed_video_playback_preview.dart`; it accepts the video URL as a build
 define rather than storing personal media URLs in source. The temporary preview
 and viewport overrides were cleaned up after verification.
+
+## Startup waterfall and Safari streaming — 13 November 2026 (version 95)
+
+### Incremental changes
+
+- Inlined Flutter's official bootstrap template instead of fetching a separate
+  bootstrap script before discovering the application script.
+- Preloaded the two Flutter asset/font manifests and the four existing fonts
+  with fetch destinations matching the Flutter engine. All six start alongside
+  the application script. Local Chrome and iOS 18.6 Safari server logs show one
+  request per resource, not duplicate downloads. The fonts, theme-first behavior,
+  logo readiness gate, appearance and billing registration are unchanged.
+- On browsers reporting native HLS support, the feed player now uses an existing
+  supplied Bunny master playlist. Other web browsers retain the supplied MP4
+  fallback. A genuine HLS initialization/decode/load failure tries that exact
+  fallback once; autoplay denials instead retry muted on the same source.
+  Native Flutter and legacy direct-file playback remain unchanged. Signed URL
+  queries, off-screen pause/mute, asynchronous controller guards, zoom, carousel
+  arrows and the ten-loop limit are preserved.
+
+### Matched mobile lab runs
+
+Chrome Incognito, extension-free, Lighthouse 13.5 Mobile Moto G Power, 4x CPU
+slowdown and DevTools Slow 4G (562.5 ms request latency, 1,474.56 Kbps download,
+675 Kbps upload). Clear Storage was off to retain the signed-in account.
+These are two cached runs per stage, not field percentiles or physical iPhone
+results. Flutter canvas rendering also limits what LCP alone can establish.
+
+| Release/run | FCP | LCP | Speed Index | Total blocking time |
+| --- | ---: | ---: | ---: | ---: |
+| v94 cached 1 | 0.69 s | 10.86 s | 8.41 s | 1.42 s |
+| v94 cached 2 | 1.19 s | 11.08 s | 8.78 s | 1.39 s |
+| v95 cached 1 | 1.58 s | 8.09 s | 6.00 s | 1.40 s |
+| v95 cached 2 | 1.75 s | 8.46 s | 6.54 s | 1.43 s |
+
+Mean cached LCP decreased from 10.97 to 8.28 seconds (about 24.5%); mean
+Speed Index decreased from 8.59 to 6.27 seconds (about 27%). FCP did not improve
+and includes the HTML loader, not a usable feed. Cached blocking work remained
+approximately 1.4 seconds; this optimization does not resolve CPU/input stalls.
+
+Before, FontManifest started around 2.09–2.33 s, fonts around 2.91–3.88 s,
+and AssetManifest around 4.45–4.58 s. After, all six started around 1.53–1.68 s
+and completed around 2.10–2.30 s, with no external bootstrap request.
+
+A separate first-new-bundle run measured FCP 1.72 s, LCP 15.66 s, Speed Index
+11.16 s and blocking time 0.08 s. It was not a completely cold browser: engine
+and font caches already existed. Do not compare it directly with the cached
+before runs. The new script transferred 1,340,860 bytes in about 8.18 seconds
+under Slow 4G. Initial download weight remains a substantial problem.
+
+Raw reports are local-only under `output/`: `tydes-mobile-v94-baseline.json`,
+`tydes-mobile-v94-baseline-repeat.json`, `tydes-mobile-v95-new-bundle.json`,
+`tydes-mobile-v95-warm.json`, and `tydes-mobile-v95-warm-repeat.json`.
+
+### Safari playback verification
+
+With permission, uploaded one generated, silent, 82,464-byte test-pattern clip
+to the existing Bunny library. No personal file or public post was used, and no
+plan, key, DNS or access policy was changed. The clearly named test fixture
+remains in that library for reproducibility; existing user assets were not
+migrated or removed.
+
+The resulting master playlist exposed 240p, 360p, 480p and 720p variants. Normal
+TYDES-referrer requests succeeded; referrer-free access remained blocked. The
+720p MP4 returned video/mp4, byte-range support and a public cache lifetime.
+
+In actual iOS 18.6 Safari in the iPhone 16 Plus simulator, a release harness
+using the production carousel selected HLS and advanced automatically, muted,
+with readyState 4. Switching to the retained Profile tab left the hidden video
+paused and muted. A separately built forced-MP4 baseline also played without a
+play tap. The test-only harness observes the HTML video state and does not
+change production behavior. Safari was restored to the signed-in live TYDES
+feed after testing.
+
+This tiny, unthrottled simulator clip verifies delivery compatibility and
+playback lifecycle, not cellular buffering, time to first frame, physical
+iPhone CPU performance, or sustained 60 FPS. Local screenshots:
+`output/tydes-safari-native-hls-verified.jpg`,
+`output/tydes-safari-mp4-baseline.jpg`, and
+`output/tydes-mobile-v95-audit.jpg`.
+
+### Validation and publication
+
+- Full Flutter analysis: clean. Full Flutter tests: 440 passed.
+- Startup regression tests: five passed. Release size/deferred chunks,
+  billing vendor/plugin registration, public pages and diff checks passed.
+- Initial JavaScript: 4,733,642 bytes; deterministic gzip: 1,353,098 bytes.
+  Deferred chunks: 350,970 and 1,413 bytes. Relative to v94, the initial script
+  grew by 736 bytes / 530 gzip bytes; this is a waterfall/playback improvement,
+  not a bundle-size reduction.
+- Main source commit: `9ee6c0f`.
+- Site version 95 source: `d3dc641cf66855821b3234edd7926742aaea69f6`.
+- Deployment: `appgdep_6af6aa93fd1881919563775211c75068`, succeeded at
+  2026-11-13 06:13:47 UTC.
+- Live `https://tydes.io/main.dart.js` SHA-256 matches the tested release:
+  `eebb6b1b800e270fd62964950ff5dad934f4443be86e945af2ffffd98b48cce6`.
+
+### Remaining work
+
+1. Reduce cold-start script/engine cost and the approximately 1.4 s cached
+   blocking work without risking billing or changing the design. The billing
+   vendor is eagerly loaded, but its measured cached CPU contribution was only
+   about 77–86 ms; it is not the dominant measured blocker.
+2. Measure real-device iPhone Safari interaction/scroll frames. Simulator
+   playback and Chrome throttling do not certify the 60 FPS target.
+3. Plan a separately verified migration for older direct MOV uploads. Choosing
+   HLS when available does not transcode existing assets automatically.
+4. Investigate a potential low-resolution fallback issue: the backend currently
+   constructs a 720p MP4 path without retaining Bunny's available-resolution/
+   fallback metadata. A source below 720p may need a different fallback. This
+   risk was identified but not reproduced against a user's upload or changed
+   in this release.
+
+Implementation references: [Flutter web initialization](https://docs.flutter.dev/platform-integration/web/initialization)
+and [Apple HTTP Live Streaming](https://developer.apple.com/streaming/).
