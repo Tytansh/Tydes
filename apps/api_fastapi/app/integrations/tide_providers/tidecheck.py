@@ -25,6 +25,19 @@ class _CacheItem:
     data: Any
 
 
+@dataclass
+class _PredictionPayload:
+    payload: dict[str, Any]
+    fetched_at: datetime
+
+
+class _ProviderBackoff(RuntimeError):
+    def __init__(self, status_code: int, note: str) -> None:
+        super().__init__(note)
+        self.status_code = status_code
+        self.note = note
+
+
 class TideCheckProvider:
     """Fetch high/low tide predictions from TideCheck behind a swappable provider."""
 
@@ -37,10 +50,14 @@ class TideCheckProvider:
         self._locks_guard = RLock()
         self._spot_locks: dict[str, RLock] = {}
         self._negative_cache: dict[str, _CacheItem] = {}
+        self._prediction_cache: dict[str, _CacheItem] = {}
+        self._prediction_locks: dict[str, RLock] = {}
+        self._provider_backoff: _CacheItem | None = None
 
     def fetch_spot_tides(self, spot: Spot, start_day: date, days: int = 3) -> TideForecast:
         identity = self._cache_identity(spot)
         with self._locks_guard:
+            self._prune_expired(datetime.now(UTC))
             lock = self._spot_locks.setdefault(identity, RLock())
         # Concurrent chart refreshes share the station lookup and tide fetch.
         with lock:
@@ -57,10 +74,10 @@ class TideCheckProvider:
         persistent = self._read_persistent_tides(cache_key)
         if persistent is not None:
             forecast, updated_at = persistent
-            self._tide_cache[cache_key] = _CacheItem(
+            self._remember(self._tide_cache, cache_key, _CacheItem(
                 expires_at=updated_at + timedelta(hours=12),
                 data=forecast,
-            )
+            ))
             return forecast
 
         negative = self._negative_cache.get(identity)
@@ -73,25 +90,22 @@ class TideCheckProvider:
                 available=False,
                 note="Tide provider is not configured yet.",
             )
-            self._negative_cache[identity] = _CacheItem(now + timedelta(minutes=5), forecast)
+            self._remember(self._negative_cache, identity, _CacheItem(now + timedelta(minutes=5), forecast))
             return forecast
 
         retry_minutes = 1
         try:
             station = self._nearest_station(spot)
-            self._reserve_upstream_request()
-            response = self._client.get(
-                f"/api/station/{station['id']}/tides",
-                headers={"X-API-Key": self._api_key},
-                params={
-                    "datum": "LAT",
-                    # Include the last local day when UTC coverage ends early.
-                    "days": max(1, min(days + 1, 7)),
-                    "start": start_day.isoformat(),
-                },
+            prediction = self._station_predictions(station, start_day, days)
+            forecast = self._to_tide_forecast(
+                spot, station, prediction.payload, start_day=start_day, days=days,
             )
-            response.raise_for_status()
-            forecast = self._to_tide_forecast(spot, station, response.json(), start_day=start_day, days=days)
+            forecast.fetched_at = prediction.fetched_at
+        except _ProviderBackoff as error:
+            retry_minutes = 5
+            forecast = TideForecast(
+                spot_id=spot.id, available=False, source="tidecheck", note=error.note,
+            )
         except httpx.HTTPStatusError as error:
             status_code = error.response.status_code
             if status_code == 429:
@@ -131,21 +145,144 @@ class TideCheckProvider:
             )
 
         if forecast.available:
-            self._negative_cache.pop(identity, None)
-            self._tide_cache[cache_key] = _CacheItem(
+            with self._locks_guard:
+                self._negative_cache.pop(identity, None)
+            self._remember(self._tide_cache, cache_key, _CacheItem(
                 expires_at=now + timedelta(hours=12),
                 data=forecast,
-            )
+            ))
             self._write_persistent(
                 f"tidecheck:v3:tides:{cache_key}",
                 forecast.model_dump(mode="json"),
             )
         else:
-            self._negative_cache[identity] = _CacheItem(
+            self._remember(self._negative_cache, identity, _CacheItem(
                 expires_at=now + timedelta(minutes=retry_minutes),
                 data=forecast,
-            )
+            ))
         return forecast
+
+    def _remember(self, cache: dict[str, _CacheItem], key: str, item: _CacheItem) -> None:
+        with self._locks_guard:
+            cache[key] = item
+
+    def _prune_expired(self, now: datetime) -> None:
+        # The keys contain dates. Without eviction a long-running service keeps
+        # every old five-day chart forever even though it can no longer use it.
+        # Caller holds the guard used by all cache writes.
+        for cache in (self._tide_cache, self._prediction_cache, self._station_cache, self._negative_cache):
+            for key, item in list(cache.items()):
+                if item.expires_at <= now:
+                    cache.pop(key, None)
+
+    def _get_with_retry(self, path: str, *, params: dict[str, Any]) -> Any:
+        """One bounded retry for transient failures; every attempt spends budget.
+
+        Authentication, plan limits, 429s and invalid requests never retry.
+        The existing eight-second timeout remains in force for each attempt.
+        """
+        for attempt in range(2):
+            with self._locks_guard:
+                backoff = self._provider_backoff
+                if backoff and backoff.expires_at > datetime.now(UTC):
+                    raise backoff.data
+            self._reserve_upstream_request()
+            try:
+                response = self._client.get(
+                    path, headers={"X-API-Key": self._api_key}, params=params,
+                )
+                response.raise_for_status()
+                return response
+            except httpx.HTTPStatusError as error:
+                if error.response.status_code in {401, 429}:
+                    note = (
+                        "TideCheck API key is invalid."
+                        if error.response.status_code == 401
+                        else "TideCheck daily rate limit exceeded. Live tides will work again when the plan resets or the TideCheck plan is upgraded."
+                    )
+                    with self._locks_guard:
+                        self._provider_backoff = _CacheItem(
+                            datetime.now(UTC) + timedelta(minutes=5),
+                            _ProviderBackoff(error.response.status_code, note),
+                        )
+                if attempt or error.response.status_code not in {408, 500, 502, 503, 504}:
+                    raise
+            except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError):
+                if attempt:
+                    raise
+        raise RuntimeError("Tide request retry exhausted")
+
+    def _station_predictions(
+        self, station: dict[str, Any], start_day: date, days: int,
+    ) -> _PredictionPayload:
+        # A station's prediction is identical for neighboring beaches. Cache it
+        # once, then attach each spot's own ID/distance when building the result.
+        # This avoids repeatedly charging quota for the same station and dates.
+        upstream_days = max(1, min(days + 2, 7))
+        key = f"{station['id']}:LAT:{start_day.isoformat()}:{upstream_days}"
+        with self._locks_guard:
+            # Dates vary, but requests for one station can use the same bounded
+            # lock entry rather than retaining a new lock each calendar day.
+            lock = self._prediction_locks.setdefault(f"{station['id']}:LAT", RLock())
+        with lock:
+            now = datetime.now(UTC)
+            cached = self._prediction_cache.get(key)
+            if cached and cached.expires_at > now:
+                return cached.data
+            persistent = self._read_persistent(
+                f"tidecheck:v4:predictions:{key}", timedelta(hours=12),
+            )
+            if persistent is not None:
+                payload, updated_at = persistent
+                try:
+                    fetched_at = datetime.fromisoformat(str(payload["fetched_at"]).replace("Z", "+00:00"))
+                    prediction = payload["payload"]
+                    if (
+                        isinstance(prediction, dict)
+                        and fetched_at.tzinfo is not None
+                        and updated_at <= now + timedelta(minutes=1)
+                        and -timedelta(minutes=1) <= now - fetched_at <= timedelta(hours=12)
+                        and self._has_prediction_data(prediction)
+                    ):
+                        result = _PredictionPayload(prediction, fetched_at)
+                        self._remember(self._prediction_cache, key, _CacheItem(
+                            expires_at=min(updated_at, fetched_at) + timedelta(hours=12), data=result,
+                        ))
+                        return result
+                except (ValueError, KeyError, TypeError):
+                    # A malformed stored payload must not permanently suppress
+                    # a working provider request after a restart.
+                    pass
+            response = self._get_with_retry(
+                f"/api/station/{station['id']}/tides",
+                params={"datum": "LAT", "days": upstream_days, "start": start_day.isoformat()},
+            )
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise ValueError("Invalid TideCheck prediction payload")
+            result = _PredictionPayload(payload, datetime.now(UTC))
+            if self._has_prediction_data(payload):
+                self._remember(self._prediction_cache, key, _CacheItem(
+                    expires_at=result.fetched_at + timedelta(hours=12), data=result,
+                ))
+                self._write_persistent(
+                    f"tidecheck:v4:predictions:{key}",
+                    {"payload": payload, "fetched_at": result.fetched_at.isoformat()},
+                )
+            return result
+
+    @staticmethod
+    def _has_prediction_data(payload: dict[str, Any]) -> bool:
+        for item in _payload_rows(payload, "extremes") + _payload_rows(payload, "timeSeries"):
+            if _as_float(item.get("height")) is None:
+                continue
+            try:
+                stamp = datetime.fromisoformat(str(item["time"]).replace("Z", "+00:00"))
+                if stamp.tzinfo is not None:
+                    return True
+            except (ValueError, KeyError, TypeError):
+                pass
+        return False
 
     @staticmethod
     def _cache_identity(spot: Spot) -> str:
@@ -187,28 +324,25 @@ class TideCheckProvider:
         persistent = self._read_persistent_station(identity)
         if persistent is not None:
             station, updated_at = persistent
-            self._station_cache[identity] = _CacheItem(
+            self._remember(self._station_cache, identity, _CacheItem(
                 expires_at=updated_at + timedelta(days=30),
                 data=station,
-            )
+            ))
             return station
 
-        self._reserve_upstream_request()
-        response = self._client.get(
+        response = self._get_with_retry(
             "/api/stations/nearest",
-            headers={"X-API-Key": self._api_key},
             params={"lat": spot.latitude, "lng": spot.longitude},
         )
-        response.raise_for_status()
         stations = response.json()
-        if not stations:
+        if not isinstance(stations, list) or not stations or not isinstance(stations[0], dict) or not stations[0].get("id"):
             raise ValueError("No TideCheck station found")
 
         station = stations[0]
-        self._station_cache[identity] = _CacheItem(
+        self._remember(self._station_cache, identity, _CacheItem(
             expires_at=now + timedelta(days=30),
             data=station,
-        )
+        ))
         self._write_persistent(f"tidecheck:v3:station:{identity}", station)
         return station
 
@@ -223,7 +357,10 @@ class TideCheckProvider:
         if cached is None:
             return None
         payload, updated_at = cached
-        forecast = TideForecast.model_validate(payload)
+        try:
+            forecast = TideForecast.model_validate(payload)
+        except (ValueError, TypeError):
+            return None
         now = datetime.now(UTC)
         if updated_at > now + timedelta(minutes=1) or not self._valid_forecast_time(forecast, now):
             return None
@@ -233,10 +370,16 @@ class TideCheckProvider:
         self,
         spot_id: str,
     ) -> tuple[dict[str, Any], datetime] | None:
-        return self._read_persistent(
+        cached = self._read_persistent(
             f"tidecheck:v3:station:{spot_id}",
             timedelta(days=30),
         )
+        if cached is None:
+            return None
+        station, updated_at = cached
+        if not isinstance(station, dict) or not station.get("id") or updated_at > datetime.now(UTC) + timedelta(minutes=1):
+            return None
+        return station, updated_at
 
     def _read_persistent(
         self,
@@ -276,15 +419,30 @@ class TideCheckProvider:
         days: int = 3,
     ) -> TideForecast:
         station_payload = payload.get("station", {})
-        timezone_name = station_payload.get("timezone") or "UTC"
-        timezone = ZoneInfo(timezone_name)
-        events = [
-            self._to_tide_event(item, timezone)
-            for item in payload.get("extremes", [])
-            if item.get("type") in {"high", "low"}
-        ]
+        if not isinstance(station_payload, dict):
+            station_payload = {}
+        timezone_name = station_payload.get("timezone") or station.get("timezone") or "UTC"
+        try:
+            timezone = ZoneInfo(timezone_name)
+        except (ValueError, KeyError, TypeError):
+            # Prefer a valid station timezone to a malformed response field.
+            timezone_name = station.get("timezone") or "UTC"
+            try:
+                timezone = ZoneInfo(timezone_name)
+            except (ValueError, KeyError, TypeError):
+                timezone_name, timezone = "UTC", ZoneInfo("UTC")
+        events = []
+        for item in _payload_rows(payload, "extremes"):
+            if item.get("type") not in {"high", "low"}:
+                continue
+            try:
+                event = self._to_tide_event(item, timezone)
+                if event.time.tzinfo is not None:
+                    events.append(event)
+            except (ValueError, KeyError, TypeError):
+                continue
         samples = []
-        for item in payload.get("timeSeries", []):
+        for item in _payload_rows(payload, "timeSeries"):
             try:
                 stamp = datetime.fromisoformat(str(item["time"]).replace("Z", "+00:00"))
                 height = _as_float(item.get("height"), digits=3)
@@ -302,6 +460,7 @@ class TideCheckProvider:
             events = [event for event in events if start_day <= event.local_date < end_day]
             samples = [sample for sample in samples if start_day <= sample.local_date < end_day]
         samples = sorted({sample.time: sample for sample in samples}.values(), key=lambda sample: sample.time)
+        events = sorted({(event.time, event.type): event for event in events}.values(), key=lambda event: event.time)
 
         return TideForecast(
             spot_id=spot.id,
@@ -323,6 +482,8 @@ class TideCheckProvider:
 
     def _to_tide_event(self, item: dict[str, Any], timezone: ZoneInfo) -> TideEvent:
         stamp = datetime.fromisoformat(item["time"].replace("Z", "+00:00"))
+        if stamp.tzinfo is None:
+            raise ValueError("Tide event is missing a timezone")
         local_stamp = stamp.astimezone(timezone)
         return TideEvent(
             type=item["type"],
@@ -331,6 +492,11 @@ class TideCheckProvider:
             local_date=local_stamp.date(),
             height_m=_as_float(item.get("height")),
         )
+
+
+def _payload_rows(payload: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    rows = payload.get(key)
+    return [item for item in rows if isinstance(item, dict)] if isinstance(rows, list) else []
 
 
 def _as_float(value: Any, *, digits: int = 1) -> float | None:

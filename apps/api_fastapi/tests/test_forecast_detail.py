@@ -233,7 +233,12 @@ def test_coordinate_correction_does_not_inherit_marine_failure_backoff(monkeypat
     provider._marine_client = original_client
     corrected = original.model_copy(update={"latitude": original.latitude - 0.3})
     assert provider.fetch_spot_detail(corrected).available
-    assert len(calls) == 2
+    # The rejected location's weather runs independently. Only the corrected
+    # location must make a new, complete marine/weather pair.
+    corrected_calls = [
+        kind for kind, params in calls if params["latitude"] == corrected.latitude
+    ]
+    assert sorted(corrected_calls) == ["marine", "weather"]
 
 
 def test_best_window_uses_current_local_day_not_first_cached_day():
@@ -409,8 +414,12 @@ def test_tide_rejects_future_dated_positive_cache(monkeypatch):
     provider.fetch_spot_tides(spot, local_day)
     cache_key = f"{provider._cache_identity(spot)}:{local_day.isoformat()}:3"
     provider._tide_cache[cache_key].data.fetched_at = datetime.now(UTC) + timedelta(hours=1)
-    assert provider.fetch_spot_tides(spot, local_day).available
-    assert len(calls) == 3  # Existing station remains cached, predictions refresh.
+    repaired = provider.fetch_spot_tides(spot, local_day)
+    assert repaired.available
+    assert repaired.fetched_at <= datetime.now(UTC)
+    # The separate station prediction payload retains its real fetched time,
+    # so it can repair corrupt spot metadata without another paid request.
+    assert len(calls) == 2
 
 
 def test_coordinate_correction_invalidates_station_and_tide_caches(monkeypatch):
@@ -427,19 +436,19 @@ def test_coordinate_correction_invalidates_station_and_tide_caches(monkeypatch):
     provider.fetch_spot_tides(original, local_day)
     assert forecast.spot_id == original.id == corrected.id
     assert calls.count("/api/stations/nearest") == 2
-    assert len(calls) == 4
-    assert len(set(writes)) == 4
-    assert all(key.startswith("tidecheck:v3:") for key in reads + writes)
+    assert len(calls) == 3  # Two coordinate lookups resolve to one real station.
+    assert len(set(writes)) == 5  # Both spot identities plus shared prediction.
+    assert all(key.startswith(("tidecheck:v3:", "tidecheck:v4:predictions:")) for key in reads + writes)
     for kind in ("station", "tides"):
         assert any(f"tidecheck:v3:{kind}:{corrected.id}:{corrected.latitude!r}:{corrected.longitude!r}" in key for key in writes)
 
 
-def test_coordinate_correction_does_not_inherit_tide_failure_backoff(monkeypatch):
+def test_coordinate_correction_does_not_inherit_tide_transient_failure_backoff(monkeypatch):
     provider, _, calls, local_day = _tide_provider(monkeypatch)
     original_client = provider._client
     def limited(path, **_kwargs):
         request = httpx.Request("GET", "https://tidecheck.com/api/stations/nearest")
-        raise httpx.HTTPStatusError("rate limited", request=request, response=httpx.Response(429, request=request))
+        raise httpx.HTTPStatusError("temporary outage", request=request, response=httpx.Response(503, request=request))
     provider._client = SimpleNamespace(get=limited)
     original = store.spots[0]
     assert not provider.fetch_spot_tides(original, local_day).available

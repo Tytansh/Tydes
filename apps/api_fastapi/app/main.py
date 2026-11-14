@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
 from app.core.auth import EMAIL_VERIFICATION_REQUIRED_DETAIL
 from app.core.runtime import (
@@ -188,7 +189,12 @@ async def bind_authenticated_user(request, call_next):
     auth_header = request.headers.get("authorization", "")
     scheme, _, token = auth_header.partition(" ")
     if scheme.lower() == "bearer" and token.strip():
-        authenticated_user = store.resolve_session_user(token.strip())
+        # Session resolution performs blocking database reads. Keep those off
+        # the event loop so parallel map/forecast requests cannot stall the API.
+        # Bind the returned identity below, in this request's own context.
+        authenticated_user = await run_in_threadpool(
+            store.resolve_session_user, token.strip(),
+        )
     request.state.user = authenticated_user
     request.state.authenticated_user = authenticated_user is not None
     verification_required = _requires_verified_email(request)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 import logging
@@ -24,6 +25,8 @@ logger = logging.getLogger(__name__)
 FRESH_FORECAST_MAX_AGE = timedelta(hours=3)
 PREVIEW_FORECAST_MAX_AGE = timedelta(hours=24)
 FREE_FORECAST_MAX_AGE = timedelta(days=5)
+STALE_FORECAST_MAX_AGE = timedelta(hours=12)
+PARTIAL_FORECAST_MAX_AGE = timedelta(minutes=1)
 FREE_MARINE_BASE_URL = "https://marine-api.open-meteo.com/v1"
 FREE_FORECAST_BASE_URL = "https://api.open-meteo.com/v1"
 CUSTOMER_MARINE_BASE_URL = "https://customer-marine-api.open-meteo.com/v1"
@@ -38,6 +41,9 @@ MARINE_VARIABLES = (
     "sea_surface_temperature",
 )
 WEATHER_VARIABLES = ("wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "is_day")
+_UPSTREAM_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="marine-upstream")
+_STALE_NOTE = "Showing a previously fetched model forecast while the latest refresh is unavailable. Check the fetch time; this is not a current observation."
+_WEATHER_NOTE = "Wind and daylight data are temporarily unavailable; the wave and swell data shown are still from the marine model."
 
 
 @dataclass
@@ -48,6 +54,7 @@ class _CacheItem:
     timezone: str = "UTC"
     utc_offset_seconds: int = 0
     days: list[ForecastDaylight] | None = None
+    weather_available: bool = True
 
 
 class OpenMeteoMarineProvider:
@@ -65,17 +72,18 @@ class OpenMeteoMarineProvider:
         ).strip()
         self._marine_client = httpx.Client(
             base_url=marine_base_url,
-            timeout=8.0,
+            timeout=httpx.Timeout(12.0, connect=5.0, pool=5.0),
         )
         self._forecast_client = httpx.Client(
             base_url=forecast_base_url,
-            timeout=8.0,
+            timeout=httpx.Timeout(12.0, connect=5.0, pool=5.0),
         )
         self._cache: dict[str, _CacheItem] = {}
         self._persistent_cache = PostgresJsonCache.from_env()
         self._locks_guard = RLock()
         self._spot_locks: dict[str, RLock] = {}
         self._retry_after: dict[str, datetime] = {}
+        self._fallback_notes: dict[str, str] = {}
 
     def fetch_spot_forecast(
         self,
@@ -92,12 +100,17 @@ class OpenMeteoMarineProvider:
             now = datetime.now(UTC)
             cached = self._cache.get(identity)
             if cached and self._cache_is_current(cached, now, max_cache_age):
+                self._fallback_notes.pop(identity, None)
                 return self._current_entries(cached, now)
             persistent = self._read_persistent_cache(identity, max_cache_age)
             if persistent is not None and self._cache_is_current(persistent, now, max_cache_age):
                 self._cache[identity] = persistent
+                self._fallback_notes.pop(identity, None)
                 return self._current_entries(persistent, now)
             if self._retry_after.get(identity, now) > now:
+                fallback = self._usable_fallback(identity, cached, now)
+                if fallback is not None:
+                    return self._fallback_entries(identity, fallback, now)
                 raise RuntimeError("Forecast provider is temporarily backing off")
             try:
                 self._reserve_upstream_budget()
@@ -107,9 +120,13 @@ class OpenMeteoMarineProvider:
                 # repeatedly while it is unavailable/rate limited.
                 status = getattr(getattr(error, "response", None), "status_code", None)
                 self._retry_after[identity] = now + timedelta(minutes=5 if status == 429 else 1)
+                fallback = self._usable_fallback(identity, cached, now)
+                if fallback is not None:
+                    return self._fallback_entries(identity, fallback, now)
                 raise
             self._cache[identity] = item
             self._retry_after.pop(identity, None)
+            self._fallback_notes.pop(identity, None)
             self._write_persistent_cache(identity, item)
             return self._current_entries(item, now)
 
@@ -121,42 +138,46 @@ class OpenMeteoMarineProvider:
         return f"{spot.id}:{spot.latitude!r}:{spot.longitude!r}"
 
     def _fetch_cache_item(self, spot: Spot, now: datetime) -> _CacheItem:
-        marine_response = self._marine_client.get(
-            "/marine",
-            params=self._with_api_key(
-                {
-                    "latitude": spot.latitude,
-                    "longitude": spot.longitude,
-                    "hourly": ",".join(MARINE_VARIABLES),
-                    "forecast_days": 5,
-                    "timezone": "auto",
-                    "timeformat": "unixtime",
-                    "cell_selection": "sea",
-                }
-            ),
+        marine_params = self._with_api_key(
+            {
+                "latitude": spot.latitude,
+                "longitude": spot.longitude,
+                "hourly": ",".join(MARINE_VARIABLES),
+                "forecast_days": 5,
+                "timezone": "auto",
+                "timeformat": "unixtime",
+                "cell_selection": "sea",
+            }
         )
-        marine_response.raise_for_status()
-
-        weather_response = self._forecast_client.get(
-            "/forecast",
-            params=self._with_api_key(
-                {
-                    "latitude": spot.latitude,
-                    "longitude": spot.longitude,
-                    "hourly": ",".join(WEATHER_VARIABLES),
-                    "daily": "sunrise,sunset",
-                    "forecast_days": 5,
-                    "timezone": "auto",
-                    "timeformat": "unixtime",
-                    "wind_speed_unit": "kn",
-                    "cell_selection": "sea",
-                }
-            ),
+        weather_params = self._with_api_key(
+            {
+                "latitude": spot.latitude,
+                "longitude": spot.longitude,
+                "hourly": ",".join(WEATHER_VARIABLES),
+                "daily": "sunrise,sunset",
+                "forecast_days": 5,
+                "timezone": "auto",
+                "timeformat": "unixtime",
+                "wind_speed_unit": "kn",
+                "cell_selection": "sea",
+            }
         )
-        weather_response.raise_for_status()
-
-        marine_payload = marine_response.json()
-        weather_payload = weather_response.json()
+        # Independent upstreams run together, not as two serial network waits.
+        # A weather outage must not discard an otherwise valid wave forecast.
+        marine_future = _UPSTREAM_POOL.submit(
+            self._request_payload, self._marine_client, "/marine", marine_params, 2,
+        )
+        weather_future = _UPSTREAM_POOL.submit(
+            self._request_payload, self._forecast_client, "/forecast", weather_params, 1,
+        )
+        marine_payload = marine_future.result()
+        weather_available = True
+        try:
+            weather_payload = weather_future.result()
+        except Exception as error:
+            logger.warning("Forecast weather component unavailable for %s (%s)", spot.id, type(error).__name__)
+            weather_payload = {}
+            weather_available = False
         if not marine_payload.get("timezone"):
             marine_payload = {**marine_payload, "timezone": spot_timezone_name(spot)}
         rows = self._to_hourly_rows(marine_payload, weather_payload)
@@ -174,18 +195,46 @@ class OpenMeteoMarineProvider:
                 else int(now.astimezone(_zone(timezone_name)).utcoffset().total_seconds())
             ),
             days=_daylight_days(weather_payload, timezone_name),
+            weather_available=weather_available,
         )
+
+    def _request_payload(
+        self, client, path: str, params: dict[str, Any], retry_units: int,
+    ) -> dict[str, Any]:
+        for attempt in range(2):
+            try:
+                response = client.get(path, params=params)
+                response.raise_for_status()
+                return response.json()
+            except (httpx.TransportError, httpx.HTTPStatusError) as error:
+                status = getattr(getattr(error, "response", None), "status_code", None)
+                transient = (
+                    isinstance(error, (
+                        httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadError,
+                        httpx.ReadTimeout, httpx.RemoteProtocolError,
+                    ))
+                    or status in {502, 503, 504}
+                )
+                if attempt or not transient:
+                    raise
+                # Retries are never free bypasses around the application cap.
+                self._reserve_budget_units(retry_units)
+        raise RuntimeError("Forecast request did not complete")
 
     @staticmethod
     def _reserve_upstream_budget() -> None:
         # Open-Meteo counts >10 variables fractionally. Reserve a conservative
         # rounded-up unit count for both requests BEFORE either starts. This is
         # an application guardrail, not a provider-account spending guarantee.
+        units = math.ceil(len(MARINE_VARIABLES) / 10) + math.ceil((len(WEATHER_VARIABLES) + 2) / 10)
+        OpenMeteoMarineProvider._reserve_budget_units(units)
+
+    @staticmethod
+    def _reserve_budget_units(units: int) -> None:
         try:
             limit = max(1, min(int(os.getenv("OPEN_METEO_DAILY_CREDIT_BUDGET", "3000")), 100_000))
         except ValueError:
             limit = 3000
-        units = math.ceil(len(MARINE_VARIABLES) / 10) + math.ceil((len(WEATHER_VARIABLES) + 2) / 10)
         for _ in range(units):
             api_rate_limiter.enforce(RateLimitRule(
                 scope="upstream:open-meteo-credit-budget",
@@ -197,6 +246,8 @@ class OpenMeteoMarineProvider:
     @staticmethod
     def _cache_is_current(item: _CacheItem, now: datetime, max_age: timedelta) -> bool:
         local_day = now.astimezone(_zone(item.timezone)).date()
+        if not item.weather_available:
+            max_age = min(max_age, PARTIAL_FORECAST_MAX_AGE)
         return (
             -timedelta(minutes=1) <= now - item.fetched_at <= max_age
             and bool(item.data)
@@ -207,6 +258,46 @@ class OpenMeteoMarineProvider:
     def _current_entries(item: _CacheItem, now: datetime) -> list[ForecastEntry]:
         local_day = now.astimezone(_zone(item.timezone)).date()
         return [entry for entry in item.data if entry.day >= local_day]
+
+    def _usable_fallback(
+        self, identity: str, cached: _CacheItem | None, now: datetime,
+    ) -> _CacheItem | None:
+        candidates = [cached]
+        if cached is None or not self._has_usable_future_hours(cached, now):
+            candidates.append(self._read_persistent_cache(identity, STALE_FORECAST_MAX_AGE))
+        for item in candidates:
+            if item is not None and self._has_usable_future_hours(item, now):
+                return item
+        return None
+
+    @staticmethod
+    def _has_usable_future_hours(item: _CacheItem, now: datetime) -> bool:
+        if not (-timedelta(minutes=1) <= now - item.fetched_at <= STALE_FORECAST_MAX_AGE):
+            return False
+        for row in item.hourly_rows:
+            try:
+                wave = row.get("wave_height")
+                if (
+                    wave is not None and math.isfinite(float(wave))
+                    and _utc_stamp(row.get("time_utc") or row["time"], item.timezone) >= now
+                ):
+                    return True
+            except (KeyError, TypeError, ValueError, OverflowError):
+                continue
+        return False
+
+    def _fallback_entries(
+        self, identity: str, item: _CacheItem, now: datetime,
+    ) -> list[ForecastEntry]:
+        self._cache[identity] = item
+        self._fallback_notes[identity] = _STALE_NOTE
+        # Cached outage fallback must never trigger a "conditions now" alert.
+        return [
+            entry.model_copy(update={
+                "confidence": "estimated", "confidence_note": _STALE_NOTE,
+            })
+            for entry in self._current_entries(item, now)
+        ]
 
     def fetch_spot_detail(self, spot: Spot) -> DetailedSpotForecast:
         self.fetch_spot_forecast(spot)
@@ -222,7 +313,12 @@ class OpenMeteoMarineProvider:
             utc_offset_seconds=cached.utc_offset_seconds,
             fetched_at=cached.fetched_at, local_date=local_day, hours=hours,
             days=[day for day in (cached.days or []) if day.day >= local_day],
-            note=("Numerical model forecast, not an observed surf report. Wave height is significant combined sea height, not breaking-wave face height. Secondary swell may be unavailable for the automatically selected model."),
+            weather_model="Best Match (automatic)" if cached.weather_available else "Temporarily unavailable",
+            note=" ".join(filter(None, [
+                "Numerical model forecast, not an observed surf report. Wave height is significant combined sea height, not breaking-wave face height. Secondary swell may be unavailable for the automatically selected model.",
+                None if cached.weather_available else _WEATHER_NOTE,
+                self._fallback_notes.get(self._cache_identity(spot)),
+            ])),
         )
 
     def fetch_spot_surf_window(
@@ -239,7 +335,10 @@ class OpenMeteoMarineProvider:
                 available=False,
                 note="Hourly forecast is unavailable right now.",
             )
-        return _best_surf_window(spot, cached.hourly_rows, timezone_name=cached.timezone)
+        result = _best_surf_window(spot, cached.hourly_rows, timezone_name=cached.timezone)
+        if self._cache_identity(spot) in self._fallback_notes:
+            return result.model_copy(update={"confidence": "estimated", "note": _STALE_NOTE})
+        return result
 
     def _with_api_key(self, params: dict[str, Any]) -> dict[str, Any]:
         if not self._api_key:
@@ -276,6 +375,7 @@ class OpenMeteoMarineProvider:
                 timezone=str(cached.payload.get("timezone") or "UTC"),
                 utc_offset_seconds=int(cached.payload.get("utc_offset_seconds") or 0),
                 days=[ForecastDaylight.model_validate(day) for day in cached.payload.get("days", [])],
+                weather_available=bool(cached.payload.get("weather_available", True)),
             )
         except Exception:
             logger.exception("Could not read cached Open-Meteo forecast for %s", spot_id)
@@ -299,6 +399,7 @@ class OpenMeteoMarineProvider:
                     "timezone": cache_item.timezone,
                     "utc_offset_seconds": cache_item.utc_offset_seconds,
                     "days": [day.model_dump(mode="json") for day in (cache_item.days or [])],
+                    "weather_available": cache_item.weather_available,
                 },
             )
         except Exception:
