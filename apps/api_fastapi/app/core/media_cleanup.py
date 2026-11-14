@@ -35,9 +35,7 @@ def run_media_cleanup(limit: int = 100) -> MediaCleanupResult:
         storage = configured_media_storage()
     except Exception:
         logger.exception("Could not initialize media storage for cleanup")
-        return MediaCleanupResult(failed=1)
-    if not isinstance(storage, R2MediaStorage):
-        return MediaCleanupResult()
+        storage = None
 
     deleted = _delete_reservations(
         storage,
@@ -79,9 +77,16 @@ def _delete_reservations(
     failed = 0
     for reservation in reservations:
         try:
-            if reservation.storage_provider == "bunny_stream":
+            if reservation.purpose == "chat":
+                if not upload_ledger.claim_chat_cleanup(reservation.id, reservation.user_id, reservation.status):
+                    continue
+                from app.core.chat_media import _delete
+                _delete(reservation)
+            elif reservation.storage_provider == "bunny_stream":
                 BunnyStreamClient().delete_video(reservation.external_id)
             else:
+                if not isinstance(storage, R2MediaStorage):
+                    raise RuntimeError("Public media storage is unavailable")
                 for object_name in object_names(reservation):
                     storage.delete_object(object_name)
             upload_ledger.set_status(

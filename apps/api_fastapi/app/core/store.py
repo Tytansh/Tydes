@@ -10,6 +10,7 @@ import json
 import logging
 import math
 import os
+from pathlib import Path
 import secrets
 from threading import RLock
 
@@ -25,6 +26,7 @@ from app.core.models import (
     AdCard,
     Alert,
     BillingPlan,
+    ChatAttachment,
     Dashboard,
     DetailedSpotForecast,
     EventAttendee,
@@ -1840,6 +1842,8 @@ class DemoStore:
         if self.postgres_social is not None:
             self.postgres_social.delete_post(post_id)
             return post
+        from app.core.media_uploads import upload_ledger
+        upload_ledger.queue_chat_scope_deletion("event", post_id)
         self.posts = [item for item in self.posts if item.id != post_id]
         removed_comment_ids = {
             comment.id for comment in self.comments if comment.post_id == post_id
@@ -2029,10 +2033,26 @@ class DemoStore:
             )
         return attendees
 
-    def can_access_event_chat(self, post_id: str) -> bool:
-        post = self.get_post(post_id)
+    def can_access_event_chat(self, post_id: str, *, sender_user_id: str | None = None) -> bool:
+        if self.user.banned:
+            return False
+        post = self.get_visible_post(post_id, self.user.id)
         if post is None or post.post_type not in {"surf_plan", "looking_for_buddy"}:
             return False
+        peers = {post.user_id}
+        if sender_user_id is not None:
+            peers.add(sender_user_id)
+        for peer_id in peers - {self.user.id}:
+            peer = self.get_auth_user_by_id(peer_id)
+            if peer is None or peer.banned or self.user.id in self._blocked_user_ids_for(peer_id):
+                return False
+            if peer_id in self._blocked_user_ids_for(self.user.id):
+                return False
+        if self.postgres_social is None:
+            from app.core.direct_messages import JsonDirectMessageRepository
+            blocked = JsonDirectMessageRepository(Path(self.state_file).with_name("direct_messages.json")).blocked_users_either_direction(self.user.id)
+            if peers & blocked:
+                return False
         if post.user_id == self.user.id:
             return True
         if self.postgres_social is not None:
@@ -2059,9 +2079,31 @@ class DemoStore:
         post_id: str,
         message_id: str,
         text: str,
+        client_message_id: str | None = None,
+        attachment_id: str | None = None,
     ) -> EventChatMessage | None:
         if not self.can_access_event_chat(post_id):
             return None
+        attachment = None
+        claim = None
+        if attachment_id is not None:
+            from app.core.media_uploads import upload_ledger
+            from fastapi import HTTPException
+            if client_message_id is None:
+                raise HTTPException(status_code=400, detail="A client message ID is required for attachments.")
+            try:
+                reservation = upload_ledger.validate_chat_media(self.user.id, "event", post_id, [attachment_id])[0]
+            except ValueError as error:
+                raise HTTPException(status_code=400, detail=str(error)) from error
+            attachment = ChatAttachment(id=reservation.id, media_type=reservation.media_type)
+            def claim(identifier, connection):
+                try:
+                    upload_ledger.claim_chat_media(self.user.id, "event", post_id, [attachment_id], identifier, client_message_id, connection=connection)
+                except ValueError as error:
+                    raise HTTPException(status_code=409, detail=str(error)) from error
+        if client_message_id:
+            value = "\0".join(("event", post_id, self.user.id, client_message_id))
+            message_id = "event_message_" + hashlib.sha256(value.encode()).hexdigest()[:32]
         message = EventChatMessage(
             id=message_id,
             post_id=post_id,
@@ -2071,13 +2113,41 @@ class DemoStore:
             author_avatar_url=self.user.avatar_url,
             text=text.strip(),
             created_at=datetime.now(timezone.utc),
+            client_message_id=client_message_id,
+            attachment=attachment,
         )
         if self.postgres_social is not None:
-            self.postgres_social.save_event_message(message)
+            return self.postgres_social.save_event_message(message, claim_attachment=claim)
+        with self._state_lock:
+            previous = next((item for item in self.event_chat_messages if item.id == message.id), None)
+            if previous is not None:
+                if previous.post_id != post_id or previous.user_id != self.user.id or previous.text != message.text or previous.attachment != attachment:
+                    from fastapi import HTTPException
+                    raise HTTPException(status_code=409, detail="This message retry has different content.")
+                return previous
+            if claim is not None:
+                claim(message.id, None)
+            self.event_chat_messages.append(message)
+            try:
+                self._save_state()
+            except Exception:
+                # Do not expose an attachment from an undelivered message.
+                # Keep its deterministic ledger claim so the same retry can
+                # persist it safely after a transient filesystem failure.
+                self.event_chat_messages.remove(message)
+                raise
             return message
-        self.event_chat_messages.append(message)
-        self._save_state()
-        return message
+
+    def event_attachment_message_exists(self, post_id: str, message_id: str, attachment_id: str) -> bool:
+        if not self.can_access_event_chat(post_id):
+            return False
+        if self.postgres_social is not None:
+            return self.postgres_social.event_attachment_message_exists(post_id, message_id, attachment_id)
+        return any(
+            message.id == message_id and message.post_id == post_id
+            and message.attachment is not None and message.attachment.id == attachment_id
+            for message in self.event_chat_messages
+        )
 
     def add_comment(
         self,
@@ -2380,6 +2450,13 @@ class DemoStore:
             merged_comments.update(seed_comments)
             self.comments = list(merged_comments.values())
 
+        messages_data = data.get("event_chat_messages")
+        if isinstance(messages_data, list):
+            self.event_chat_messages = [
+                EventChatMessage.model_validate(item) for item in messages_data
+                if isinstance(item, dict) and self.get_post(str(item.get("post_id", ""))) is not None
+            ]
+
         notifications_data = data.get("social_notifications")
         if isinstance(notifications_data, list):
             self.social_notifications = [
@@ -2550,6 +2627,7 @@ class DemoStore:
             "comments": [
                 comment.model_dump(mode="json") for comment in self.comments
             ],
+            "event_chat_messages": [message.model_dump(mode="json") for message in self.event_chat_messages],
             "social_notifications": [
                 notification.model_dump(mode="json")
                 for notification in self.social_notifications

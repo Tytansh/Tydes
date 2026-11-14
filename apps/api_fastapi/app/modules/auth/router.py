@@ -253,8 +253,9 @@ def logout(_user=Depends(require_signed_in_user)):
 
 @router.delete("/account")
 def delete_account(user=Depends(require_signed_in_user)):
-    queue_account_media_deletion(user.id)
+    user_id = user.id
     deleted_user = store.delete_current_account()
+    queue_account_media_deletion(user_id)
     # The existing cleanup worker handles queued media. Do not keep a deletion
     # response waiting on third-party storage after the account is gone.
     return deleted_user

@@ -169,6 +169,56 @@ class R2MediaStorage(MediaStorage):
         return f"{self.prefix}/{object_name}" if self.prefix else object_name
 
 
+class PrivateChatR2Storage(R2MediaStorage):
+    """Separate, explicitly verified private bucket. Never expose a public URL."""
+
+    def __init__(self) -> None:
+        if os.getenv("CHAT_R2_PRIVATE_VERIFIED", "").lower() != "true":
+            raise RuntimeError("Private photo storage has not been verified")
+        self.bucket = _required_env("CHAT_R2_PRIVATE_BUCKET")
+        if self.bucket == os.getenv("CLOUDFLARE_R2_BUCKET", "").strip():
+            raise RuntimeError("Private messages require a separate bucket")
+        self.prefix = "chat"
+        self._client = None
+
+    @property
+    def client(self):
+        if self._client is None:
+            import boto3
+            from botocore.config import Config
+            self._client = boto3.client(
+                "s3", endpoint_url=os.getenv("CHAT_R2_ENDPOINT_URL", "").strip() or _r2_endpoint_url(),
+                aws_access_key_id=_required_env("CHAT_R2_ACCESS_KEY_ID"),
+                aws_secret_access_key=_required_env("CHAT_R2_SECRET_ACCESS_KEY"),
+                region_name="auto",
+                config=Config(connect_timeout=5, read_timeout=8,
+                              retries={"max_attempts": 1, "mode": "standard"}),
+            )
+        return self._client
+
+    def public_object_url(self, object_name: str) -> str:
+        raise RuntimeError("Private message objects have no public URL")
+
+    def store_upload(self, *args, **kwargs):
+        raise RuntimeError("Private message bytes must upload directly to storage")
+
+    def promote_object(self, pending_name: str, final_name: str, *, content_type: str) -> None:
+        self.client.copy_object(
+            Bucket=self.bucket, Key=self._key(final_name),
+            CopySource={"Bucket": self.bucket, "Key": self._key(pending_name)},
+            ContentType=content_type, CacheControl="private, no-store",
+            MetadataDirective="REPLACE",
+        )
+        self.delete_object(pending_name)
+
+    def signed_read_url(self, object_name: str, *, expires_seconds: int) -> str:
+        return self.client.generate_presigned_url(
+            "get_object", Params={"Bucket": self.bucket, "Key": self._key(object_name),
+                                  "ResponseCacheControl": "private, no-store"},
+            ExpiresIn=expires_seconds, HttpMethod="GET",
+        )
+
+
 def configured_media_storage() -> MediaStorage:
     backend = os.getenv("MEDIA_STORAGE_BACKEND", "local").strip().lower()
     if backend in {"", "local", "disk"}:

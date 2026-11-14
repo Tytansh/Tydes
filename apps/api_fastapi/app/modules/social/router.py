@@ -6,7 +6,7 @@ from typing import Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.auth import optional_authenticated_user, require_authenticated_user
 from app.core.bunny_stream import BunnyStreamClient, bunny_stream_enabled
@@ -82,7 +82,19 @@ class SocialCommentCreateRequest(BaseModel):
 
 
 class EventChatMessageCreateRequest(BaseModel):
-    text: str = Field(min_length=1, max_length=600)
+    model_config = ConfigDict(extra="forbid")
+    text: str = Field(default="", max_length=600)
+    client_message_id: str | None = Field(default=None, min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
+    attachment_id: str | None = Field(default=None, min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def valid_content(self):
+        self.text = self.text.strip()
+        if not self.text and not self.attachment_id:
+            raise ValueError("Write a message or add a photo/video.")
+        if self.attachment_id and not self.client_message_id:
+            raise ValueError("A client message ID is required for attachments.")
+        return self
 
 
 class SocialReportCreateRequest(BaseModel):
@@ -402,6 +414,8 @@ def create_event_chat_message(
         post_id=post_id,
         message_id=f"event_message_{uuid4().hex[:12]}",
         text=text,
+        client_message_id=payload.client_message_id,
+        attachment_id=payload.attachment_id,
     )
     if message is None:
         raise HTTPException(
@@ -657,7 +671,7 @@ def complete_direct_media_upload(
     if not isinstance(storage, R2MediaStorage):
         raise HTTPException(status_code=409, detail="Direct uploads are unavailable.")
     reservation = upload_ledger.get(reservation_id, user.id)
-    if reservation is None:
+    if reservation is None or reservation.purpose != "social":
         raise HTTPException(status_code=404, detail="Upload reservation not found.")
     if reservation.status in {"complete", "used"}:
         return _reservation_attachment(reservation)
@@ -766,7 +780,7 @@ def cancel_direct_media_upload(
 ):
     storage = configured_media_storage()
     reservation = upload_ledger.get(reservation_id, user.id)
-    if reservation is None:
+    if reservation is None or reservation.purpose != "social":
         return {"canceled": True}
     if reservation.status == "pending":
         if reservation.storage_provider == "bunny_stream":

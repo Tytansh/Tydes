@@ -70,6 +70,11 @@ class UploadReservation:
     expires_at: datetime
     storage_provider: str = "r2"
     external_id: str | None = None
+    purpose: str = "social"
+    scope_type: str | None = None
+    scope_id: str | None = None
+    message_id: str | None = None
+    client_message_id: str | None = None
 
     @property
     def total_bytes(self) -> int:
@@ -140,6 +145,75 @@ class MediaUploadLedger:
             self._memory[reservation_id] = updated
             return updated
 
+    def set_chat_video_target(self, reservation_id: str, user_id: str,
+                              video_id: str, expires_at: datetime) -> UploadReservation:
+        if self.database_url is not None:
+            with self._connect() as connection:
+                row = connection.execute("""UPDATE media_upload_reservations
+                    SET external_id=%s,pending_name=%s,final_name=%s,expires_at=%s,updated_at=NOW()
+                    WHERE id=%s AND user_id=%s AND purpose='chat' AND status='pending'
+                    RETURNING *""", (video_id, video_id, video_id, expires_at, reservation_id, user_id)).fetchone()
+            if row is None:
+                raise ValueError("Upload is no longer active.")
+            return _reservation_from_row(row)
+        with self._lock:
+            row = self._memory.get(reservation_id)
+            if row is None or row.user_id != user_id or row.purpose != "chat" or row.status != "pending":
+                raise ValueError("Upload is no longer active.")
+            result = replace(row, external_id=video_id, pending_name=video_id,
+                             final_name=video_id, expires_at=expires_at)
+            self._memory[row.id] = result
+            return result
+
+    def get_chat(self, identifier: str) -> UploadReservation | None:
+        if self.database_url is not None:
+            with self._connect() as connection:
+                row = connection.execute("SELECT * FROM media_upload_reservations WHERE id=%s AND purpose='chat'", (identifier,)).fetchone()
+            return _reservation_from_row(row) if row is not None else None
+        with self._lock:
+            row = self._memory.get(identifier)
+            return row if row is not None and row.purpose == "chat" else None
+
+    def complete_chat_media(self, identifier: str, user_id: str) -> None:
+        self._transition_chat(identifier, user_id, "complete", {"pending"})
+
+    def claim_chat_cleanup(self, identifier: str, user_id: str, expected_status: str) -> bool:
+        """A cleanup snapshot must not delete an attachment claimed meanwhile."""
+        if self.database_url is not None:
+            with self._connect() as connection:
+                row = connection.execute("""UPDATE media_upload_reservations
+                    SET status='deletion_pending',updated_at=NOW()
+                    WHERE id=%s AND user_id=%s AND purpose='chat' AND status=%s
+                    AND (%s<>'complete' OR message_id IS NULL) RETURNING id""",
+                    (identifier, user_id, expected_status, expected_status)).fetchone()
+                return row is not None
+        with self._lock:
+            row = self._memory.get(identifier)
+            if (row is None or row.user_id != user_id or row.purpose != "chat"
+                    or row.status != expected_status
+                    or (expected_status == "complete" and row.message_id is not None)):
+                return False
+            self._memory[identifier] = replace(row, status="deletion_pending")
+            return True
+
+    def cancel_chat_media(self, identifier: str, user_id: str) -> None:
+        self._transition_chat(identifier, user_id, "canceled", {"pending", "complete", "canceled", "failed", "rejected"})
+
+    def _transition_chat(self, identifier: str, user_id: str, status: str, allowed: set[str]) -> None:
+        if self.database_url is not None:
+            with self._connect() as connection:
+                row = connection.execute("""UPDATE media_upload_reservations SET status=%s,updated_at=NOW()
+                    WHERE id=%s AND user_id=%s AND purpose='chat' AND status=ANY(%s) AND message_id IS NULL RETURNING id""",
+                    (status, identifier, user_id, list(allowed))).fetchone()
+                if row is None:
+                    raise ValueError("Attachment upload is no longer active.")
+            return
+        with self._lock:
+            row = self._memory.get(identifier)
+            if row is None or row.user_id != user_id or row.purpose != "chat" or row.status not in allowed or row.message_id is not None:
+                raise ValueError("Attachment upload is no longer active.")
+            self._memory[identifier] = replace(row, status=status)
+
     def assert_completed_media(
         self,
         user_id: str,
@@ -147,7 +221,7 @@ class MediaUploadLedger:
     ) -> None:
         for media_id, media_type, url, thumbnail_url in attachments:
             reservation = self.get(media_id, user_id)
-            if reservation is None or reservation.status not in {"complete", "used"}:
+            if reservation is None or reservation.purpose != "social" or reservation.status not in {"complete", "used"}:
                 raise ValueError("Upload is missing or has not finished.")
             if (
                 reservation.media_type != media_type
@@ -158,7 +232,58 @@ class MediaUploadLedger:
 
     def mark_used(self, user_id: str, media_ids: list[str]) -> None:
         for media_id in media_ids:
+            reservation = self.get(media_id, user_id)
+            if reservation is None or reservation.purpose != "social":
+                raise ValueError("Private message media cannot be used publicly.")
             self.set_status(media_id, user_id, "used")
+
+    def validate_chat_media(self, user_id: str, scope_type: str, scope_id: str,
+                            media_ids: list[str]) -> list[UploadReservation]:
+        if len(media_ids) > 1 or len(set(media_ids)) != len(media_ids):
+            raise ValueError("Choose at most one attachment per message.")
+        rows = [self.get(identifier, user_id) for identifier in media_ids]
+        for row in rows:
+            if (row is None or row.purpose != "chat" or row.scope_type != scope_type
+                    or row.scope_id != scope_id or row.status not in {"complete", "used"}):
+                raise ValueError("Message attachment is unavailable or belongs to another conversation.")
+        return rows
+
+    def claim_chat_media(self, user_id: str, scope_type: str, scope_id: str,
+                         media_ids: list[str], message_id: str, client_message_id: str,
+                         *, connection=None) -> list[UploadReservation]:
+        if not media_ids:
+            return []
+        if len(media_ids) > 1 or len(set(media_ids)) != len(media_ids):
+            raise ValueError("Choose at most one attachment per message.")
+        def claimed(row):
+            if (row is None or row.purpose != "chat" or row.user_id != user_id
+                    or row.scope_type != scope_type or row.scope_id != scope_id
+                    or row.status not in {"complete", "used"}
+                    or (row.message_id is not None and
+                        (row.message_id != message_id or row.client_message_id != client_message_id))):
+                raise ValueError("Message attachment is unavailable or already used.")
+            return replace(row, status="used", message_id=message_id,
+                           client_message_id=client_message_id)
+        def sql_claim(conn):
+            result = []
+            for identifier in media_ids:
+                raw = conn.execute("SELECT * FROM media_upload_reservations WHERE id=%s AND user_id=%s FOR UPDATE",
+                                   (identifier, user_id)).fetchone()
+                row = claimed(_reservation_from_row(raw) if raw is not None else None)
+                conn.execute("UPDATE media_upload_reservations SET status='used', message_id=%s, client_message_id=%s, updated_at=NOW() WHERE id=%s AND user_id=%s",
+                             (message_id, client_message_id, identifier, user_id))
+                result.append(row)
+            return result
+        if connection is not None:
+            return sql_claim(connection)
+        if self.database_url is not None:
+            with self._connect() as conn, conn.transaction():
+                return sql_claim(conn)
+        with self._lock:
+            result = [claimed(self._memory.get(identifier)) for identifier in media_ids]
+            for row in result:
+                self._memory[row.id] = row
+            return result
 
     def media_id_for_url(self, user_id: str, url: str | None) -> str | None:
         if not url:
@@ -226,6 +351,26 @@ class MediaUploadLedger:
                 queued.append(updated)
         return queued
 
+    def queue_chat_scope_deletion(self, scope_type: str, scope_id: str, *, connection=None) -> None:
+        """Deleting a conversation also deletes every participant's attachments."""
+        def sql_queue(conn):
+            conn.execute("""UPDATE media_upload_reservations
+                SET status='deletion_pending',updated_at=NOW()
+                WHERE purpose='chat' AND scope_type=%s AND scope_id=%s
+                AND status NOT IN ('deleted','expired','abandoned')""", (scope_type, scope_id))
+        if connection is not None:
+            sql_queue(connection)
+            return
+        if self.database_url is not None:
+            with self._connect() as conn:
+                sql_queue(conn)
+            return
+        with self._lock:
+            for identifier, row in list(self._memory.items()):
+                if (row.purpose == "chat" and row.scope_type == scope_type and row.scope_id == scope_id
+                        and row.status not in {"deleted", "expired", "abandoned"}):
+                    self._memory[identifier] = replace(row, status="deletion_pending")
+
     def queue_user_media_deletion(self, user_id: str) -> list[UploadReservation]:
         if self.database_url is not None:
             with self._connect() as connection:
@@ -288,7 +433,7 @@ class MediaUploadLedger:
                 rows = connection.execute(
                     """
                     SELECT * FROM media_upload_reservations
-                    WHERE status = 'pending' AND expires_at < %s
+                    WHERE (status = 'pending' OR (purpose='chat' AND status IN ('canceled','rejected','failed','deleted'))) AND expires_at < %s
                     ORDER BY expires_at ASC
                     LIMIT %s
                     """,
@@ -299,7 +444,7 @@ class MediaUploadLedger:
             return [
                 reservation
                 for reservation in self._memory.values()
-                if reservation.status == "pending" and reservation.expires_at < now
+                if (reservation.status == "pending" or (reservation.purpose == "chat" and reservation.status in {"canceled", "rejected", "failed", "deleted"})) and reservation.expires_at < now
             ][:limit]
 
     def _reservations_with_status(
@@ -374,13 +519,15 @@ class MediaUploadLedger:
                 retained_bytes=sum(
                     row.total_bytes
                     for row in rows
-                    if row.status in {"complete", "used", "deletion_pending"}
+                    if row.status in {"pending", "complete", "used", "deletion_pending"}
+                    or (row.purpose == "chat" and row.status in {"canceled", "rejected", "failed", "deleted"})
                 ),
                 user_retained_bytes=sum(
                     row.total_bytes
                     for row in rows
                     if row.user_id == reservation.user_id
-                    and row.status in {"complete", "used", "deletion_pending"}
+                    and (row.status in {"pending", "complete", "used", "deletion_pending"}
+                         or (row.purpose == "chat" and row.status in {"canceled", "rejected", "failed", "deleted"}))
                 ),
             )
             self._memory[reservation.id] = reservation
@@ -437,7 +584,8 @@ class MediaUploadLedger:
                             0
                         ) AS user_bytes
                     FROM media_upload_reservations
-                    WHERE status IN ('complete', 'used', 'deletion_pending')
+                    WHERE status IN ('pending', 'complete', 'used', 'deletion_pending')
+                       OR (purpose='chat' AND status IN ('canceled','rejected','failed','deleted'))
                     """,
                     (reservation.user_id,),
                 ).fetchone()
@@ -461,10 +609,11 @@ class MediaUploadLedger:
                         expected_thumbnail_bytes, total_bytes, pending_name,
                         final_name, pending_thumbnail_name, final_thumbnail_name,
                         public_url, thumbnail_public_url, status, created_at,
-                        expires_at, storage_provider, external_id
+                        expires_at, storage_provider, external_id,
+                        purpose, scope_type, scope_id, message_id, client_message_id
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     )
                     """,
                     (
@@ -488,6 +637,11 @@ class MediaUploadLedger:
                         reservation.expires_at,
                         reservation.storage_provider,
                         reservation.external_id,
+                        reservation.purpose,
+                        reservation.scope_type,
+                        reservation.scope_id,
+                        reservation.message_id,
+                        reservation.client_message_id,
                     ),
                 )
         return reservation
@@ -543,6 +697,10 @@ class MediaUploadLedger:
                 ADD COLUMN IF NOT EXISTS external_id TEXT
                 """
             )
+            for name, definition in (("purpose", "TEXT NOT NULL DEFAULT 'social'"),
+                                     ("scope_type", "TEXT"), ("scope_id", "TEXT"),
+                                     ("message_id", "TEXT"), ("client_message_id", "TEXT")):
+                connection.execute(f"ALTER TABLE media_upload_reservations ADD COLUMN IF NOT EXISTS {name} {definition}")
             connection.execute(
                 """
                 CREATE INDEX IF NOT EXISTS media_upload_user_created_idx
@@ -634,6 +792,11 @@ def _reservation_from_row(row) -> UploadReservation:
         external_id=(
             str(row["external_id"]) if row.get("external_id") is not None else None
         ),
+        purpose=str(row.get("purpose") or "social"),
+        scope_type=row.get("scope_type"),
+        scope_id=row.get("scope_id"),
+        message_id=row.get("message_id"),
+        client_message_id=row.get("client_message_id"),
     )
 
 

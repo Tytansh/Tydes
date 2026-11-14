@@ -298,6 +298,11 @@ class EventAttendee(BaseModel):
     organizer: bool = False
 
 
+class ChatAttachment(BaseModel):
+    id: str
+    media_type: Literal["photo", "video"]
+
+
 class EventChatMessage(BaseModel):
     id: str
     post_id: str
@@ -305,8 +310,10 @@ class EventChatMessage(BaseModel):
     author_name: str
     author_handle: str | None = None
     author_avatar_url: str | None = None
-    text: str
+    text: str = ""
     created_at: datetime
+    client_message_id: str | None = None
+    attachment: ChatAttachment | None = None
 
 
 class SocialComment(BaseModel):

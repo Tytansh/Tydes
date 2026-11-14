@@ -427,6 +427,9 @@ class _Connection:
         return self
     def __exit__(self, *_):
         return False
+    @contextmanager
+    def transaction(self):
+        yield
     def execute(self, query, parameters=()):
         self.calls.append((query, parameters))
         return _Rows({"count": 12})

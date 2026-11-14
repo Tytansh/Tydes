@@ -6,8 +6,10 @@ from app.core.direct_messages import DirectMessageService, get_direct_message_se
 from app.core.models import User
 from app.core.moderation import ensure_allowed_content
 from app.core.rate_limit import RateLimitRule, api_rate_limiter
+from app.modules.messages.media_router import router as media_router
 
 router = APIRouter(prefix="/messages", tags=["messages"])
+router.include_router(media_router)
 
 
 class StartConversation(BaseModel):
@@ -20,12 +22,15 @@ class SendMessage(BaseModel):
     text: str = Field(default="", max_length=1600)
     client_message_id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
     shared_post_id: str | None = Field(default=None, min_length=1, max_length=120)
+    attachment_id: str | None = Field(default=None, min_length=1, max_length=120)
 
     @model_validator(mode="after")
     def valid_content(self):
         self.text = self.text.strip()
-        if not self.text and not self.shared_post_id:
-            raise ValueError("Write a message or choose a post to share.")
+        if not self.text and not self.shared_post_id and not self.attachment_id:
+            raise ValueError("Write a message, choose a post or add a photo/video.")
+        if self.shared_post_id and self.attachment_id:
+            raise ValueError("Share a post or an attachment, not both.")
         return self
 
 
@@ -83,6 +88,8 @@ def send_message(thread_id: str, payload: SendMessage, user: User = Depends(requ
         ensure_allowed_content(payload.text)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+    if payload.attachment_id is not None:
+        return service.send(user, thread_id, payload.text, payload.client_message_id, payload.shared_post_id, payload.attachment_id)
     return service.send(user, thread_id, payload.text, payload.client_message_id, payload.shared_post_id)
 
 

@@ -45,6 +45,28 @@ services:
         sync: false
       - key: BUNNY_STREAM_CDN_HOSTNAME
         value: vz-4521d531-edd.b-cdn.net
+      # Private chat media must never reuse the public feed bucket/library.
+      # Configure these only after verifying private provider access controls.
+      - key: CHAT_MEDIA_ENABLED
+        sync: false
+      - key: CHAT_R2_PRIVATE_BUCKET
+        sync: false
+      - key: CHAT_R2_ACCESS_KEY_ID
+        sync: false
+      - key: CHAT_R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: CHAT_R2_PRIVATE_VERIFIED
+        sync: false
+      - key: CHAT_BUNNY_STREAM_LIBRARY_ID
+        sync: false
+      - key: CHAT_BUNNY_STREAM_API_KEY
+        sync: false
+      - key: CHAT_BUNNY_STREAM_CDN_HOSTNAME
+        sync: false
+      - key: CHAT_BUNNY_STREAM_TOKEN_KEY
+        sync: false
+      - key: CHAT_BUNNY_STREAM_PRIVATE_VERIFIED
+        sync: false
       - key: CLOUDFLARE_R2_ACCOUNT_ID
         sync: false
       - key: CLOUDFLARE_R2_BUCKET

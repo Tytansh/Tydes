@@ -11,7 +11,6 @@ from pathlib import Path
 import tempfile
 from threading import RLock
 from typing import Any
-from uuid import uuid4
 
 from fastapi import HTTPException
 
@@ -29,6 +28,31 @@ def _iso(value: datetime | str) -> str:
 def _thread_id(first: str, second: str) -> str:
     pair = "\0".join(sorted((first, second)))
     return "dm_" + hashlib.sha256(pair.encode()).hexdigest()[:32]
+
+
+def _message_id(thread_id: str, user_id: str, client_id: str) -> str:
+    # Stable across retries, including a local file-write failure after claim.
+    value = "\0".join(("direct", thread_id, user_id, client_id))
+    return "message_" + hashlib.sha256(value.encode()).hexdigest()[:32]
+
+
+def _attachment(value: Any) -> dict | None:
+    if not isinstance(value, dict):
+        return None
+    if value.get("media_type") not in {"photo", "video"} or not isinstance(value.get("id"), str):
+        return None
+    return {"id": value["id"], "media_type": value["media_type"]}
+
+
+def _message_preview(message: dict | None) -> str:
+    if message is None:
+        return ""
+    if message.get("text"):
+        return message["text"]
+    attachment = _attachment(message.get("attachment"))
+    if attachment is not None:
+        return "Photo" if attachment["media_type"] == "photo" else "Video"
+    return "Shared a post"
 
 
 class JsonDirectMessageRepository:
@@ -94,6 +118,14 @@ class JsonDirectMessageRepository:
                 return None
             return deepcopy(thread)
 
+    def attachment_message_exists(self, thread_id: str, user_id: str, message_id: str, attachment_id: str) -> bool:
+        with self._state() as state:
+            thread = state["threads"].get(thread_id)
+            return bool(thread is not None and user_id in thread["participants"] and any(
+                item["id"] == message_id and (_attachment(item.get("attachment")) or {}).get("id") == attachment_id
+                for item in thread["messages"]
+            ))
+
     def list_threads(self, user_id: str) -> list[dict]:
         with self._state() as state:
             return deepcopy(sorted(
@@ -105,14 +137,14 @@ class JsonDirectMessageRepository:
     def unread_threads(self, user_id: str) -> list[dict]:
         return self.list_threads(user_id)
 
-    def send(self, thread_id: str, user_id: str, text: str, client_id: str, shared_post_id: str | None, daily_limit: int) -> dict:
+    def send(self, thread_id: str, user_id: str, text: str, client_id: str, shared_post_id: str | None, daily_limit: int, *, attachment: dict | None = None, claim_attachment=None) -> dict:
         with self._state(True) as state:
             thread = state["threads"].get(thread_id)
             if thread is None or user_id not in thread["participants"]:
                 raise HTTPException(status_code=404, detail="Conversation not found.")
             for message in thread["messages"]:
                 if message["sender_user_id"] == user_id and message["client_message_id"] == client_id:
-                    if message["text"] != text or message.get("shared_post_id") != shared_post_id:
+                    if message["text"] != text or message.get("shared_post_id") != shared_post_id or _attachment(message.get("attachment")) != attachment:
                         raise HTTPException(status_code=409, detail="This message retry has different content.")
                     return deepcopy(message)
             cutoff = (_now() - timedelta(days=1)).isoformat()
@@ -125,12 +157,17 @@ class JsonDirectMessageRepository:
                                for item in state["threads"].values() for message in item["messages"])
             if minute_count >= 20:
                 raise HTTPException(status_code=429, detail="Please wait a moment before sending more messages.", headers={"Retry-After": "60"})
+            identifier = _message_id(thread_id, user_id, client_id)
+            if claim_attachment is not None:
+                claim_attachment(identifier, None)
             message = {
-                "id": "message_" + uuid4().hex, "sender_user_id": user_id,
+                "id": identifier, "sender_user_id": user_id,
                 "text": text, "client_message_id": client_id,
                 "created_at": _now().isoformat(), "shared_post_id": shared_post_id,
                 "sequence": len(thread["messages"]) + 1,
             }
+            if attachment is not None:
+                message["attachment"] = attachment
             thread["messages"].append(message)
             thread["updated_at"] = message["created_at"]
             thread["participants"][user_id].update(accepted=True, declined=False)
@@ -164,6 +201,10 @@ class JsonDirectMessageRepository:
 
     def delete_user(self, user_id: str) -> None:
         with self._state(True) as state:
+            from app.core.media_uploads import upload_ledger
+            for identifier, thread in state["threads"].items():
+                if user_id in thread["participants"]:
+                    upload_ledger.queue_chat_scope_deletion("direct", identifier)
             state["threads"] = {key: thread for key, thread in state["threads"].items() if user_id not in thread["participants"]}
             state["blocks"] = {owner: [peer for peer in peers if peer != user_id]
                                for owner, peers in state.get("blocks", {}).items() if owner != user_id}
@@ -243,6 +284,7 @@ class PostgresDirectMessageRepository:
                 UNIQUE(thread_id, sender_user_id, client_message_id))""")
             connection.execute("CREATE INDEX IF NOT EXISTS direct_message_inbox_idx ON direct_message_participants(user_id, thread_id)")
             connection.execute("CREATE INDEX IF NOT EXISTS direct_message_thread_sequence_idx ON direct_messages(thread_id, sequence DESC)")
+            connection.execute("ALTER TABLE direct_messages ADD COLUMN IF NOT EXISTS attachment JSONB")
             connection.execute("CREATE INDEX IF NOT EXISTS direct_message_daily_idx ON direct_messages(sender_user_id, created_at DESC)")
 
     def _get(self, connection, thread_id: str, user_id: str, *, all_messages: bool = False) -> dict | None:
@@ -285,6 +327,16 @@ class PostgresDirectMessageRepository:
         with self.social._connect() as connection:
             return self._get(connection, thread_id, user_id)
 
+    def attachment_message_exists(self, thread_id: str, user_id: str, message_id: str, attachment_id: str) -> bool:
+        with self.social._connect() as connection:
+            row = connection.execute("""SELECT EXISTS (
+                SELECT 1 FROM direct_messages m
+                JOIN direct_message_participants p ON p.thread_id=m.thread_id
+                WHERE m.thread_id=%s AND p.user_id=%s AND m.id=%s
+                  AND m.attachment->>'id'=%s
+                ) AS present""", (thread_id, user_id, message_id, attachment_id)).fetchone()
+        return bool(row and row["present"])
+
     def list_threads(self, user_id: str) -> list[dict]:
         # One bounded query loads only the last preview per thread. Never fetch
         # a hundred message bodies per inbox row, or perform N+1 user lookups.
@@ -295,6 +347,7 @@ class PostgresDirectMessageRepository:
                 latest.text AS last_text, latest.client_message_id AS last_client_id,
                 latest.created_at AS last_created_at, latest.sequence AS last_sequence,
                 latest.shared_post_id AS last_shared_post_id,
+                latest.attachment AS last_attachment,
                 unread.count AS unread_count
                 FROM direct_message_threads t
                 JOIN direct_message_participants p ON p.thread_id=t.id
@@ -319,7 +372,7 @@ class PostgresDirectMessageRepository:
                 "messages": [{"id": row["last_id"], "sender_user_id": row["last_sender"],
                     "text": row["last_text"], "client_message_id": row["last_client_id"],
                     "created_at": _iso(row["last_created_at"]), "sequence": row["last_sequence"],
-                    "shared_post_id": row["last_shared_post_id"]}],
+                    "shared_post_id": row["last_shared_post_id"], "attachment": row.get("last_attachment")}],
             } for row in rows]
 
     def unread_count(self, user_id: str) -> int:
@@ -340,7 +393,7 @@ class PostgresDirectMessageRepository:
                 (user_id, user_id, user_id, user_id, user_id)).fetchone()
             return int(row["count"])
 
-    def send(self, thread_id: str, user_id: str, text: str, client_id: str, shared_post_id: str | None, daily_limit: int) -> dict:
+    def send(self, thread_id: str, user_id: str, text: str, client_id: str, shared_post_id: str | None, daily_limit: int, *, attachment: dict | None = None, claim_attachment=None) -> dict:
         with self.social._connect() as connection, connection.transaction():
             # This lock serializes each sender's daily quota across all threads.
             connection.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", ("dm-sender:" + user_id,))
@@ -351,7 +404,7 @@ class PostgresDirectMessageRepository:
                 raise HTTPException(status_code=404, detail="Conversation not found.")
             previous = connection.execute("SELECT * FROM direct_messages WHERE thread_id=%s AND sender_user_id=%s AND client_message_id=%s", (thread_id, user_id, client_id)).fetchone()
             if previous is not None:
-                if previous["text"] != text or previous["shared_post_id"] != shared_post_id:
+                if previous["text"] != text or previous["shared_post_id"] != shared_post_id or _attachment(previous.get("attachment")) != attachment:
                     raise HTTPException(status_code=409, detail="This message retry has different content.")
                 return {**dict(previous), "created_at": _iso(previous["created_at"])}
             count = connection.execute("""SELECT COUNT(*) AS count,
@@ -361,8 +414,11 @@ class PostgresDirectMessageRepository:
                 raise HTTPException(status_code=429, detail=f"You can send up to {daily_limit} messages per day.", headers={"Retry-After": "3600"})
             if count["minute_count"] >= 20:
                 raise HTTPException(status_code=429, detail="Please wait a moment before sending more messages.", headers={"Retry-After": "60"})
-            message = connection.execute("""INSERT INTO direct_messages(id,thread_id,sender_user_id,text,client_message_id,shared_post_id)
-                VALUES(%s,%s,%s,%s,%s,%s) RETURNING *""", ("message_" + uuid4().hex, thread_id, user_id, text, client_id, shared_post_id)).fetchone()
+            identifier = _message_id(thread_id, user_id, client_id)
+            if claim_attachment is not None:
+                claim_attachment(identifier, connection)
+            message = connection.execute("""INSERT INTO direct_messages(id,thread_id,sender_user_id,text,client_message_id,shared_post_id,attachment)
+                VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING *""", (identifier, thread_id, user_id, text, client_id, shared_post_id, self.social._jsonb(attachment) if attachment is not None else None)).fetchone()
             connection.execute("UPDATE direct_message_threads SET updated_at=%s WHERE id=%s", (message["created_at"], thread_id))
             connection.execute("UPDATE direct_message_participants SET accepted=TRUE,declined=FALSE WHERE thread_id=%s AND user_id=%s", (thread_id, user_id))
             return {**dict(message), "created_at": _iso(message["created_at"])}
@@ -396,7 +452,11 @@ class PostgresDirectMessageRepository:
             return self._get(connection, thread_id, user_id)
 
     def delete_user(self, user_id: str) -> None:
-        with self.social._connect() as connection:
+        with self.social._connect() as connection, connection.transaction():
+            from app.core.media_uploads import upload_ledger
+            rows = connection.execute("SELECT id FROM direct_message_threads WHERE user_a=%s OR user_b=%s", (user_id, user_id)).fetchall()
+            for row in rows:
+                upload_ledger.queue_chat_scope_deletion("direct", row["id"], connection=connection)
             connection.execute("DELETE FROM direct_message_threads WHERE user_a=%s OR user_b=%s", (user_id, user_id))
 
 
@@ -434,12 +494,27 @@ class DirectMessageService:
         peer_id = thread["user_b"] if thread["user_a"] == user.id else thread["user_a"]
         return thread, self._peer(user, peer_id)
 
+    def authorize_media(self, user: User, thread_id: str) -> tuple[dict, User]:
+        thread, peer = self._authorized(user, thread_id)
+        if not user.email_verified:
+            raise HTTPException(status_code=403, detail="Verify your email before sharing media.")
+        if any(not participant.get("accepted") or participant.get("declined") for participant in thread["participants"].values()):
+            raise HTTPException(status_code=403, detail="Both people must accept this conversation before sharing photos or videos.")
+        return thread, peer
+
+    def attachment_message_exists(self, user: User, thread_id: str, message_id: str, attachment_id: str) -> bool:
+        self.authorize_media(user, thread_id)
+        return self.repository.attachment_message_exists(thread_id, user.id, message_id, attachment_id)
+
     def _message(self, message: dict, user: User, peer: User) -> dict:
         result = {key: message.get(key) for key in ("id", "sender_user_id", "text", "created_at", "client_message_id", "shared_post_id")}
         if message.get("shared_post_id"):
             own = self.store.get_visible_post(message["shared_post_id"], user.id)
             other = self.store.get_visible_post(message["shared_post_id"], peer.id)
             result["shared_post"] = own.model_dump(mode="json") if own is not None and other is not None else None
+        attachment = _attachment(message.get("attachment"))
+        if attachment is not None:
+            result["attachment"] = attachment
         return result
 
     def _summary(self, thread: dict, user: User, peer: User, full: bool = False) -> dict:
@@ -449,12 +524,16 @@ class DirectMessageService:
             "id": thread["id"], "peer_user_id": peer.id,
             "peer_name": peer.display_name, "peer_handle": peer.handle,
             "peer_avatar_url": peer.avatar_url, "peer_premium": peer.premium,
-            "preview": (last["text"] or "Shared a post") if last else "",
+            "preview": _message_preview(last),
             "updated_at": thread["updated_at"],
             "unread_count": thread.get("unread_count", _unread(thread, user.id)),
             "request_accepted": participant["accepted"], "request_declined": participant["declined"],
         }
         if full:
+            result["can_send_attachments"] = len(thread["participants"]) == 2 and all(
+                item.get("accepted") and not item.get("declined")
+                for item in thread["participants"].values()
+            )
             result["messages"] = [self._message(item, user, peer) for item in thread["messages"][-100:]]
         return result
 
@@ -483,14 +562,29 @@ class DirectMessageService:
         thread, peer = self._authorized(user, thread_id)
         return self._summary(thread, user, peer, True)
 
-    def send(self, user: User, thread_id: str, text: str, client_id: str, shared_post_id: str | None) -> dict:
+    def send(self, user: User, thread_id: str, text: str, client_id: str, shared_post_id: str | None, attachment_id: str | None = None) -> dict:
         _, peer = self._authorized(user, thread_id)
         if not user.email_verified:
             raise HTTPException(status_code=403, detail="Verify your email before sending messages.")
         if shared_post_id:
             if self.store.get_visible_post(shared_post_id, user.id) is None or self.store.get_visible_post(shared_post_id, peer.id) is None:
                 raise HTTPException(status_code=404, detail="This post cannot be shared with that account.")
-        message = self.repository.send(thread_id, user.id, text, client_id, shared_post_id, daily_limit=100)
+        options = {}
+        if attachment_id is not None:
+            from app.core.media_uploads import upload_ledger
+            self.authorize_media(user, thread_id)
+            try:
+                reservation = upload_ledger.validate_chat_media(user.id, "direct", thread_id, [attachment_id])[0]
+            except ValueError as error:
+                raise HTTPException(status_code=400, detail=str(error)) from error
+            options["attachment"] = {"id": reservation.id, "media_type": reservation.media_type}
+            def claim(identifier, connection):
+                try:
+                    upload_ledger.claim_chat_media(user.id, "direct", thread_id, [attachment_id], identifier, client_id, connection=connection)
+                except ValueError as error:
+                    raise HTTPException(status_code=409, detail=str(error)) from error
+            options["claim_attachment"] = claim
+        message = self.repository.send(thread_id, user.id, text, client_id, shared_post_id, daily_limit=100, **options)
         return self._message(message, user, peer)
 
     def mark_read(self, user: User, thread_id: str, last_message_id: str) -> dict:

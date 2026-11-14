@@ -4,6 +4,8 @@ from datetime import date, datetime, timezone
 import os
 from typing import Any, Literal
 
+from fastapi import HTTPException
+
 from app.core.models import (
     DEMO_SOCIAL_USER_IDS,
     EventChatMessage,
@@ -681,18 +683,35 @@ class PostgresSocialRepository:
                 """
                 SELECT payload FROM social_event_messages
                 WHERE post_id = %s
-                ORDER BY created_at ASC
+                ORDER BY created_at DESC, id DESC
                 LIMIT %s
                 """,
                 (post_id, max(1, min(limit, 500))),
             ).fetchall()
-        return [
+        return list(reversed([
             EventChatMessage.model_validate(_payload_dict(row["payload"]))
             for row in rows
-        ]
+        ]))
 
-    def save_event_message(self, message: EventChatMessage) -> None:
+    def event_attachment_message_exists(self, post_id: str, message_id: str, attachment_id: str) -> bool:
         with self._connect() as connection:
+            row = connection.execute("""SELECT EXISTS (
+                SELECT 1 FROM social_event_messages
+                WHERE post_id=%s AND id=%s AND payload->'attachment'->>'id'=%s
+                ) AS present""", (post_id, message_id, attachment_id)).fetchone()
+        return bool(row and row["present"])
+
+    def save_event_message(self, message: EventChatMessage, *, claim_attachment=None) -> EventChatMessage:
+        with self._connect() as connection, connection.transaction():
+            connection.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", ("event-message:" + message.id,))
+            previous = connection.execute("SELECT payload FROM social_event_messages WHERE id=%s", (message.id,)).fetchone()
+            if previous is not None:
+                saved = EventChatMessage.model_validate(_payload_dict(previous["payload"]))
+                if saved.post_id != message.post_id or saved.user_id != message.user_id or saved.text != message.text or saved.attachment != message.attachment:
+                    raise HTTPException(status_code=409, detail="This message retry has different content.")
+                return saved
+            if claim_attachment is not None:
+                claim_attachment(message.id, connection)
             connection.execute(
                 """
                 INSERT INTO social_event_messages
@@ -708,6 +727,7 @@ class PostgresSocialRepository:
                     _aware_datetime(message.created_at),
                 ),
             )
+            return message
     def set_follow(self, follower_user_id: str, followed_user_id: str, following: bool) -> None:
         if follower_user_id == followed_user_id:
             return
@@ -985,7 +1005,9 @@ class PostgresSocialRepository:
             ).fetchall()
         for row in comment_rows:
             self.delete_comment_tree(row["id"])
-        with self._connect() as connection:
+        with self._connect() as connection, connection.transaction():
+            from app.core.media_uploads import upload_ledger
+            upload_ledger.queue_chat_scope_deletion("event", post_id, connection=connection)
             for table in ("social_post_likes", "social_reposts", "social_rsvps"):
                 connection.execute(
                     f"DELETE FROM {table} WHERE post_id = %s",
