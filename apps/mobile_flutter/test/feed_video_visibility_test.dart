@@ -1,10 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_flutter/features/social/social_feed.dart';
+import 'package:mobile_flutter/features/social/post_media_zoom.dart';
+import 'package:video_player/video_player.dart';
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
 
 const _videoKey = ValueKey('feed-video');
@@ -121,6 +124,8 @@ Widget _feedHost({
   GlobalKey<NavigatorState>? navigatorKey,
   String url = 'https://video.example.invalid/clip.mp4',
   String? fallbackUrl,
+  bool enableZoom = false,
+  ValueChanged<bool>? onZoomChanged,
 }) => ProviderScope(
   overrides: [videoSoundEnabledProvider.overrideWith((ref) => soundEnabled)],
   child: MaterialApp(
@@ -151,6 +156,8 @@ Widget _feedHost({
                     url: url,
                     fallbackUrl: fallbackUrl,
                     expand: true,
+                    enableZoom: enableZoom,
+                    onZoomChanged: onZoomChanged,
                   ),
                 ],
               ),
@@ -188,6 +195,8 @@ Future<void> _mountFeed(
   GlobalKey<NavigatorState>? navigatorKey,
   String url = 'https://video.example.invalid/clip.mp4',
   String? fallbackUrl,
+  bool enableZoom = false,
+  ValueChanged<bool>? onZoomChanged,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = const Size(400, 800);
@@ -214,6 +223,8 @@ Future<void> _mountFeed(
       navigatorKey: navigatorKey,
       url: url,
       fallbackUrl: fallbackUrl,
+      enableZoom: enableZoom,
+      onZoomChanged: onZoomChanged,
     ),
   );
   await _flushPlayback(tester);
@@ -248,6 +259,81 @@ void main() {
     for (final stream in platform.streams.values) {
       await stream.close();
     }
+  });
+
+  testWidgets('pinch keeps the same video player and offscreen audio safety', (
+    tester,
+  ) async {
+    final scroll = ScrollController();
+    final changes = <bool>[];
+    await _mountFeed(
+      tester,
+      platform,
+      scrollController: scroll,
+      url: hls,
+      fallbackUrl: fallback,
+      enableZoom: true,
+      onZoomChanged: changes.add,
+    );
+    await tester.tap(find.byIcon(Icons.volume_off_rounded));
+    // Zoomable media also recognizes double-tap; allow its tap arena to finish.
+    await tester.pump(const Duration(milliseconds: 300));
+    await _flushPlayback(tester);
+    expect(platform.volumes[0], 1);
+    final player = tester.state(find.byKey(_videoKey));
+    final controller = tester
+        .widget<VideoPlayer>(find.byType(VideoPlayer))
+        .controller;
+    final position = tester.getCenter(find.byType(PostMediaZoom));
+    Matrix4 matrix() => tester
+        .widget<Transform>(
+          find.byKey(const ValueKey('post-media-zoom-transform')),
+        )
+        .transform;
+    Future<void> pinch(double scale) async {
+      await tester.sendEventToBinding(
+        PointerScaleEvent(position: position, scale: scale),
+      );
+      await _flushPlayback(tester);
+      expect(tester.state(find.byKey(_videoKey)), same(player));
+      expect(
+        tester.widget<VideoPlayer>(find.byType(VideoPlayer)).controller,
+        same(controller),
+      );
+      expect(platform.sources, [hls]);
+      expect(
+        platform.calls.where((call) => call.startsWith('create:')).length,
+        1,
+      );
+      expect(
+        platform.calls.where((call) => call.startsWith('dispose:')),
+        isEmpty,
+      );
+    }
+
+    await pinch(1.5);
+    expect(matrix().getMaxScaleOnAxis(), closeTo(1.5, 1e-9));
+    expect(changes, [true]);
+    await pinch(1 / 1.5);
+    expect(matrix(), Matrix4.identity());
+    expect(changes, [true, false]);
+    await pinch(2);
+    await tester.tap(find.byTooltip('Reset zoom'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+    await _flushPlayback(tester);
+    expect(matrix(), Matrix4.identity());
+    expect(changes, [true, false, true, false]);
+    await pinch(2);
+    expect(platform.playing, {0});
+    expect(platform.volumes[0], 1);
+    scroll.jumpTo(520);
+    await _flushPlayback(tester);
+    expect(platform.playing, isEmpty);
+    expect(platform.volumes[0], 0);
+    expect(platform.calls, contains('pause:0'));
+    expect(platform.sources, [hls]);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('HLS initialization failure tries the supplied MP4 once', (

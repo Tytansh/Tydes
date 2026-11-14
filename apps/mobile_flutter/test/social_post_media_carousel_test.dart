@@ -1,8 +1,67 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile_flutter/core/network/api_models.dart';
+import 'package:mobile_flutter/features/social/post_media_zoom.dart';
 import 'package:mobile_flutter/features/social/social_feed.dart';
 
 void main() {
+  testWidgets('pinch callbacks lock then unlock the real media carousel', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 400,
+              height: 500,
+              child: SocialPostMediaCarousel(
+                media: [
+                  for (final id in ['photo-a', 'photo-b'])
+                    SocialMediaAttachmentModel.fromJson({
+                      'id': id,
+                      'url': 'https://image.example.invalid/$id.jpg',
+                      'thumbnail_url': '',
+                    }),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final position = tester.getCenter(find.byType(PostMediaZoom).first);
+    expect(
+      tester.widget<PageView>(find.byType(PageView)).physics,
+      isA<PageScrollPhysics>(),
+    );
+    await tester.sendEventToBinding(
+      PointerScaleEvent(position: position, scale: 1.5),
+    );
+    await tester.pump();
+    expect(
+      tester.widget<PageView>(find.byType(PageView)).physics,
+      isA<NeverScrollableScrollPhysics>(),
+    );
+    await tester.sendEventToBinding(
+      PointerScaleEvent(position: position, scale: 1 / 1.5),
+    );
+    await tester.pump();
+    expect(
+      tester.widget<PageView>(find.byType(PageView)).physics,
+      isA<PageScrollPhysics>(),
+    );
+    await tester.drag(find.byType(PageView), const Offset(-350, 0));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<PageView>(find.byType(PageView)).controller!.page,
+      closeTo(1, 0.001),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   test('web carousel uses arrows instead of mouse dragging at every width', () {
     expect(
       socialPostMediaCarouselPhysics(isWeb: true),

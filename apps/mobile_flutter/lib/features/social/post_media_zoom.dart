@@ -69,6 +69,32 @@ class _PostMediaZoomState extends State<PostMediaZoom>
     });
   }
 
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScaleEvent ||
+        !event.scale.isFinite ||
+        event.scale <= 0 ||
+        event.scale == 1) {
+      return;
+    }
+    // Browsers report trackpad pinch as a scale signal, not a two-pointer
+    // touch gesture. Leave ordinary wheel scrolling to the surrounding feed.
+    GestureBinding.instance.pointerSignalResolver.register(event, (_) {
+      final currentScale = _matrix.getMaxScaleOnAxis();
+      final scale = (currentScale * event.scale).clamp(1.0, 4.0);
+      if (scale == currentScale && !_reset.isAnimating) return;
+      final anchor = Offset(
+        (event.localPosition.dx - _matrix.storage[12]) / currentScale,
+        (event.localPosition.dy - _matrix.storage[13]) / currentScale,
+      );
+      _reset.stop();
+      setState(() {
+        _pinned = scale > 1;
+        _matrix = _transform(scale, event.localPosition - anchor * scale);
+      });
+      _setZooming(_pinned);
+    });
+  }
+
   Matrix4 _transform(double scale, Offset offset) => Matrix4.identity()
     ..setEntry(0, 0, scale)
     ..setEntry(1, 1, scale)
@@ -90,7 +116,7 @@ class _PostMediaZoomState extends State<PostMediaZoom>
   }
 
   void _toggleZoom(Offset focalPoint) {
-    if (_matrix.getMaxScaleOnAxis() > 1.01) {
+    if (_pinned || _matrix.getMaxScaleOnAxis() > 1.01) {
       _resetZoom();
       return;
     }
@@ -110,55 +136,59 @@ class _PostMediaZoomState extends State<PostMediaZoom>
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       _size = constraints.biggest;
-      return ClipRect(
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            RawGestureDetector(
-              behavior: HitTestBehavior.opaque,
-              gestures: {
-                _PinchGestureRecognizer:
-                    GestureRecognizerFactoryWithHandlers<
-                      _PinchGestureRecognizer
-                    >(() => _PinchGestureRecognizer(), (recognizer) {
-                      recognizer
-                        ..allowSinglePointerPan = _pinned
-                        ..onStart = _start
-                        ..onUpdate = _update
-                        ..onEnd = (_) {
-                          if (!_pinned) _resetZoom();
-                        };
-                    }),
-              },
-              child: GestureDetector(
-                onDoubleTapDown: (details) =>
-                    _doubleTapPosition = details.localPosition,
-                onDoubleTap: () => _toggleZoom(_doubleTapPosition),
-                child: Transform(
-                  key: const ValueKey('post-media-zoom-transform'),
-                  transform: _matrix,
-                  child: widget.child,
-                ),
-              ),
-            ),
-            if (widget.showControls || _pinned)
-              Positioned(
-                top: 10,
-                right: 10,
-                child: Material(
-                  color: Colors.black.withValues(alpha: 0.4),
-                  shape: const CircleBorder(),
-                  child: IconButton(
-                    tooltip: _pinned ? 'Reset zoom' : 'Zoom media',
-                    color: Colors.white,
-                    iconSize: 20,
-                    onPressed: () =>
-                        _toggleZoom(Offset(_size.width / 2, _size.height / 2)),
-                    icon: Icon(_pinned ? Icons.zoom_out : Icons.zoom_in),
+      return Listener(
+        onPointerSignal: _onPointerSignal,
+        child: ClipRect(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              RawGestureDetector(
+                behavior: HitTestBehavior.opaque,
+                gestures: {
+                  _PinchGestureRecognizer:
+                      GestureRecognizerFactoryWithHandlers<
+                        _PinchGestureRecognizer
+                      >(() => _PinchGestureRecognizer(), (recognizer) {
+                        recognizer
+                          ..allowSinglePointerPan = _pinned
+                          ..onStart = _start
+                          ..onUpdate = _update
+                          ..onEnd = (_) {
+                            if (!_pinned) _resetZoom();
+                          };
+                      }),
+                },
+                child: GestureDetector(
+                  onDoubleTapDown: (details) =>
+                      _doubleTapPosition = details.localPosition,
+                  onDoubleTap: () => _toggleZoom(_doubleTapPosition),
+                  child: Transform(
+                    key: const ValueKey('post-media-zoom-transform'),
+                    transform: _matrix,
+                    child: widget.child,
                   ),
                 ),
               ),
-          ],
+              if (widget.showControls || _pinned)
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: Material(
+                    color: Colors.black.withValues(alpha: 0.4),
+                    shape: const CircleBorder(),
+                    child: IconButton(
+                      tooltip: _pinned ? 'Reset zoom' : 'Zoom media',
+                      color: Colors.white,
+                      iconSize: 20,
+                      onPressed: () => _toggleZoom(
+                        Offset(_size.width / 2, _size.height / 2),
+                      ),
+                      icon: Icon(_pinned ? Icons.zoom_out : Icons.zoom_in),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       );
     },
