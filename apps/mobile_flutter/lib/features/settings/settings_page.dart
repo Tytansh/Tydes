@@ -113,6 +113,7 @@ class SettingsPage extends ConsumerWidget {
           ref.invalidate(spotsProvider);
           ref.invalidate(spotForecastsBySpotProvider);
           ref.invalidate(spotCardForecastProvider);
+          ref.invalidate(spotDetailedForecastProvider);
           ref.invalidate(spotTideProvider);
           ref.invalidate(spotDetailBundleProvider);
           if (!context.mounted) return;
@@ -170,6 +171,7 @@ class SettingsPage extends ConsumerWidget {
           ref.invalidate(spotsProvider);
           ref.invalidate(spotForecastsBySpotProvider);
           ref.invalidate(spotCardForecastProvider);
+          ref.invalidate(spotDetailedForecastProvider);
           ref.invalidate(spotTideProvider);
           ref.invalidate(spotDetailBundleProvider);
           if (!context.mounted) return;

@@ -22,6 +22,7 @@ void refreshAuthenticatedAccount(WidgetRef ref) {
   ref.invalidate(homeAdsProvider);
   ref.invalidate(spotForecastsBySpotProvider);
   ref.invalidate(spotCardForecastProvider);
+  ref.invalidate(spotDetailedForecastProvider);
   ref.invalidate(spotTideProvider);
   ref.invalidate(spotSurfWindowProvider);
   ref.invalidate(spotDetailBundleProvider);

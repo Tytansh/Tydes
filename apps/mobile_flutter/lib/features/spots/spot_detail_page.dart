@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +14,7 @@ import '../alerts/create_alert_sheet.dart';
 import '../auth/auth_return_path.dart';
 import '../home/home_page.dart';
 import '../public_previews/public_link_button.dart';
+import '../social/social_feed.dart' show travelFeedSpotsProvider;
 import 'pro_forecast_panel.dart';
 import 'spot_alert_panel.dart';
 import 'spots_page.dart';
@@ -19,12 +22,22 @@ import 'spots_page.dart';
 const _favoriteAccent = Color(0xFF2AA7A1);
 const _ink = Color(0xFF173B40);
 
-final spotDetailProvider = FutureProvider.autoDispose.family((
-  ref,
-  String spotId,
-) {
-  return ref.watch(surfRepositoryProvider).fetchSpot(spotId);
-});
+final spotDetailProvider = FutureProvider.autoDispose.family<SpotModel, String>(
+  (ref, String spotId) {
+    final repository = ref.watch(surfRepositoryProvider);
+    // Navigation from a loaded feed/map already has this static guide. Do not
+    // start a whole catalog request merely to optimize a direct spot link.
+    for (final catalog in [spotsProvider, travelFeedSpotsProvider]) {
+      if (!ref.exists(catalog)) continue;
+      final loaded = ref.read(catalog);
+      if (loaded.isLoading || loaded.hasError) continue;
+      for (final spot in loaded.valueOrNull ?? const <SpotModel>[]) {
+        if (spot.id == spotId) return spot;
+      }
+    }
+    return repository.fetchSpot(spotId);
+  },
+);
 
 // Retained for callers that invalidate daily forecast cards after billing.
 final spotForecastProvider = FutureProvider.autoDispose.family((
@@ -43,7 +56,12 @@ final spotDetailedForecastProvider = FutureProvider.autoDispose.family((
   String spotId,
 ) async {
   final repository = ref.watch(surfRepositoryProvider);
+  var active = true;
+  ref.onDispose(() => active = false);
+  final blocked = ref.watch(emailVerificationRequiredTokenProvider);
   final profile = await ref.watch(meProvider.future);
+  if (!active) return DetailedForecastModel.unavailable(spotId);
+  if (blocked != null) throw EmailVerificationRequiredException();
   if (!profile.canAccessLiveForecast(spotId)) {
     return DetailedForecastModel.unavailable(
       spotId,
@@ -52,7 +70,16 @@ final spotDetailedForecastProvider = FutureProvider.autoDispose.family((
     );
   }
   try {
-    return await repository.fetchDetailedForecast(spotId);
+    final result = await repository.fetchDetailedForecast(spotId);
+    if (active && _retainableHourly(result)) {
+      _retainSuccessfulSpotRead(
+        ref,
+        result.fetchedAt!,
+        _hourlyMaximumAge(result),
+        utcOffsetSeconds: result.utcOffsetSeconds,
+      );
+    }
+    return _ScopedHourly(result, _viewerScope(profile));
   } catch (error) {
     if (_isForecastAuthorizationFailure(error)) rethrow;
     return DetailedForecastModel.unavailable(
@@ -67,12 +94,25 @@ final spotTideProvider = FutureProvider.autoDispose.family((
   String spotId,
 ) async {
   final repository = ref.watch(surfRepositoryProvider);
+  var active = true;
+  ref.onDispose(() => active = false);
+  final blocked = ref.watch(emailVerificationRequiredTokenProvider);
   final profile = await ref.watch(meProvider.future);
+  if (!active) return TideForecastModel.unavailable(spotId);
+  if (blocked != null) throw EmailVerificationRequiredException();
   if (!profile.canAccessLiveForecast(spotId)) {
     return TideForecastModel.unavailable(spotId);
   }
   try {
-    return await repository.fetchTides(spotId);
+    final result = await repository.fetchTides(spotId);
+    if (active && _retainableTides(result)) {
+      _retainSuccessfulSpotRead(
+        ref,
+        result.fetchedAt!,
+        const Duration(hours: 12),
+      );
+    }
+    return _ScopedTides(result, _viewerScope(profile));
   } catch (error) {
     if (_isForecastAuthorizationFailure(error)) rethrow;
     return TideForecastModel(
@@ -86,6 +126,151 @@ final spotTideProvider = FutureProvider.autoDispose.family((
     );
   }
 });
+
+// Code-local ownership tags are not API fields. They prevent retained values
+// from a previous account/entitlement being painted during a dependency reload.
+typedef _ViewerScope = ({
+  String id,
+  bool premium,
+  String? freeSpot,
+  bool verified,
+});
+
+_ViewerScope _viewerScope(UserProfile profile) => (
+  id: profile.id,
+  premium: profile.premium,
+  freeSpot: profile.freeLiveSpotId,
+  verified: profile.emailVerified,
+);
+
+class _ScopedHourly extends DetailedForecastModel {
+  _ScopedHourly(DetailedForecastModel value, this.viewer)
+    : super(
+        spotId: value.spotId,
+        available: value.available,
+        source: value.source,
+        marineModel: value.marineModel,
+        weatherModel: value.weatherModel,
+        timezone: value.timezone,
+        utcOffsetSeconds: value.utcOffsetSeconds,
+        fetchedAt: value.fetchedAt,
+        localDate: value.localDate,
+        note: value.note,
+        hours: value.hours,
+        days: value.days,
+      );
+  final _ViewerScope viewer;
+}
+
+class _ScopedTides extends TideForecastModel {
+  _ScopedTides(TideForecastModel value, this.viewer)
+    : super(
+        spotId: value.spotId,
+        available: value.available,
+        source: value.source,
+        stationName: value.stationName,
+        stationDistanceKm: value.stationDistanceKm,
+        events: value.events,
+        samples: value.samples,
+        timezone: value.timezone,
+        datum: value.datum,
+        fetchedAt: value.fetchedAt,
+        note: value.note,
+      );
+  final _ViewerScope viewer;
+}
+
+void _retainSuccessfulSpotRead(
+  Ref ref,
+  DateTime fetchedAt,
+  Duration maximumAge, {
+  int? utcOffsetSeconds,
+}) {
+  final now = DateTime.now().toUtc();
+  final remaining = fetchedAt.add(maximumAge).difference(now);
+  var duration = remaining < const Duration(minutes: 2)
+      ? remaining
+      : const Duration(minutes: 2);
+  if (utcOffsetSeconds != null) {
+    final local = now.add(Duration(seconds: utcOffsetSeconds));
+    final nextLocalDay = DateTime.utc(
+      local.year,
+      local.month,
+      local.day + 1,
+    ).subtract(Duration(seconds: utcOffsetSeconds));
+    final untilMidnight = nextLocalDay.difference(now);
+    if (untilMidnight < duration) duration = untilMidnight;
+  }
+  if (duration <= Duration.zero) return;
+  final link = ref.keepAlive();
+  final timer = Timer(duration, link.close);
+  ref.onDispose(timer.cancel);
+}
+
+bool _freshlyFetched(DateTime? fetchedAt, DateTime now, Duration maximumAge) =>
+    fetchedAt != null &&
+    !fetchedAt.isAfter(now.add(const Duration(minutes: 1))) &&
+    !fetchedAt.isBefore(now.subtract(maximumAge));
+
+bool _finiteHeight(double? value) =>
+    value != null && value.isFinite && value >= 0;
+
+bool _nearFuture(String time, DateTime now, Duration before, Duration after) {
+  final instant = DateTime.tryParse(time);
+  return instant != null &&
+      !instant.isBefore(now.subtract(before)) &&
+      !instant.isAfter(now.add(after));
+}
+
+bool _retainableHourly(DetailedForecastModel value) {
+  final now = DateTime.now().toUtc();
+  return value.available &&
+      value.source != 'unavailable' &&
+      _freshlyFetched(value.fetchedAt, now, _hourlyMaximumAge(value)) &&
+      value.hours.any(
+        (hour) =>
+            _nearFuture(
+              hour.time,
+              now,
+              const Duration(hours: 1),
+              const Duration(hours: 2),
+            ) &&
+            (_finiteHeight(hour.waveHeightM) ||
+                _finiteHeight(hour.swellHeightM)),
+      );
+}
+
+Duration _hourlyMaximumAge(DetailedForecastModel value) =>
+    value.weatherModel == 'Temporarily unavailable'
+    ? const Duration(minutes: 1)
+    : const Duration(hours: 3);
+
+bool _retainableTides(TideForecastModel value) {
+  final now = DateTime.now().toUtc();
+  return value.available &&
+      value.source != 'unavailable' &&
+      _freshlyFetched(value.fetchedAt, now, const Duration(hours: 12)) &&
+      (value.samples.any(
+            (sample) =>
+                sample.heightM.isFinite &&
+                _nearFuture(
+                  sample.time,
+                  now,
+                  const Duration(hours: 1),
+                  const Duration(hours: 2),
+                ),
+          ) ||
+          value.events.any(
+            (event) =>
+                event.heightM?.isFinite == true &&
+                _nearFuture(
+                  event.time,
+                  now,
+                  Duration.zero,
+                  const Duration(hours: 26),
+                ),
+          ));
+}
 
 bool _isForecastAuthorizationFailure(Object error) =>
     isEmailVerificationRequired(error) ||
@@ -155,8 +340,14 @@ class SpotDetailPage extends ConsumerWidget {
         ref.watch(emailVerificationRequiredTokenProvider) != null;
     final favorites = ref.watch(favoriteSpotIdsProvider);
     final profile = me.valueOrNull;
+    final scope = profile == null ? null : _viewerScope(profile);
+    final hourlyValue = hourly.valueOrNull;
+    final tideValue = tides.valueOrNull;
     final forecast =
-        (hourly.hasError ? null : hourly.valueOrNull) ??
+        (hourly.hasError ||
+                (hourlyValue is _ScopedHourly && hourlyValue.viewer != scope)
+            ? null
+            : hourlyValue) ??
         DetailedForecastModel.unavailable(
           spotId,
           note: hourly.hasError
@@ -167,7 +358,10 @@ class SpotDetailPage extends ConsumerWidget {
               : null,
         );
     final tide =
-        (tides.hasError ? null : tides.valueOrNull) ??
+        (tides.hasError ||
+                (tideValue is _ScopedTides && tideValue.viewer != scope)
+            ? null
+            : tideValue) ??
         TideForecastModel.unavailable(spotId);
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
