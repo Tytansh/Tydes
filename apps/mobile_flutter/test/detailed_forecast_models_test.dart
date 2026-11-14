@@ -40,6 +40,113 @@ SurfRepository _repository(ResponseBody Function(RequestOptions) handler) =>
 
 void main() {
   test(
+    'daily forecast and its retry allow the upstream response-header wait',
+    () async {
+      final requests = <RequestOptions>[];
+      final repo = _repository((request) {
+        requests.add(request);
+        return requests.length == 1 ? _json({}, 503) : _json([]);
+      });
+      expect(await repo.fetchForecasts(spotId: 'real-spot'), isEmpty);
+      expect(requests, hasLength(2));
+      for (final request in requests) {
+        expect(request.path, '/forecasts');
+        expect(request.queryParameters['spot_id'], 'real-spot');
+        expect(request.connectTimeout, const Duration(seconds: 40));
+        expect(request.receiveTimeout, const Duration(seconds: 40));
+      }
+    },
+  );
+
+  for (final endpoint in ['detail', 'tides']) {
+    test('$endpoint rejects a response belonging to another spot', () async {
+      final repo = _repository(
+        (_) => _json({
+          'spot_id': 'other-spot',
+          'available': true,
+          'hours': [],
+          'events': [],
+        }),
+      );
+      await expectLater(
+        endpoint == 'detail'
+            ? repo.fetchDetailedForecast('real-spot')
+            : repo.fetchTides('real-spot'),
+        throwsStateError,
+      );
+    });
+
+    test('$endpoint retries a transient gateway failure once', () async {
+      final requests = <RequestOptions>[];
+      final repo = _repository((request) {
+        requests.add(request);
+        return requests.length == 1
+            ? _json({'detail': 'temporary upstream failure'}, 503)
+            : _json({'spot_id': 'real-spot', 'available': false});
+      });
+      final result = endpoint == 'detail'
+          ? await repo.fetchDetailedForecast('real-spot')
+          : await repo.fetchTides('real-spot');
+      expect(result, isNotNull);
+      expect(requests, hasLength(2));
+      expect(requests.every((r) => r.path == '/forecasts/$endpoint'), isTrue);
+      expect(
+        requests.every((r) => r.receiveTimeout == const Duration(seconds: 40)),
+        isTrue,
+      );
+      expect(
+        requests.every((r) => r.connectTimeout == const Duration(seconds: 40)),
+        isTrue,
+        reason: 'Web connection timeout includes waiting for response headers.',
+      );
+      expect(
+        requests.every((r) => r.queryParameters['spot_id'] == 'real-spot'),
+        isTrue,
+      );
+    });
+
+    test(
+      '$endpoint never retries authorization, quota or confirmed unavailable data',
+      () async {
+        for (final status in [200, 401, 403, 429]) {
+          var calls = 0;
+          final repo = _repository((_) {
+            calls++;
+            return _json({'spot_id': 'real-spot', 'available': false}, status);
+          });
+          Future<Object> request() => endpoint == 'detail'
+              ? repo.fetchDetailedForecast('real-spot')
+              : repo.fetchTides('real-spot');
+          if (status == 200) {
+            await request();
+          } else {
+            await expectLater(request(), throwsA(isA<DioException>()));
+          }
+          expect(calls, 1);
+        }
+      },
+    );
+
+    test(
+      '$endpoint stops after the second transient failure without fake readings',
+      () async {
+        var calls = 0;
+        final repo = _repository((_) {
+          calls++;
+          return _json({'detail': 'unavailable'}, 503);
+        });
+        await expectLater(
+          endpoint == 'detail'
+              ? repo.fetchDetailedForecast('real-spot')
+              : repo.fetchTides('real-spot'),
+          throwsA(isA<DioException>()),
+        );
+        expect(calls, 2);
+      },
+    );
+  }
+
+  test(
     'hourly detail preserves unknown values, finite zero and local labels',
     () {
       final result = DetailedForecastModel.fromJson({

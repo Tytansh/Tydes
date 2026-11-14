@@ -36,10 +36,14 @@ class ProForecastPanel extends StatefulWidget {
     super.key,
     required this.forecast,
     required this.tide,
+    this.forecastLoading = false,
+    this.tideLoading = false,
   });
 
   final DetailedForecastModel forecast;
   final TideForecastModel tide;
+  final bool forecastLoading;
+  final bool tideLoading;
 
   @override
   State<ProForecastPanel> createState() => _ProForecastPanelState();
@@ -97,24 +101,52 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
     final colors = _ForecastColors.of(context);
     final forecast = widget.forecast;
     if (!forecast.available || forecast.hours.isEmpty) {
-      return _Panel(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const _Eyebrow('FORECAST DESK'),
-            const SizedBox(height: 12),
-            Text(
-              'Hourly outlook unavailable',
-              style: Theme.of(context).textTheme.titleLarge,
+      final tideDates = <String>{
+        for (final sample in widget.tide.samples)
+          if (sample.localDate != null) sample.localDate!,
+        for (final event in widget.tide.events) event.localDate,
+      }.where((day) => DateTime.tryParse(day) != null).toList()..sort();
+      // Use the source's supplied local day, never the viewer's time zone.
+      final tideDay = forecast.localDate ?? tideDates.firstOrNull ?? '';
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _Panel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const _Eyebrow('FORECAST DESK'),
+                const SizedBox(height: 12),
+                Text(
+                  widget.forecastLoading
+                      ? 'Loading hourly outlook'
+                      : 'Hourly outlook unavailable',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 8),
+                if (widget.forecastLoading)
+                  const SizedBox.square(
+                    dimension: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  Text(
+                    forecast.note ??
+                        'Detailed model data is not available for this spot right now. No estimated readings are substituted.',
+                    style: TextStyle(color: colors.muted),
+                  ),
+              ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              forecast.note ??
-                  'Detailed model data is not available for this spot right now. No estimated readings are substituted.',
-              style: TextStyle(color: colors.muted),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 14),
+          _TidePanel(
+            tide: widget.tide,
+            forecast: forecast,
+            day: tideDay,
+            loading: widget.tideLoading,
+            showDay: true,
+          ),
+        ],
       );
     }
     final hours = _hours;
@@ -475,7 +507,12 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
           ),
         ),
         const SizedBox(height: 14),
-        _TidePanel(tide: widget.tide, forecast: forecast, day: _day!),
+        _TidePanel(
+          tide: widget.tide,
+          forecast: forecast,
+          day: _day!,
+          loading: widget.tideLoading,
+        ),
         const SizedBox(height: 14),
         _Panel(
           color: colors.softSurface,
@@ -563,11 +600,15 @@ class _TidePanel extends StatelessWidget {
     required this.tide,
     required this.forecast,
     required this.day,
+    this.loading = false,
+    this.showDay = false,
   });
 
   final TideForecastModel tide;
   final DetailedForecastModel forecast;
   final String day;
+  final bool loading;
+  final bool showDay;
 
   @override
   Widget build(BuildContext context) {
@@ -592,6 +633,13 @@ class _TidePanel extends StatelessWidget {
             'Station predictions · not a navigation chart',
           ),
           const SizedBox(height: 10),
+          if (showDay && day.isNotEmpty) ...[
+            Text(
+              _dateLabel(day),
+              style: TextStyle(color: colors.muted, fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+          ],
           Text(
             [
               ?station,
@@ -602,7 +650,18 @@ class _TidePanel extends StatelessWidget {
             style: TextStyle(color: colors.muted, fontSize: 12, height: 1.6),
           ),
           const SizedBox(height: 16),
-          if (!tide.available || (samples.isEmpty && events.isEmpty))
+          if (loading)
+            const Row(
+              children: [
+                SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 10),
+                Expanded(child: Text('Loading tide predictions')),
+              ],
+            )
+          else if (!tide.available || (samples.isEmpty && events.isEmpty))
             Text(
               tide.available
                   ? 'No tide predictions are available for this selected day.'
@@ -703,6 +762,17 @@ class _TidePanel extends StatelessWidget {
               style: TextStyle(color: colors.muted, fontSize: 11, height: 1.6),
             ),
           ],
+          if (showDay && tide.source.toLowerCase().contains('tidecheck'))
+            TextButton.icon(
+              onPressed: () =>
+                  launchTydesExternalLink(context, 'https://tidecheck.com/'),
+              icon: const Icon(Icons.open_in_new, size: 13),
+              label: const Text('Tide predictions by TideCheck'),
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                textStyle: const TextStyle(fontSize: 11),
+              ),
+            ),
         ],
       ),
     );

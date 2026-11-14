@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,11 +13,12 @@ import 'package:mobile_flutter/features/home/home_page.dart';
 import 'package:mobile_flutter/features/spots/spot_detail_page.dart';
 
 UserProfile _user({
+  String id = 'test-user',
   bool premium = false,
   String? freeSpot,
   DateTime? changed,
 }) => UserProfile.fromJson({
-  'id': 'test-user',
+  'id': id,
   'email': 'test@example.com',
   'display_name': 'Surfer',
   'handle': 'surfer',
@@ -31,6 +34,13 @@ class _Repository extends SurfRepository {
   _Repository(this.profile) : super(Dio(), DemoPersistence());
   UserProfile profile;
   bool failDetail = false;
+  bool failTides = false;
+  Object? detailFailure;
+  Object? tideFailure;
+  Completer<DetailedForecastModel>? pendingDetail;
+  Completer<void>? detailStarted;
+  Completer<TideForecastModel>? pendingTides;
+  TideForecastModel? tideResult;
   bool failUnlock = false;
   int detailCalls = 0;
   int tideCalls = 0;
@@ -67,6 +77,9 @@ class _Repository extends SurfRepository {
   @override
   Future<DetailedForecastModel> fetchDetailedForecast(String spotId) async {
     detailCalls++;
+    if (detailStarted?.isCompleted == false) detailStarted!.complete();
+    if (detailFailure != null) throw detailFailure!;
+    if (pendingDetail != null) return pendingDetail!.future;
     if (failDetail) throw StateError('Forecast service unavailable.');
     return DetailedForecastModel(
       spotId: spotId,
@@ -105,7 +118,10 @@ class _Repository extends SurfRepository {
   @override
   Future<TideForecastModel> fetchTides(String spotId) async {
     tideCalls++;
-    return TideForecastModel.unavailable(spotId);
+    if (tideFailure != null) throw tideFailure!;
+    if (pendingTides != null) return pendingTides!.future;
+    if (failTides) throw StateError('Tide service unavailable.');
+    return tideResult ?? TideForecastModel.unavailable(spotId);
   }
 
   @override
@@ -136,6 +152,7 @@ Future<ProviderContainer> _show(
   _Repository repository, {
   double width = 390,
   ThemeData? theme,
+  bool settle = true,
 }) async {
   tester.view.physicalSize = Size(width, 1000);
   tester.view.devicePixelRatio = 1;
@@ -159,11 +176,189 @@ Future<ProviderContainer> _show(
       ),
     ),
   );
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump();
+    await tester.pump();
+  }
   return container;
 }
 
 void main() {
+  test(
+    'forecast providers preserve authorization and verification failures',
+    () async {
+      for (final status in [401, 403]) {
+        final options = RequestOptions(path: '/forecasts/detail');
+        final error = DioException(
+          requestOptions: options,
+          response: Response(
+            requestOptions: options,
+            statusCode: status,
+            data: status == 403
+                ? {
+                    'detail': {'code': 'email_verification_required'},
+                  }
+                : {'detail': 'Unauthorized'},
+          ),
+          type: DioExceptionType.badResponse,
+        );
+        final repo = _Repository(_user(premium: true))
+          ..detailFailure = error
+          ..tideFailure = error;
+        final container = ProviderContainer(
+          overrides: [
+            surfRepositoryProvider.overrideWithValue(repo),
+            meProvider.overrideWith((_) async => repo.profile),
+          ],
+        );
+        try {
+          await expectLater(
+            container.read(spotDetailedForecastProvider('uluwatu').future),
+            throwsA(same(error)),
+          );
+          await expectLater(
+            container.read(spotTideProvider('uluwatu').future),
+            throwsA(same(error)),
+          );
+        } finally {
+          container.dispose();
+        }
+      }
+    },
+  );
+
+  test(
+    'late forecast responses cannot overwrite a newer account refresh',
+    () async {
+      final old = Completer<DetailedForecastModel>();
+      final started = Completer<void>();
+      final repo = _Repository(_user(premium: true))
+        ..pendingDetail = old
+        ..detailStarted = started;
+      final container = ProviderContainer(
+        overrides: [
+          surfRepositoryProvider.overrideWithValue(repo),
+          meProvider.overrideWith((_) async => repo.profile),
+        ],
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        spotDetailedForecastProvider('uluwatu'),
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await started.future;
+      expect(repo.detailCalls, 1);
+      repo.pendingDetail = null;
+      repo.profile = _user(id: 'new-account', premium: true);
+      container.invalidate(meProvider);
+      final current = await container.read(
+        spotDetailedForecastProvider('uluwatu').future,
+      );
+      expect(current.available, isTrue);
+      old.complete(
+        DetailedForecastModel.unavailable('uluwatu', note: 'Old response'),
+      );
+      await Future<void>.value();
+      await Future<void>.value();
+      expect(
+        container
+            .read(spotDetailedForecastProvider('uluwatu'))
+            .requireValue
+            .available,
+        isTrue,
+      );
+      expect(
+        container
+            .read(spotDetailedForecastProvider('uluwatu'))
+            .requireValue
+            .note,
+        isNot('Old response'),
+      );
+    },
+  );
+
+  TideForecastModel suppliedTides() => TideForecastModel.fromJson({
+    'spot_id': 'uluwatu',
+    'available': true,
+    'source': 'TideCheck',
+    'timezone': 'Asia/Makassar',
+    'events': [
+      {
+        'type': 'high',
+        'time': '2036-01-01T00:00:00Z',
+        'local_date': '2036-01-01',
+        'local_time': '08:00',
+        'height_m': 1.5,
+      },
+    ],
+  });
+
+  testWidgets(
+    'slow tides do not hold a working hourly forecast or spot guide',
+    (tester) async {
+      final pending = Completer<TideForecastModel>();
+      final repo = _Repository(_user(premium: true))..pendingTides = pending;
+      await _show(tester, repo, settle: false);
+      expect(find.text('Uluwatu Peak'), findsOneWidget);
+      expect(find.text('OFFSHORE WAVES'), findsOneWidget);
+      expect(find.text('Loading tide predictions'), findsOneWidget);
+      expect(find.text('Retry tides'), findsNothing);
+      pending.complete(suppliedTides());
+      await tester.pumpAndSettle();
+      expect(find.text('High · 08:00'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('slow hourly data does not hide independently successful tides', (
+    tester,
+  ) async {
+    final pending = Completer<DetailedForecastModel>();
+    final repo = _Repository(_user(premium: true))
+      ..pendingDetail = pending
+      ..tideResult = suppliedTides();
+    await _show(tester, repo, settle: false);
+    expect(find.text('Loading hourly outlook'), findsOneWidget);
+    expect(find.text('Tide outlook'), findsOneWidget);
+    expect(find.text('High · 08:00'), findsOneWidget);
+    pending.complete(DetailedForecastModel.unavailable('uluwatu'));
+    await tester.pumpAndSettle();
+    expect(find.text('Hourly outlook unavailable'), findsOneWidget);
+    expect(find.text('High · 08:00'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'tide-only retry preserves working hourly data and does not refetch it',
+    (tester) async {
+      final repo = _Repository(_user(premium: true))..failTides = true;
+      await _show(tester, repo);
+      expect(find.text('OFFSHORE WAVES'), findsOneWidget);
+      expect(find.text('Retry forecast'), findsNothing);
+      await tester.scrollUntilVisible(
+        find.text('Retry tides'),
+        500,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('Retry tides'), findsOneWidget);
+      repo
+        ..failTides = false
+        ..tideResult = suppliedTides();
+      await tester.ensureVisible(find.text('Retry tides'));
+      await tester.tap(find.text('Retry tides'));
+      await tester.pumpAndSettle();
+      expect(find.text('High · 08:00'), findsOneWidget);
+      expect(find.text('Retry tides'), findsNothing);
+      expect(repo.detailCalls, 1);
+      expect(repo.tideCalls, 2);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('spot page shows only this break\'s confirmed alerts', (
     tester,
   ) async {
@@ -211,6 +406,21 @@ void main() {
     expect(repo.detailCalls, 1);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'a verification requirement hides previously loaded protected charts',
+    (tester) async {
+      final repo = _Repository(_user(premium: true));
+      final container = await _show(tester, repo);
+      expect(find.text('OFFSHORE WAVES'), findsOneWidget);
+      container.read(emailVerificationRequiredTokenProvider.notifier).state =
+          'blocked-test-token';
+      await tester.pumpAndSettle();
+      expect(find.text('FORECAST DESK'), findsNothing);
+      expect(find.text('OFFSHORE WAVES'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('dark forecast page and locked card use readable dark surfaces', (
     tester,

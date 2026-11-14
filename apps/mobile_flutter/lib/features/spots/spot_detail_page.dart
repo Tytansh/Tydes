@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -53,6 +54,7 @@ final spotDetailedForecastProvider = FutureProvider.autoDispose.family((
   try {
     return await repository.fetchDetailedForecast(spotId);
   } catch (error) {
+    if (_isForecastAuthorizationFailure(error)) rethrow;
     return DetailedForecastModel.unavailable(
       spotId,
       note: friendlyLoadErrorMessage(error, label: 'the hourly forecast'),
@@ -69,8 +71,27 @@ final spotTideProvider = FutureProvider.autoDispose.family((
   if (!profile.canAccessLiveForecast(spotId)) {
     return TideForecastModel.unavailable(spotId);
   }
-  return repository.fetchTides(spotId);
+  try {
+    return await repository.fetchTides(spotId);
+  } catch (error) {
+    if (_isForecastAuthorizationFailure(error)) rethrow;
+    return TideForecastModel(
+      spotId: spotId,
+      available: false,
+      stationName: null,
+      stationDistanceKm: null,
+      source: 'unavailable',
+      events: const [],
+      note: friendlyLoadErrorMessage(error, label: 'tide predictions'),
+    );
+  }
 });
+
+bool _isForecastAuthorizationFailure(Object error) =>
+    isEmailVerificationRequired(error) ||
+    (error is DioException &&
+        (error.response?.statusCode == 401 ||
+            error.response?.statusCode == 403));
 
 // Existing invalidation API remains available. The forecast desk intentionally
 // does not fetch or display the former heuristic "Best Time" quality score.
@@ -124,10 +145,30 @@ class SpotDetailPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final detail = ref.watch(spotDetailBundleProvider(spotId));
+    // Hourly and tide sources are independent. A slow/unavailable source must
+    // not hold the spot guide or the other source behind a shared Future.wait.
+    final detail = ref.watch(spotDetailProvider(spotId));
+    final hourly = ref.watch(spotDetailedForecastProvider(spotId));
+    final tides = ref.watch(spotTideProvider(spotId));
     final me = ref.watch(meProvider);
+    final verificationRequired =
+        ref.watch(emailVerificationRequiredTokenProvider) != null;
     final favorites = ref.watch(favoriteSpotIdsProvider);
     final profile = me.valueOrNull;
+    final forecast =
+        (hourly.hasError ? null : hourly.valueOrNull) ??
+        DetailedForecastModel.unavailable(
+          spotId,
+          note: hourly.hasError
+              ? friendlyLoadErrorMessage(
+                  hourly.error!,
+                  label: 'the hourly forecast',
+                )
+              : null,
+        );
+    final tide =
+        (tides.hasError ? null : tides.valueOrNull) ??
+        TideForecastModel.unavailable(spotId);
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
@@ -159,7 +200,7 @@ class SpotDetailPage extends ConsumerWidget {
         ],
       ),
       body: detail.when(
-        data: (bundle) => Align(
+        data: (spot) => Align(
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 1280),
@@ -169,7 +210,7 @@ class SpotDetailPage extends ConsumerWidget {
                 MediaQuery.sizeOf(context).width < 600 ? 12 : 24,
               ),
               children: [
-                _SpotHero(spot: bundle.spot),
+                _SpotHero(spot: spot),
                 const SizedBox(height: 16),
                 if (profile != null)
                   SpotAlertPanel(
@@ -195,27 +236,49 @@ class SpotDetailPage extends ConsumerWidget {
                   ),
                   const SizedBox(height: 16),
                 ],
-                if (profile?.canAccessLiveForecast(spotId) == true ||
-                    bundle.forecast.available) ...[
+                if (!me.hasError &&
+                    !verificationRequired &&
+                    profile?.canAccessLiveForecast(spotId) == true) ...[
                   ProForecastPanel(
-                    forecast: bundle.forecast,
-                    tide: bundle.tide,
+                    key: ValueKey('forecast-${profile!.id}-$spotId'),
+                    forecast: forecast,
+                    tide: tide,
+                    forecastLoading: hourly.isLoading && !forecast.available,
+                    tideLoading: tides.isLoading && !tide.available,
                   ),
-                  if (!bundle.forecast.available ||
-                      bundle.forecast.hours.isEmpty) ...[
+                  if ((!hourly.isLoading &&
+                          (!forecast.available || forecast.hours.isEmpty)) ||
+                      (!tides.isLoading && !tide.available)) ...[
                     const SizedBox(height: 10),
                     Align(
                       alignment: Alignment.centerLeft,
-                      child: OutlinedButton.icon(
-                        onPressed: () => _refresh(ref),
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Retry forecast'),
+                      child: Wrap(
+                        spacing: 10,
+                        runSpacing: 8,
+                        children: [
+                          if (!hourly.isLoading &&
+                              (!forecast.available || forecast.hours.isEmpty))
+                            OutlinedButton.icon(
+                              onPressed: () => ref.invalidate(
+                                spotDetailedForecastProvider(spotId),
+                              ),
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Retry forecast'),
+                            ),
+                          if (!tides.isLoading && !tide.available)
+                            OutlinedButton.icon(
+                              onPressed: () =>
+                                  ref.invalidate(spotTideProvider(spotId)),
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Retry tides'),
+                            ),
+                        ],
                       ),
                     ),
                   ],
                 ],
                 const SizedBox(height: 18),
-                _SpotGuide(spot: bundle.spot),
+                _SpotGuide(spot: spot),
                 const SizedBox(height: 24),
               ],
             ),

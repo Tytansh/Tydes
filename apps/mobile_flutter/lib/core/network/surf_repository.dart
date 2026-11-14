@@ -633,7 +633,7 @@ class SurfRepository {
       return await _dio.get<List<dynamic>>(
         '/forecasts',
         queryParameters: queryParameters,
-        options: Options(receiveTimeout: timeout),
+        options: Options(connectTimeout: timeout, receiveTimeout: timeout),
       );
     } on DioException catch (error) {
       if (isEmailVerificationRequired(error)) rethrow;
@@ -641,7 +641,7 @@ class SurfRepository {
       return _dio.get<List<dynamic>>(
         '/forecasts',
         queryParameters: queryParameters,
-        options: Options(receiveTimeout: timeout),
+        options: Options(connectTimeout: timeout, receiveTimeout: timeout),
       );
     }
   }
@@ -671,25 +671,60 @@ class SurfRepository {
   }
 
   Future<TideForecastModel> fetchTides(String spotId) async {
-    try {
-      final response = await _dio.get<Map<String, dynamic>>(
-        '/forecasts/tides',
-        queryParameters: {'spot_id': spotId},
-      );
-      return TideForecastModel.fromJson(response.data!);
-    } catch (error) {
-      if (isEmailVerificationRequired(error)) rethrow;
-      return TideForecastModel.unavailable(spotId);
+    final response = await _fetchForecastDetailResponse(
+      '/forecasts/tides',
+      spotId,
+    );
+    final result = TideForecastModel.fromJson(response.data!);
+    if (result.spotId != spotId) {
+      throw StateError('Tide predictions were not confirmed for this spot.');
     }
+    return result;
   }
 
   Future<DetailedForecastModel> fetchDetailedForecast(String spotId) async {
-    final response = await _dio.get<Map<String, dynamic>>(
+    final response = await _fetchForecastDetailResponse(
       '/forecasts/detail',
-      queryParameters: {'spot_id': spotId},
-      options: Options(receiveTimeout: const Duration(seconds: 40)),
+      spotId,
     );
-    return DetailedForecastModel.fromJson(response.data!);
+    final result = DetailedForecastModel.fromJson(response.data!);
+    if (result.spotId != spotId) {
+      throw StateError('The hourly forecast was not confirmed for this spot.');
+    }
+    return result;
+  }
+
+  Future<Response<Map<String, dynamic>>> _fetchForecastDetailResponse(
+    String path,
+    String spotId,
+  ) async {
+    Future<Response<Map<String, dynamic>>> request() =>
+        _dio.get<Map<String, dynamic>>(
+          path,
+          queryParameters: {'spot_id': spotId},
+          // Web connection timeout includes waiting for response headers, not
+          // just the TCP handshake. The upstream forecast wait can exceed the
+          // global six-second limit even with a longer receive timeout.
+          options: Options(
+            connectTimeout: const Duration(seconds: 40),
+            receiveTimeout: const Duration(seconds: 40),
+          ),
+        );
+    try {
+      return await request();
+    } on DioException catch (error) {
+      // Retry a transient transport/gateway failure once, not authorization,
+      // quota limits, malformed data, or a confirmed unavailable response.
+      final status = error.response?.statusCode;
+      if (status == 401 ||
+          status == 403 ||
+          status == 429 ||
+          isEmailVerificationRequired(error) ||
+          !_shouldRetryForecast(error)) {
+        rethrow;
+      }
+      return request();
+    }
   }
 
   Future<SurfWindowModel> fetchSurfWindow(String spotId) async {
