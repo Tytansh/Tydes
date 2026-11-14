@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { verifyDeferredMapCode, verifyStartupAssetHints } from './verify_mobile_performance.mjs';
+import { verifyDeferredAdminCode, verifyDeferredMapCode, verifyStartupAssetHints } from './verify_mobile_performance.mjs';
 
 const html = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
 const fontManifest = [
@@ -52,4 +52,11 @@ test('both map entrypoints share one non-startup chunk', () => {
   assert.deepEqual(verifyDeferredMapCode('app code', [{ file: 'maps.part.js', source: mapSource }]), ['maps.part.js']);
   assert.throws(() => verifyDeferredMapCode(mapSource, []), /initial bundle/);
   assert.throws(() => verifyDeferredMapCode('app code', []), /one deferred map chunk/);
+});
+
+test('admin tools stay outside the initial app download', () => {
+  const source = 'TYDES admin Review reports and take action without exposing passwords.';
+  assert.deepEqual(verifyDeferredAdminCode('app code', [{ file: 'admin.part.js', source }]), ['admin.part.js']);
+  assert.throws(() => verifyDeferredAdminCode(source, []), /initial bundle/);
+  assert.throws(() => verifyDeferredAdminCode('app code', []), /one deferred chunk/);
 });

@@ -462,3 +462,71 @@ maps, travel and people search retain their existing independent data paths.
   SHA-256 matches the release:
   `f64e742d54515477e85531193b711f147072451c5a596ef690b1d7d4f7bd54aa`.
 - Visual check: `output/tydes-feed-pagination-mobile.jpg`.
+
+## Profile navigation and targeted rebuilds — version 100
+
+Published 14 November 2026, 13:35 GMT+8 (05:35 UTC). This is a modest
+incremental improvement, not a new claim of Instagram-level startup or 60 FPS.
+The design, billing, media playback rules and provider plans are unchanged.
+
+### Changes and repeatable evidence
+
+- **Two fewer profile-navigation requests.** Opening another user's profile
+  reuses the already verified `meProvider` and the feed's loaded spot catalog,
+  rather than downloading/decoding those again. Friends, posts and social
+  profiles still refresh from the server. Tests prime shared data and confirm
+  zero additional account/catalog reads on navigation and refresh, while the
+  other three reads refresh normally. Account changes reject stale results and
+  hide previous-account data; loss of verification prevents private requests
+  and cannot retain the old profile's posts on screen. No global private HTTP
+  cache or relaxed authorization was introduced.
+- **Other-user profiles build post configurations on demand.** The former
+  `ListView(children:)` already mounted media lazily: the 100-photo mobile
+  baseline mounted one carousel, so this release does not claim to fix 100
+  simultaneously mounted videos there. The new builder instead avoids
+  constructing every post widget on each update, with stable row identity and
+  a single spot index. The old lookup algorithm could scan 384 spots for each
+  of 100 configured posts (38,400 reads per rebuild); the instrumented new
+  fixture records 384 reads. Tests scroll to post 25 and return with the draft
+  intact, keep fewer than eight mounted media widgets, and preserve blocking.
+- **Comment changes are scoped to their own post.** The regression test fails
+  before the selector change because an unrelated engagement bar rebuilds,
+  then passes afterward. The changed post updates, the other post's TextField
+  widget stays identical, and its unsaved draft remains intact. The expanded
+  comments sheet uses the same post-specific subscription.
+- **Admin-only rendering code loads on first use on web.** Native navigation
+  remains synchronous. The 19,819-byte deferred module preserves existing
+  backend admin checks, coalesces downloads, retries failures, retains page
+  state after loading and ignores completion after disposal. It caches code,
+  not user data. Eight loader/widget tests and a release-chunk guard cover this.
+
+| Production build | Initial JS | Deterministic gzip |
+| --- | ---: | ---: |
+| v99 | 4,597,716 B | 1,311,316 B |
+| v100 | 4,582,488 B | 1,307,704 B |
+
+The reduction is 15,228 raw bytes / 3,612 gzip bytes, around 0.3%, not a major
+startup speedup. The profile request and indexed-lookup reductions are the
+more meaningful gains in this increment. No new throttled timing or physical
+iPhone frame-rate measurement was made; historical main-thread blocking still
+needs attention. The large composer extraction is a candidate for a separate,
+carefully tested future code split.
+
+### Verification and provenance
+
+- Full Flutter suite: 491 passed. Analysis clean. Eight startup/chunk checks,
+  release-size, billing and public-page guards passed. Independent review and
+  the admin loader tests found no blocking issue.
+- Local production preview and guest map verified. The preview was reloaded
+  after the final build was copied so main and deferred chunks matched.
+- Signed-in live feed, another user's profile, post controls and deferred
+  admin page verified. Fresh 390x844 load checked; temporary viewport override
+  restored and the browser returned to the feed. Changing the viewport/DPR
+  mid-session initially produced a scaled screenshot; reloading at the target
+  viewport produced the correct responsive layout. No customer posts, account
+  settings, reports or subscriptions were changed during QA.
+- Site source `0a63cca04c89f4ca44a5a83c3370a62442c0e038`; deployment
+  `appgdep_6af7f316f72881919f25e28a2306a1bf` succeeded.
+- Live script SHA-256 matches the release:
+  `fde831a296ac55e21aca15f2effa749b02ef150bd0ca7e96be490a19ffde57c6`.
+- Visual check: `output/tydes-v100-mobile-profile.jpg`.

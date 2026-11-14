@@ -1169,11 +1169,14 @@ class _PostEngagementBarState extends ConsumerState<PostEngagementBar>
     final likeCount = _baseLikeCount(widget.post) + (liked ? 1 : 0);
     final repostCount = _baseRepostCount(widget.post) + (reposted ? 1 : 0);
     final blockedUserIds = ref.watch(blockedUserIdsProvider);
-    final comments =
-        (ref.watch(postCommentsProvider)[widget.post.id] ??
-                const <SocialComment>[])
-            .where((comment) => !blockedUserIds.contains(comment.userId))
-            .toList();
+    final postComments = ref.watch(
+      postCommentsProvider.select(
+        (comments) => comments[widget.post.id] ?? const <SocialComment>[],
+      ),
+    );
+    final comments = postComments
+        .where((comment) => !blockedUserIds.contains(comment.userId))
+        .toList();
     final currentViewer = ref.watch(currentViewerProvider).valueOrNull;
     final canModerateComments = currentViewer?.id == widget.post.userId;
     final topLevelComments = _topLevelComments(comments);
@@ -1777,11 +1780,14 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
   @override
   Widget build(BuildContext context) {
     final blockedUserIds = ref.watch(blockedUserIdsProvider);
-    final comments =
-        (ref.watch(postCommentsProvider)[widget.postId] ??
-                const <SocialComment>[])
-            .where((comment) => !blockedUserIds.contains(comment.userId))
-            .toList();
+    final postComments = ref.watch(
+      postCommentsProvider.select(
+        (comments) => comments[widget.postId] ?? const <SocialComment>[],
+      ),
+    );
+    final comments = postComments
+        .where((comment) => !blockedUserIds.contains(comment.userId))
+        .toList();
     final topLevelComments = _topLevelComments(comments);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;

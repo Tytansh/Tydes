@@ -7,24 +7,30 @@ import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../../core/widgets/feed_refresh_indicator.dart';
+import '../home/home_page.dart' show meProvider;
 import 'social_feed.dart';
 import 'social_profile.dart';
 
 final _publicProfileBundleProvider = FutureProvider((ref) async {
   final repository = ref.watch(surfRepositoryProvider);
+  // Navigation already passed the verified account gate. Reuse that account
+  // and the feed's catalog rather than downloading/decoding both again.
+  final me = await ref.watch(meProvider.future);
+  if (!me.emailVerified) {
+    throw StateError('Verify your email to view profiles.');
+  }
   final results = await Future.wait([
-    repository.fetchMe(),
     repository.fetchFriends(),
     repository.fetchSocialPosts(),
-    repository.fetchSpots(),
+    ref.watch(travelFeedSpotsProvider.future),
     repository.fetchSocialProfiles(),
   ]);
   return _PublicProfileBundle(
-    me: results[0] as UserProfile,
-    friends: results[1] as List<FriendProfileModel>,
-    posts: results[2] as List<SocialPostModel>,
-    spots: results[3] as List<SpotModel>,
-    socialProfiles: results[4] as List<SocialProfileModel>,
+    me: me,
+    friends: results[0] as List<FriendProfileModel>,
+    posts: results[1] as List<SocialPostModel>,
+    spots: results[2] as List<SpotModel>,
+    socialProfiles: results[3] as List<SocialProfileModel>,
   );
 });
 
@@ -51,9 +57,26 @@ class PublicProfilePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final bundle = ref.watch(_publicProfileBundleProvider);
+    final account = ref.watch(meProvider);
     ref.watch(socialEngagementHydrationProvider);
     ref.watch(socialRelationshipHydrationProvider);
-    final loadedData = bundle.valueOrNull;
+    // FutureProvider retains previous data while dependencies reload. Never
+    // display a previous account's private posts during an account switch.
+    final previous = bundle.valueOrNull;
+    final staleAccount =
+        previous != null &&
+        (account.hasError ||
+            account.valueOrNull?.emailVerified != true ||
+            previous.me.id != account.valueOrNull?.id);
+    final visibleBundle = staleAccount
+        ? bundle.hasError
+              ? AsyncError<_PublicProfileBundle>(
+                  bundle.error!,
+                  bundle.stackTrace ?? StackTrace.empty,
+                )
+              : const AsyncLoading<_PublicProfileBundle>()
+        : bundle;
+    final loadedData = visibleBundle.valueOrNull;
     final headerProfile = loadedData == null
         ? seedProfile
         : _buildResolvedProfile(userId, seedProfile, loadedData);
@@ -76,7 +99,7 @@ class PublicProfilePage extends ConsumerWidget {
       ),
       body: FeedRefreshIndicator(
         onRefresh: () => _refreshProfile(ref),
-        child: bundle.when(
+        child: visibleBundle.when(
           skipLoadingOnReload: true,
           data: (data) {
             final profile = _buildResolvedProfile(userId, seedProfile, data);
@@ -116,56 +139,76 @@ class PublicProfilePage extends ConsumerWidget {
               followedIds.contains(profile.userId),
               isMe ? followerIds : const {},
             );
+            final spotsById = {for (final spot in data.spots) spot.id: spot};
+            final itemIndexes = {
+              for (var index = 0; index < profileItems.length; index++)
+                profileItems[index].key: index + 1,
+            };
 
-            return ListView(
+            // The old children list mounted lazily, but still constructed every
+            // post configuration and repeatedly scanned all spots on rebuild.
+            // Build only nearby rows and retain their identity after reorder.
+            return ListView.builder(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(20),
-              children: [
-                _PublicProfileHero(
-                  profile: profile,
-                  postsCount: userPosts.length + profileReposts.length,
-                  friends: friends,
-                  followers: followers,
-                  isMe: isMe,
-                  onPersonTap: (person) => _openProfileFromPublicPage(
-                    context,
-                    ref,
-                    person,
-                    data.me.id,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                if (profileIsBlocked)
-                  const _BlockedProfileNotice()
-                else if (!isMe)
-                  FollowButton(userId: profile.userId, expanded: true),
-                const SizedBox(height: 22),
-                Text('Posts', style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 12),
-                if (userPosts.isEmpty && profileReposts.isEmpty)
-                  const _EmptyProfilePosts()
-                else ...[
-                  for (final item in profileItems) ...[
-                    KeyedSubtree(
-                      key: ValueKey(item.key),
-                      child: TydesDesktopPostWidth(
-                        child: _PublicProfilePostCard(
-                          profile: item.repostHeader == null
-                              ? profile
-                              : _profileFromPost(item.post),
-                          post: item.post,
-                          spot: _spotForId(data.spots, item.post.spotId),
-                          isMe: item.repostHeader == null
-                              ? isMe
-                              : data.me.id == item.post.userId,
-                          repostHeader: item.repostHeader,
+              itemCount: 1 + profileItems.length,
+              findChildIndexCallback: (key) {
+                if (key == const ValueKey('public_profile_header')) return 0;
+                return key is ValueKey<String> ? itemIndexes[key.value] : null;
+              },
+              itemBuilder: (context, index) {
+                if (index == 0) {
+                  return Column(
+                    key: const ValueKey('public_profile_header'),
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _PublicProfileHero(
+                        profile: profile,
+                        postsCount: userPosts.length + profileReposts.length,
+                        friends: friends,
+                        followers: followers,
+                        isMe: isMe,
+                        onPersonTap: (person) => _openProfileFromPublicPage(
+                          context,
+                          ref,
+                          person,
+                          data.me.id,
                         ),
                       ),
+                      const SizedBox(height: 18),
+                      if (profileIsBlocked)
+                        const _BlockedProfileNotice()
+                      else if (!isMe)
+                        FollowButton(userId: profile.userId, expanded: true),
+                      const SizedBox(height: 22),
+                      Text(
+                        'Posts',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 12),
+                      if (profileItems.isEmpty) const _EmptyProfilePosts(),
+                    ],
+                  );
+                }
+                final item = profileItems[index - 1];
+                return Padding(
+                  key: ValueKey(item.key),
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: TydesDesktopPostWidth(
+                    child: _PublicProfilePostCard(
+                      profile: item.repostHeader == null
+                          ? profile
+                          : _profileFromPost(item.post),
+                      post: item.post,
+                      spot: spotsById[item.post.spotId],
+                      isMe: item.repostHeader == null
+                          ? isMe
+                          : data.me.id == item.post.userId,
+                      repostHeader: item.repostHeader,
                     ),
-                    const SizedBox(height: 12),
-                  ],
-                ],
-              ],
+                  ),
+                );
+              },
             );
           },
           loading: () => ListView(
@@ -744,14 +787,6 @@ SocialProfileModel? _socialProfileForId(
 SocialPostModel? _firstPostForUser(List<SocialPostModel> posts, String id) {
   for (final post in posts) {
     if (post.userId == id) return post;
-  }
-  return null;
-}
-
-SpotModel? _spotForId(List<SpotModel> spots, String? id) {
-  if (id == null) return null;
-  for (final spot in spots) {
-    if (spot.id == id) return spot;
   }
   return null;
 }

@@ -55,6 +55,16 @@ export function verifyDeferredMapCode(main, chunks) {
   return mapChunks.map(chunk => chunk.file);
 }
 
+export function verifyDeferredAdminCode(main, chunks) {
+  const markers = ['TYDES admin', 'Review reports and take action without exposing passwords.'];
+  for (const marker of markers) {
+    assert(!main.includes(marker), `Admin tools returned to the initial bundle: ${marker}`);
+  }
+  const adminChunks = chunks.filter(chunk => markers.every(marker => chunk.source.includes(marker)));
+  assert.equal(adminChunks.length, 1, 'Admin tools must share one deferred chunk.');
+  return adminChunks.map(chunk => chunk.file);
+}
+
 // Repeatable release-size guard. Browser timings/FPS are measured separately;
 // neither bundle size nor widget counts are substitutes for frame profiling.
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
@@ -73,12 +83,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   const deferredMapChunks = verifyDeferredMapCode(main.toString('utf8'), chunks.map(file => ({
     file, source: fs.readFileSync(path.join(directory, file), 'utf8'),
   })));
+  const deferredAdminChunks = verifyDeferredAdminCode(main.toString('utf8'), chunks.map(file => ({
+    file, source: fs.readFileSync(path.join(directory, file), 'utf8'),
+  })));
   assert(html.includes('as="script" href="main.dart.js"'), 'Missing early app-script discovery.');
   console.log(JSON.stringify({
     initialJavaScriptBytes: main.length,
     initialJavaScriptGzipBytes: gzipSync(main).length,
     deferredChunks: chunks.map(file => ({ file, bytes: fs.statSync(path.join(directory, file)).size })),
     deferredMapChunks,
+    deferredAdminChunks,
     startupFetchPreloads,
     bootstrap: 'inline',
     status: 'Mobile release-size budget passed',

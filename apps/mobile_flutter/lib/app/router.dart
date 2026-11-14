@@ -6,7 +6,7 @@ import '../core/network/api_models.dart';
 import '../core/network/surf_repository.dart';
 
 import '../features/alerts/alerts_page.dart';
-import '../features/admin/admin_users_page.dart';
+import '../features/admin/admin_feature_page.dart';
 import '../features/auth/auth_page.dart';
 import '../features/auth/auth_return_path.dart';
 import '../features/auth/verification_gate_page.dart';
@@ -161,7 +161,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: 'admin',
-            builder: (context, state) => const AdminUsersPage(),
+            builder: (context, state) => const AdminFeaturePage(),
           ),
           GoRoute(
             path: 'messages',
