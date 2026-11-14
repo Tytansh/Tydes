@@ -697,7 +697,7 @@ void main() {
     },
   );
 
-  testWidgets('mouse wheel zoom works without the new map buttons', (
+  testWidgets('guest map uses pinch zoom without stealing mouse wheel scroll', (
     tester,
   ) async {
     final transport = _PublicTransport();
@@ -705,7 +705,7 @@ void main() {
     final map = tester.widget<FlutterMap>(find.byType(FlutterMap));
     expect(
       map.options.interactionOptions.flags & InteractiveFlag.scrollWheelZoom,
-      isNot(0),
+      0,
     );
     expect(find.byTooltip('Zoom in'), findsNothing);
     expect(find.byTooltip('Zoom out'), findsNothing);
@@ -715,6 +715,14 @@ void main() {
       PointerScrollEvent(
         position: tester.getCenter(find.byType(FlutterMap)),
         scrollDelta: const Offset(0, -100),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(map.mapController!.camera.zoom, zoom);
+    await tester.sendEventToBinding(
+      PointerScaleEvent(
+        position: tester.getCenter(find.byType(FlutterMap)),
+        scale: 1.5,
       ),
     );
     await tester.pumpAndSettle();

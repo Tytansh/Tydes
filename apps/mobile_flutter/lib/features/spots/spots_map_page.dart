@@ -13,6 +13,7 @@ import '../../core/network/surf_repository.dart';
 import '../home/home_page.dart';
 import '../social/social_profile.dart';
 import 'map_events.dart';
+import 'map_pinch_gestures.dart';
 import 'map_tile_config.dart' as tiles;
 import 'spots_page.dart';
 import 'surf_map_markers.dart';
@@ -379,7 +380,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
                   child: Text(
-                    'Tap a pin to explore a break or a host photo to see events. Scroll or pinch to zoom; drag to pan.',
+                    'Tap a pin to explore a break or a host photo to see events. Pinch to zoom; drag to pan.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
@@ -1185,67 +1186,68 @@ class _MapCanvasState extends State<_MapCanvas> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        FlutterMap(
-          mapController: widget.mapController,
-          options: MapOptions(
-            initialCenter: widget.initialCenter,
-            initialZoom: widget.initialZoom,
-            initialCameraFit: _fit,
-            minZoom: 2,
-            maxZoom: 14,
-            interactionOptions: const InteractionOptions(
-              flags: InteractiveFlag.all,
+        SurfMapPinchGestures(
+          controller: widget.mapController,
+          child: FlutterMap(
+            mapController: widget.mapController,
+            options: MapOptions(
+              initialCenter: widget.initialCenter,
+              initialZoom: widget.initialZoom,
+              initialCameraFit: _fit,
+              minZoom: 2,
+              maxZoom: 14,
+              interactionOptions: surfMapInteractionOptions,
+              onPositionChanged: widget.onPositionChanged,
             ),
-            onPositionChanged: widget.onPositionChanged,
-          ),
-          children: [
-            TileLayer(
-              urlTemplate: tiles.mapTileUrlTemplate,
-              userAgentPackageName: tiles.mapTileUserAgent,
-              tileProvider: _tiles,
-            ),
-            MarkerLayer(
-              markers: widget.spots
-                  .map(
-                    (spot) => Marker(
-                      point: LatLng(spot.latitude, spot.longitude),
-                      width: widget.selectedSpotId == spot.id ? 120 : 32,
-                      height: widget.selectedSpotId == spot.id ? 112 : 32,
-                      child: GestureDetector(
-                        key: ValueKey('map-spot-${spot.id}'),
-                        onTap: () => widget.onSpotTap(spot),
-                        child: Tooltip(
-                          message: spot.name,
-                          child: _SpotMarker(
-                            spot: spot,
-                            isSelected: widget.selectedSpotId == spot.id,
-                            forecast: widget.selectedSpotId == spot.id
-                                ? widget.selectedForecast
-                                : null,
+            children: [
+              TileLayer(
+                urlTemplate: tiles.mapTileUrlTemplate,
+                userAgentPackageName: tiles.mapTileUserAgent,
+                tileProvider: _tiles,
+              ),
+              MarkerLayer(
+                markers: widget.spots
+                    .map(
+                      (spot) => Marker(
+                        point: LatLng(spot.latitude, spot.longitude),
+                        width: widget.selectedSpotId == spot.id ? 120 : 32,
+                        height: widget.selectedSpotId == spot.id ? 112 : 32,
+                        child: GestureDetector(
+                          key: ValueKey('map-spot-${spot.id}'),
+                          onTap: () => widget.onSpotTap(spot),
+                          child: Tooltip(
+                            message: spot.name,
+                            child: _SpotMarker(
+                              spot: spot,
+                              isSelected: widget.selectedSpotId == spot.id,
+                              forecast: widget.selectedSpotId == spot.id
+                                  ? widget.selectedForecast
+                                  : null,
+                            ),
                           ),
                         ),
                       ),
+                    )
+                    .toList(),
+              ),
+              MarkerLayer(
+                markers: [
+                  for (final group in widget.eventGroups)
+                    Marker(
+                      point: LatLng(group.spot.latitude, group.spot.longitude),
+                      width: 56,
+                      height: 62,
+                      child: MapEventMarker(
+                        group: group,
+                        viewerId: widget.viewerId,
+                        onTap: () => widget.onEventTap(group),
+                      ),
                     ),
-                  )
-                  .toList(),
-            ),
-            MarkerLayer(
-              markers: [
-                for (final group in widget.eventGroups)
-                  Marker(
-                    point: LatLng(group.spot.latitude, group.spot.longitude),
-                    width: 56,
-                    height: 62,
-                    child: MapEventMarker(
-                      group: group,
-                      viewerId: widget.viewerId,
-                      onTap: () => widget.onEventTap(group),
-                    ),
-                  ),
-              ],
-            ),
-            const _MapAttributionPill(),
-          ],
+                ],
+              ),
+              const _MapAttributionPill(),
+            ],
+          ),
         ),
       ],
     );

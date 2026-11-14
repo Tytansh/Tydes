@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -191,11 +192,28 @@ void main() {
       final map = tester.widget<FlutterMap>(find.byType(FlutterMap));
       expect(
         map.options.interactionOptions.flags & InteractiveFlag.scrollWheelZoom,
-        isNot(0),
+        0,
       );
       expect(find.byTooltip('Zoom in'), findsNothing);
       expect(find.byTooltip('Zoom out'), findsNothing);
       expect(find.byTooltip('Fit map'), findsNothing);
+      final beforePinch = map.mapController!.camera.zoom;
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: tester.getCenter(find.byType(FlutterMap)),
+          scrollDelta: const Offset(0, -40),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(map.mapController!.camera.zoom, beforePinch);
+      await tester.sendEventToBinding(
+        PointerScaleEvent(
+          position: tester.getCenter(find.byType(FlutterMap)),
+          scale: 1.5,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(map.mapController!.camera.zoom, greaterThan(beforePinch));
       final center = map.mapController!.camera.center;
       final zoom = map.mapController!.camera.zoom;
       await tester.tap(toggle);

@@ -15,6 +15,7 @@ import '../../core/network/surf_repository.dart';
 import '../auth/auth_return_path.dart';
 import '../social/social_profile.dart';
 import '../spots/map_tile_config.dart' as tiles;
+import '../spots/map_pinch_gestures.dart';
 import '../spots/surf_map_markers.dart';
 
 final guestSpotsProvider =
@@ -630,65 +631,66 @@ class _GuestMapCanvasState extends State<GuestMapCanvas> {
     borderRadius: BorderRadius.circular(22),
     child: Stack(
       children: [
-        FlutterMap(
-          mapController: _controller,
-          options: MapOptions(
-            initialCameraFit: _fit,
-            minZoom: 2,
-            maxZoom: 14,
-            interactionOptions: const InteractionOptions(
-              flags: InteractiveFlag.all,
+        SurfMapPinchGestures(
+          controller: _controller,
+          child: FlutterMap(
+            mapController: _controller,
+            options: MapOptions(
+              initialCameraFit: _fit,
+              minZoom: 2,
+              maxZoom: 14,
+              interactionOptions: surfMapInteractionOptions,
             ),
+            children: [
+              TileLayer(
+                urlTemplate: tiles.mapTileUrlTemplate,
+                userAgentPackageName: tiles.mapTileUserAgent,
+                tileProvider: _tiles,
+              ),
+              MarkerLayer(
+                markers: [
+                  for (final spot in widget.spots)
+                    Marker(
+                      width: 32,
+                      height: 32,
+                      point: LatLng(spot.latitude, spot.longitude),
+                      child: IconButton(
+                        key: ValueKey('guest-spot-${spot.id}'),
+                        tooltip: spot.name,
+                        padding: EdgeInsets.zero,
+                        onPressed: () => widget.onSpot(spot),
+                        icon: SurfMapSpotPin(difficulty: spot.difficulty),
+                      ),
+                    ),
+                ],
+              ),
+              MarkerLayer(
+                markers: [
+                  for (final group in widget.eventGroups)
+                    Marker(
+                      width: 56,
+                      height: 62,
+                      point: LatLng(group.spot.latitude, group.spot.longitude),
+                      child: GuestEventMarker(
+                        group: group,
+                        onTap: () => widget.onEvents(group),
+                      ),
+                    ),
+                ],
+              ),
+              RichAttributionWidget(
+                attributions: [
+                  TextSourceAttribution(
+                    tiles.mapAttributionLabel,
+                    onTap: () => launchUrl(
+                      Uri.parse(tiles.mapAttributionUrl),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-          children: [
-            TileLayer(
-              urlTemplate: tiles.mapTileUrlTemplate,
-              userAgentPackageName: tiles.mapTileUserAgent,
-              tileProvider: _tiles,
-            ),
-            MarkerLayer(
-              markers: [
-                for (final spot in widget.spots)
-                  Marker(
-                    width: 32,
-                    height: 32,
-                    point: LatLng(spot.latitude, spot.longitude),
-                    child: IconButton(
-                      key: ValueKey('guest-spot-${spot.id}'),
-                      tooltip: spot.name,
-                      padding: EdgeInsets.zero,
-                      onPressed: () => widget.onSpot(spot),
-                      icon: SurfMapSpotPin(difficulty: spot.difficulty),
-                    ),
-                  ),
-              ],
-            ),
-            MarkerLayer(
-              markers: [
-                for (final group in widget.eventGroups)
-                  Marker(
-                    width: 56,
-                    height: 62,
-                    point: LatLng(group.spot.latitude, group.spot.longitude),
-                    child: GuestEventMarker(
-                      group: group,
-                      onTap: () => widget.onEvents(group),
-                    ),
-                  ),
-              ],
-            ),
-            RichAttributionWidget(
-              attributions: [
-                TextSourceAttribution(
-                  tiles.mapAttributionLabel,
-                  onTap: () => launchUrl(
-                    Uri.parse(tiles.mapAttributionUrl),
-                    mode: LaunchMode.externalApplication,
-                  ),
-                ),
-              ],
-            ),
-          ],
         ),
       ],
     ),
