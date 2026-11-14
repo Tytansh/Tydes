@@ -54,7 +54,72 @@ SocialFeedPage _page(int start, int count, {String? next}) => SocialFeedPage(
   nextCursor: next,
 );
 
+class _PagingRepository extends SurfRepository {
+  _PagingRepository(this.loadPage)
+    : super(
+        Dio(BaseOptions(baseUrl: 'https://fixture.example.invalid')),
+        MemorySessions(),
+      );
+
+  final Future<SocialFeedPage> Function(String? cursor) loadPage;
+
+  @override
+  Future<SocialFeedPage> fetchSocialFeedPage({
+    String? cursor,
+    int limit = 25,
+  }) => loadPage(cursor);
+}
+
 void main() {
+  test(
+    'production pager hydrates and appends without a provider self-dependency',
+    () async {
+      var assertionsEnabled = false;
+      assert(assertionsEnabled = true);
+      expect(assertionsEnabled, isTrue);
+      final cursors = <String?>[];
+      final repository = _PagingRepository((cursor) async {
+        cursors.add(cursor);
+        final entries = cursor == null
+            ? [_entry(0)]
+            : [_entry(0, kind: 'repost'), _entry(1)];
+        return SocialFeedPage(
+          items: entries,
+          nextCursor: cursor == null ? 'next' : null,
+          scopedPostIds: entries.map((entry) => entry.post.id).toList(),
+          engagement: SocialEngagementModel.fromJson({
+            'liked_post_ids': entries.map((entry) => entry.post.id).toList(),
+          }),
+        );
+      });
+      final container = ProviderContainer(
+        overrides: [
+          meProvider.overrideWith((_) async => _viewer('viewer')),
+          surfRepositoryProvider.overrideWithValue(repository),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(meProvider.future);
+      final posts = await container.read(travelFeedPostsProvider.future);
+      expect(posts.map((post) => post.id), ['post-0']);
+      expect(container.read(likedPostIdsProvider), {'post-0'});
+
+      // An older append response must not overwrite a newer local unlike.
+      container.read(likedPostIdsProvider.notifier).state = {};
+      final pager = container.read(feedPaginationProvider.notifier);
+      await pager.loadMore();
+      expect(container.read(feedPaginationProvider).entries.length, 3);
+      expect(container.read(feedPaginationProvider).error, isNull);
+      expect(container.read(likedPostIdsProvider), {'post-1'});
+      expect(cursors, [null, 'next']);
+
+      // An explicit refresh may replace the first page's engagement again.
+      await pager.refreshInitial();
+      expect(container.read(likedPostIdsProvider), {'post-0', 'post-1'});
+      expect(container.read(feedPaginationProvider).error, isNull);
+    },
+  );
+
   test(
     'repository requests a bounded page and sends only the supplied cursor',
     () async {
@@ -216,7 +281,7 @@ void main() {
           }
           return cursor == 'old-next' ? oldAppend.future : newAppend.future;
         },
-        onPageLoaded: (page) => applied.add(page.items.first.entryId),
+        onPageLoaded: (page, _) => applied.add(page.items.first.entryId),
       );
       addTearDown(pager.dispose);
       await pager.refreshInitial();
@@ -247,7 +312,7 @@ void main() {
         accountId: 'old-account',
         loadPage: (_) =>
             ++calls == 1 ? old.future : Future.value(_page(100, 1)),
-        onPageLoaded: (_) => hydrations++,
+        onPageLoaded: (_, _) => hydrations++,
       );
       final request = pager.refreshInitial();
       await Future<void>.value();

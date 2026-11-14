@@ -19,8 +19,7 @@ feedPaginationProvider =
       return FeedPaginationController(
         accountId: accountId,
         loadPage: (cursor) => repository.fetchSocialFeedPage(cursor: cursor),
-        onPageLoaded: (page) {
-          final current = ref.read(feedPaginationProvider);
+        onPageLoaded: (page, preservePostIds) {
           applyFeedPageEngagement(
             ref,
             page,
@@ -28,9 +27,7 @@ feedPaginationProvider =
             refreshKey: refreshKey,
             // A repost can expose its original again on a later page. Do not
             // overwrite a newer like/comment action with that older request.
-            preservePostIds: current.isLoadingInitial
-                ? const {}
-                : current.entries.map((entry) => entry.post.id).toSet(),
+            preservePostIds: preservePostIds,
           );
         },
       );
@@ -88,14 +85,16 @@ class FeedPaginationController extends StateNotifier<FeedPaginationState> {
   FeedPaginationController({
     required this.accountId,
     required Future<SocialFeedPage> Function(String? cursor) loadPage,
-    void Function(SocialFeedPage page)? onPageLoaded,
+    void Function(SocialFeedPage page, Set<String> preservePostIds)?
+    onPageLoaded,
   }) : _loadPage = loadPage,
        _onPageLoaded = onPageLoaded,
        super(const FeedPaginationState());
 
   final String? accountId;
   final Future<SocialFeedPage> Function(String? cursor) _loadPage;
-  final void Function(SocialFeedPage page)? _onPageLoaded;
+  final void Function(SocialFeedPage page, Set<String> preservePostIds)?
+  _onPageLoaded;
   int _revision = 0;
   bool _disposed = false;
   Future<void>? _append;
@@ -111,7 +110,7 @@ class FeedPaginationController extends StateNotifier<FeedPaginationState> {
     try {
       final page = await _loadPage(null);
       if (!_current(revision)) return const [];
-      _onPageLoaded?.call(page);
+      _onPageLoaded?.call(page, const {});
       final entries = _merge(const [], page.items);
       state = FeedPaginationState(
         entries: entries,
@@ -160,7 +159,12 @@ class FeedPaginationController extends StateNotifier<FeedPaginationState> {
       if (page.nextCursor == cursor) {
         throw StateError('The feed cursor did not advance. Try refreshing.');
       }
-      _onPageLoaded?.call(page);
+      // Supply the snapshot directly: the provider's callback must not read
+      // feedPaginationProvider through its own Ref (a Riverpod self-cycle).
+      _onPageLoaded?.call(
+        page,
+        state.entries.map((entry) => entry.post.id).toSet(),
+      );
       state = state.update(
         entries: _merge(state.entries, page.items),
         nextCursor: page.nextCursor,
