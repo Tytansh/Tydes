@@ -5,6 +5,23 @@ import 'package:mobile_flutter/core/network/detailed_forecast_models.dart';
 import 'package:mobile_flutter/core/theme/app_theme.dart';
 import 'package:mobile_flutter/features/spots/pro_forecast_panel.dart';
 
+class _CountingForecastHour extends HourlyForecastModel {
+  _CountingForecastHour({
+    required super.time,
+    required super.localDate,
+    required super.localTime,
+    required this.onDateRead,
+  }) : super(waveHeightM: 2, swellHeightM: 1.5, windKts: 8);
+
+  final VoidCallback onDateRead;
+
+  @override
+  String get localDate {
+    onDateRead();
+    return super.localDate;
+  }
+}
+
 DetailedForecastModel _forecast({bool gaps = false, bool allNull = false}) {
   return DetailedForecastModel.fromJson({
     'spot_id': 'uluwatu',
@@ -134,6 +151,50 @@ Future<void> _show(
 }
 
 void main() {
+  for (final dayCount in [5, 10]) {
+    testWidgets(
+      'selected day projection stays bounded for ${dayCount * 24} hours',
+      (tester) async {
+        var dateReads = 0;
+        final hours = [
+          for (var day = 1; day <= dayCount; day++)
+            for (var hour = 0; hour < 24; hour++)
+              _CountingForecastHour(
+                time: DateTime.utc(2036, 1, day, hour).toIso8601String(),
+                localDate: '2036-01-${day.toString().padLeft(2, '0')}',
+                localTime: '${hour.toString().padLeft(2, '0')}:00',
+                onDateRead: () => dateReads++,
+              ),
+        ];
+        final forecast = DetailedForecastModel(
+          spotId: 'projection-count',
+          available: true,
+          hours: hours,
+        );
+        final maximumReads = hours.length * (dayCount + 2);
+        await _show(tester, forecast);
+        expect(
+          dateReads,
+          lessThanOrEqualTo(maximumReads),
+          reason: 'Resolve the selected day once, not once per hourly row.',
+        );
+        dateReads = 0;
+        await tester.tap(find.byTooltip('Next forecast hour'));
+        await tester.pump();
+        expect(dateReads, lessThanOrEqualTo(maximumReads));
+        expect(
+          tester
+              .widget<Text>(
+                find.byKey(const ValueKey('forecast-selected-time')),
+              )
+              .data,
+          '01:00',
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   final darkTheme = ThemeData(
     useMaterial3: true,
     colorScheme: ColorScheme.fromSeed(

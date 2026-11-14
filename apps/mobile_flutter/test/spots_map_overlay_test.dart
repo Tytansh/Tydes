@@ -38,6 +38,33 @@ final _spots = [
   _spot('echo', 'Echo Beach', 'intermediate', -8.64),
 ];
 
+class _CountingSpot extends SpotModel {
+  _CountingSpot(int index)
+    : super(
+        id: 'measured-$index',
+        name: 'Measured break $index',
+        country: 'Indonesia',
+        region: 'Bali',
+        area: 'Measured coast',
+        latitude: -8.5 - index / 1000,
+        longitude: 115.13,
+        difficulty: 'intermediate',
+        bestMonths: const ['May'],
+        waveHeightM: 1,
+        waterTempC: 26,
+        imageUrl: '',
+        summary: 'A surf break.',
+      );
+
+  int countryReads = 0;
+
+  @override
+  String get country {
+    countryReads++;
+    return super.country;
+  }
+}
+
 SocialPostModel _event(
   String spotId, {
   String owner = 'maya',
@@ -133,6 +160,36 @@ Future<void> _finish(WidgetTester tester, ProviderContainer container) async {
 }
 
 void main() {
+  testWidgets('pinch updates camera without rebuilding the spot catalog', (
+    tester,
+  ) async {
+    final catalog = List.generate(384, _CountingSpot.new);
+    final repository = _Repository()..posts = [];
+    final container = await _pump(tester, repository, spots: catalog);
+    final map = tester.widget<FlutterMap>(find.byType(FlutterMap));
+    final zoom = map.mapController!.camera.zoom;
+    for (final spot in catalog) {
+      spot.countryReads = 0;
+    }
+    for (final scale in [1.02, 1.02, 0.98, 1.03]) {
+      await tester.sendEventToBinding(
+        PointerScaleEvent(
+          position: tester.getCenter(find.byType(FlutterMap)),
+          scale: scale,
+        ),
+      );
+      await tester.pump();
+    }
+    final reads = catalog.fold(0, (total, spot) => total + spot.countryReads);
+    debugPrint('384-spot catalog reads during four pinch updates: $reads');
+    expect(map.mapController!.camera.zoom, greaterThan(zoom));
+    expect(reads, 0);
+    expect(find.byType(SurfMapSpotPin), findsNWidgets(384));
+    expect(repository.eventLoads, 1);
+    expect(tester.takeException(), isNull);
+    await _finish(tester, container);
+  });
+
   testWidgets('dark map keeps search and location sheets on dark surfaces', (
     tester,
   ) async {

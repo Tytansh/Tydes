@@ -292,7 +292,13 @@ class TravelFeedSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final posts = ref.watch(travelFeedPostsProvider);
-    final pagination = ref.watch(feedPaginationProvider);
+    // Paging status belongs to the footer. Keep already mounted post/media
+    // widgets untouched while a later page loads, fails, or is retried.
+    final pagination = ref.watch(
+      feedPaginationProvider.select(
+        (state) => (entries: state.entries, initialized: state.initialized),
+      ),
+    );
     final spots = ref.watch(travelFeedSpotsProvider);
     final spotItems = spots.valueOrNull ?? const <SpotModel>[];
     if (compact) ref.watch(socialEngagementHydrationProvider);

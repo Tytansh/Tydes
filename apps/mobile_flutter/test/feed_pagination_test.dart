@@ -30,6 +30,7 @@ SocialFeedEntry _entry(
   String? postId,
   String kind = 'post',
   String? body,
+  bool withPhoto = false,
 }) {
   final id = postId ?? 'post-$index';
   return SocialFeedEntry(
@@ -45,6 +46,15 @@ SocialFeedEntry _entry(
       'visibility': 'public',
       'body': body ?? 'Post body $id',
       'created_at': '2026-10-01T00:00:00Z',
+      if (withPhoto)
+        'media': [
+          {
+            'id': 'photo-$id',
+            'media_type': 'photo',
+            'url': 'https://fixture.example.invalid/photo.jpg',
+            'thumbnail_url': 'https://fixture.example.invalid/photo.jpg',
+          },
+        ],
     }),
   );
 }
@@ -437,6 +447,104 @@ void main() {
       expect(input.text, 'Keep this draft');
       expect(pager.state.entries.length, 50);
       expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'pagination status updates only the footer, not mounted post media',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      var pending = Completer<SocialFeedPage>();
+      final pager = FeedPaginationController(
+        accountId: 'viewer',
+        loadPage: (cursor) async => cursor == null
+            ? SocialFeedPage(
+                items: [_entry(0, withPhoto: true)],
+                nextCursor: 'next',
+              )
+            : pending.future,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          meProvider.overrideWith((_) async => _viewer('viewer')),
+          feedPaginationProvider.overrideWith((_) => pager),
+          travelFeedSpotsProvider.overrideWith((_) async => []),
+          socialEngagementHydrationProvider.overrideWith((_) async {}),
+          socialRelationshipHydrationProvider.overrideWith((_) async {}),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: Scaffold(
+              body: CustomScrollView(
+                slivers: [TravelFeedSection(showHeader: false, asSliver: true)],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final beforeCaption = tester.widget<SocialPostBodyPreview>(
+        find.byType(SocialPostBodyPreview).first,
+      );
+      final beforeMedia = tester.widget<SocialPostMediaCarousel>(
+        find.byType(SocialPostMediaCarousel),
+      );
+      void expectUnchangedPost() {
+        expect(
+          tester.widget<SocialPostBodyPreview>(
+            find.byType(SocialPostBodyPreview).first,
+          ),
+          same(beforeCaption),
+        );
+        expect(
+          tester.widget<SocialPostMediaCarousel>(
+            find.byType(SocialPostMediaCarousel),
+          ),
+          same(beforeMedia),
+        );
+      }
+
+      await tester.tap(find.text('Load more posts'));
+      await tester.pump();
+      expect(pager.state.isLoadingMore, isTrue);
+      expect(
+        find.descendant(
+          of: find.byType(FeedPaginationFooter),
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsOneWidget,
+      );
+      expectUnchangedPost();
+
+      pending.completeError(StateError('Next page is temporarily unavailable'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Could not load more posts. Please try again.'),
+        findsOneWidget,
+      );
+      expectUnchangedPost();
+
+      pending = Completer<SocialFeedPage>();
+      await tester.tap(find.text('Retry posts'));
+      await tester.pump();
+      expect(pager.state.isLoadingMore, isTrue);
+      expectUnchangedPost();
+      pending.complete(_page(1, 1));
+      await tester.pumpAndSettle();
+      expect(pager.state.entries.length, 2);
+      expect(find.text('Post body post-1'), findsOneWidget);
+      expect(find.text('Load more posts'), findsNothing);
+      expect(find.text('Retry posts'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 3));
     },
   );
 

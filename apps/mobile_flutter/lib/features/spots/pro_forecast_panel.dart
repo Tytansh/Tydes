@@ -53,25 +53,8 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
   String? _selectedDay;
   int? _selectedHour;
 
-  List<String> get _days {
-    final values = widget.forecast.hours.map((hour) => hour.localDate).toSet();
-    return values.toList()..sort();
-  }
-
-  String? get _day {
-    final days = _days;
-    if (days.contains(_selectedDay)) return _selectedDay;
-    if (days.contains(widget.forecast.localDate)) {
-      return widget.forecast.localDate;
-    }
-    return days.firstOrNull;
-  }
-
-  List<HourlyForecastModel> get _hours =>
-      widget.forecast.hours.where((hour) => hour.localDate == _day).toList();
-
-  int _initialHour(List<HourlyForecastModel> hours) {
-    if (_day != widget.forecast.localDate) return 0;
+  int _initialHour(List<HourlyForecastModel> hours, String selectedDay) {
+    if (selectedDay != widget.forecast.localDate) return 0;
     final now = DateTime.now().toUtc();
     var closest = 0;
     var difference = const Duration(days: 100000);
@@ -149,14 +132,25 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
         ],
       );
     }
-    final hours = _hours;
-    final selected = (_selectedHour ?? _initialHour(hours)).clamp(
+    // Resolve these once per build. Doing so inside the hourly predicate would
+    // rescan and sort the full forecast for every hour in the response.
+    final availableDays =
+        forecast.hours.map((hour) => hour.localDate).toSet().toList()..sort();
+    final selectedDay = availableDays.contains(_selectedDay)
+        ? _selectedDay!
+        : availableDays.contains(forecast.localDate)
+        ? forecast.localDate!
+        : availableDays.first;
+    final hours = forecast.hours
+        .where((hour) => hour.localDate == selectedDay)
+        .toList();
+    final selected = (_selectedHour ?? _initialHour(hours, selectedDay)).clamp(
       0,
       hours.length - 1,
     );
     final hour = hours[selected];
     final daylight = forecast.days
-        .where((item) => item.day == _day)
+        .where((item) => item.day == selectedDay)
         .firstOrNull;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -172,7 +166,7 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
                 children: [
                   const _Eyebrow('FORECAST DESK'),
                   _Pill(
-                    '${_days.length}-day hourly outlook',
+                    '${availableDays.length}-day hourly outlook',
                     color: colors.ocean,
                   ),
                 ],
@@ -195,11 +189,11 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
-                  children: _days.map((day) {
+                  children: availableDays.map((day) {
                     final dayHours = forecast.hours
                         .where((hour) => hour.localDate == day)
                         .toList();
-                    final active = day == _day;
+                    final active = day == selectedDay;
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: Semantics(
@@ -258,7 +252,7 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
                 children: [
                   Expanded(
                     child: Text(
-                      _dateLabel(_day!),
+                      _dateLabel(selectedDay),
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
@@ -510,7 +504,7 @@ class _ProForecastPanelState extends State<ProForecastPanel> {
         _TidePanel(
           tide: widget.tide,
           forecast: forecast,
-          day: _day!,
+          day: selectedDay,
           loading: widget.tideLoading,
         ),
         const SizedBox(height: 14),

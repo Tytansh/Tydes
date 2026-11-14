@@ -50,7 +50,6 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
   String _selectedRegion = _allRegionsLabel;
   String _selectedArea = _allAreasLabel;
   String? _selectedSpotId;
-  double _zoom = 3.2;
   bool _savedOnly = false;
   bool _didApplyInitialSpot = false;
   bool _showEvents = true;
@@ -420,11 +419,6 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                         spotsMapTileProviderFactory,
                       ),
                       onEventTap: (group) => showMapEventPopup(context, group),
-                      onPositionChanged: (camera, _) {
-                        if (_zoom != camera.zoom) {
-                          setState(() => _zoom = camera.zoom);
-                        }
-                      },
                     ),
                   ),
                 ),
@@ -555,7 +549,6 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
     _mapController.move(LatLng(spot.latitude, spot.longitude), zoom);
     setState(() {
       _selectedSpotId = spot.id;
-      _zoom = zoom;
       _selectedCountry = spot.country;
       _selectedRegion = spot.region;
       _selectedArea = _locationAreaForSpot(spot);
@@ -608,7 +601,6 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
       );
       setState(() {
         _selectedSpotId = null;
-        _zoom = _mapController.camera.zoom;
       });
       return;
     }
@@ -623,7 +615,6 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
     );
     setState(() {
       _selectedSpotId = null;
-      _zoom = _mapController.camera.zoom;
     });
   }
 
@@ -1141,7 +1132,6 @@ class _MapCanvas extends StatefulWidget {
     required this.selectedSpotId,
     required this.selectedForecast,
     required this.onSpotTap,
-    required this.onPositionChanged,
     required this.eventGroups,
     required this.onEventTap,
     required this.tileProviderFactory,
@@ -1155,7 +1145,6 @@ class _MapCanvas extends StatefulWidget {
   final String? selectedSpotId;
   final ForecastModel? selectedForecast;
   final ValueChanged<SpotModel> onSpotTap;
-  final void Function(MapCamera, bool) onPositionChanged;
   final List<MapEventGroup> eventGroups;
   final ValueChanged<MapEventGroup> onEventTap;
   final TileProvider Function() tileProviderFactory;
@@ -1197,7 +1186,6 @@ class _MapCanvasState extends State<_MapCanvas> {
               minZoom: 2,
               maxZoom: 14,
               interactionOptions: surfMapInteractionOptions,
-              onPositionChanged: widget.onPositionChanged,
             ),
             children: [
               TileLayer(
