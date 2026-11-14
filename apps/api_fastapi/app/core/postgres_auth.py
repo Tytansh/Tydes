@@ -386,6 +386,46 @@ class PostgresAuthRepository:
             return None
         return str(row["email"])
 
+    def get_session_account(
+        self, token_hash: str,
+    ) -> tuple[str, dict[str, object]] | None:
+        """Read a live session and its current account in one database round trip.
+
+        This is a fresh indexed join on every request, not an authorization
+        cache. A changed ban, verification flag or entitlement is therefore
+        visible on the very next resolution of the same token.
+        """
+        cutoff = datetime.now(timezone.utc) - self._SESSION_MAX_AGE
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT account.email, account.password_hash,
+                       account.user_payload, account.google_subject
+                FROM auth_session_tokens AS session
+                JOIN auth_accounts AS account ON account.email = session.email
+                WHERE session.token_hash = %s AND session.created_at >= %s
+                """,
+                (token_hash, cutoff),
+            ).fetchone()
+            if row is None:
+                # Keep expiry cleanup on this connection. Restrict the delete
+                # so a concurrent renewed session cannot be removed after the
+                # lookup's snapshot found the old session expired.
+                connection.execute(
+                    """
+                    DELETE FROM auth_session_tokens
+                    WHERE token_hash = %s AND created_at < %s
+                    """,
+                    (token_hash, cutoff),
+                )
+        if row is None:
+            return None
+        return str(row["email"]), {
+            "password_hash": row["password_hash"],
+            "user": dict(row["user_payload"]),
+            "google_subject": row["google_subject"],
+        }
+
     def delete_sessions_for_email(self, email: str) -> None:
         normalized_email = _normalize_email(email)
         with self._connect() as connection:

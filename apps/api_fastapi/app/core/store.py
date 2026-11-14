@@ -687,14 +687,20 @@ class DemoStore:
 
     def resolve_session_user(self, token: str) -> User | None:
         token_hash = _hash_token(token)
-        email = (
-            self.postgres_auth.get_session_email(token_hash)
-            if self.postgres_auth is not None
-            else self.session_tokens.get(token_hash)
-        )
-        if email is None:
-            return None
-        account = self._get_auth_account(email)
+        if self.postgres_auth is not None:
+            session_account = self.postgres_auth.get_session_account(token_hash)
+            if session_account is None:
+                return None
+            email, account = session_account
+            # Preserve the existing snapshot used by profile/access persistence;
+            # never read it instead of the fresh joined result for authorization.
+            with self._state_lock:
+                self.auth_accounts[email.strip().lower()] = account
+        else:
+            email = self.session_tokens.get(token_hash)
+            if email is None:
+                return None
+            account = self._get_auth_account(email)
         if account is None:
             return None
         user_payload = account.get("user")
