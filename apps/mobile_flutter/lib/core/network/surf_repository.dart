@@ -10,6 +10,7 @@ import '../moderation/content_moderation.dart';
 import 'api_config.dart';
 import 'api_error_message.dart';
 import 'api_models.dart';
+import 'basic_forecast_models.dart';
 import 'detailed_forecast_models.dart';
 import 'public_preview_models.dart';
 import 'social_feed_page.dart';
@@ -682,6 +683,29 @@ class SurfRepository {
     return result;
   }
 
+  Future<BasicForecastModel> fetchBasicForecast(String spotId) async {
+    final token = await _demoPersistence.loadAccessToken();
+    if (token == null || token.isEmpty) {
+      throw StateError('Please sign in to view the basic daily outlook.');
+    }
+    final response = await _fetchForecastDetailResponse(
+      '/forecasts/basic',
+      spotId,
+      sessionToken: token,
+    );
+    if (await _demoPersistence.loadAccessToken() != token) {
+      throw StateError('Your account changed. Reopen this spot to continue.');
+    }
+    final result = BasicForecastModel.fromJson(response.data!);
+    if (result.spotId != spotId) {
+      throw StateError('The basic outlook was not confirmed for this spot.');
+    }
+    if (result.available && !result.isCurrentAt(DateTime.now())) {
+      throw StateError('The basic daily outlook is out of date. Please retry.');
+    }
+    return result;
+  }
+
   Future<DetailedForecastModel> fetchDetailedForecast(String spotId) async {
     final response = await _fetchForecastDetailResponse(
       '/forecasts/detail',
@@ -696,20 +720,30 @@ class SurfRepository {
 
   Future<Response<Map<String, dynamic>>> _fetchForecastDetailResponse(
     String path,
-    String spotId,
-  ) async {
-    Future<Response<Map<String, dynamic>>> request() =>
-        _dio.get<Map<String, dynamic>>(
-          path,
-          queryParameters: {'spot_id': spotId},
-          // Web connection timeout includes waiting for response headers, not
-          // just the TCP handshake. The upstream forecast wait can exceed the
-          // global six-second limit even with a longer receive timeout.
-          options: Options(
-            connectTimeout: const Duration(seconds: 40),
-            receiveTimeout: const Duration(seconds: 40),
-          ),
-        );
+    String spotId, {
+    String? sessionToken,
+  }) async {
+    Future<Response<Map<String, dynamic>>> request() async {
+      if (sessionToken != null &&
+          await _demoPersistence.loadAccessToken() != sessionToken) {
+        throw StateError('Your account changed. Reopen this spot to continue.');
+      }
+      return _dio.get<Map<String, dynamic>>(
+        path,
+        queryParameters: {'spot_id': spotId},
+        // Web connection timeout includes waiting for response headers, not
+        // just the TCP handshake. The upstream forecast wait can exceed the
+        // global six-second limit even with a longer receive timeout.
+        options: Options(
+          headers: sessionToken == null
+              ? null
+              : {'Authorization': 'Bearer $sessionToken'},
+          connectTimeout: const Duration(seconds: 40),
+          receiveTimeout: const Duration(seconds: 40),
+        ),
+      );
+    }
+
     try {
       return await request();
     } on DioException catch (error) {

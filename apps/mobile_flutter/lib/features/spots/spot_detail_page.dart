@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/router.dart' show currentTabProvider;
 import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
+import '../../core/network/basic_forecast_models.dart';
 import '../../core/network/detailed_forecast_models.dart';
 import '../../core/network/spot_catalog_provider.dart';
 import '../../core/network/surf_repository.dart';
@@ -16,6 +17,7 @@ import '../auth/auth_return_path.dart';
 import '../home/home_page.dart';
 import '../public_previews/public_link_button.dart';
 import 'pro_forecast_panel.dart';
+import 'basic_forecast_panel.dart';
 import 'spot_alert_panel.dart';
 import 'spots_page.dart';
 
@@ -50,6 +52,53 @@ final spotForecastProvider = FutureProvider.autoDispose.family((
   ref.invalidate(spotCardForecastProvider(spotId));
   return forecasts;
 });
+
+final spotBasicForecastProvider = FutureProvider.autoDispose
+    .family<BasicForecastModel, String>((ref, spotId) async {
+      final account = ref.watch(meProvider);
+      final blocked = ref.watch(emailVerificationRequiredTokenProvider);
+      final profile = account.valueOrNull;
+      // Only the visited, locked free spot gets this small daily request.
+      // Pending/revoked identities must not use a retained account snapshot.
+      if (account.isLoading ||
+          account.hasError ||
+          blocked != null ||
+          profile == null ||
+          !profile.emailVerified ||
+          profile.canAccessLiveForecast(spotId)) {
+        return BasicForecastModel.unavailable(spotId);
+      }
+      final scope = _viewerScope(profile);
+      var active = true;
+      ref.onDispose(() => active = false);
+      final result = await ref
+          .watch(surfRepositoryProvider)
+          .fetchBasicForecast(spotId);
+      if (!active) return BasicForecastModel.unavailable(spotId);
+      final current = ref.read(meProvider);
+      if (current.isLoading ||
+          current.hasError ||
+          current.valueOrNull == null ||
+          _viewerScope(current.requireValue) != scope ||
+          ref.read(emailVerificationRequiredTokenProvider) != null) {
+        return BasicForecastModel.unavailable(spotId);
+      }
+      if (result.spotId != spotId ||
+          (result.available && !result.isCurrentAt(DateTime.now()))) {
+        throw StateError(
+          'A current basic outlook was not confirmed for this spot.',
+        );
+      }
+      if (result.available) {
+        _retainSuccessfulSpotRead(
+          ref,
+          result.fetchedAt!,
+          const Duration(hours: 24),
+          utcOffsetSeconds: result.utcOffsetSeconds,
+        );
+      }
+      return _ScopedBasicForecast(result, scope);
+    });
 
 final spotDetailedForecastProvider = FutureProvider.autoDispose.family((
   ref,
@@ -142,6 +191,23 @@ _ViewerScope _viewerScope(UserProfile profile) => (
   freeSpot: profile.freeLiveSpotId,
   verified: profile.emailVerified,
 );
+
+class _ScopedBasicForecast extends BasicForecastModel {
+  _ScopedBasicForecast(BasicForecastModel value, this.viewer)
+    : super(
+        spotId: value.spotId,
+        available: value.available,
+        source: value.source,
+        marineModel: value.marineModel,
+        timezone: value.timezone,
+        utcOffsetSeconds: value.utcOffsetSeconds,
+        fetchedAt: value.fetchedAt,
+        localDate: value.localDate,
+        note: value.note,
+        days: value.days,
+      );
+  final _ViewerScope viewer;
+}
 
 class _ScopedHourly extends DetailedForecastModel {
   _ScopedHourly(DetailedForecastModel value, this.viewer)
@@ -323,6 +389,7 @@ class SpotDetailPage extends ConsumerWidget {
   final String spotId;
 
   void _refresh(WidgetRef ref) {
+    ref.invalidate(spotBasicForecastProvider(spotId));
     ref.invalidate(spotDetailedForecastProvider(spotId));
     ref.invalidate(spotTideProvider(spotId));
     ref.invalidate(spotDetailBundleProvider(spotId));
@@ -340,6 +407,15 @@ class SpotDetailPage extends ConsumerWidget {
         ref.watch(emailVerificationRequiredTokenProvider) != null;
     final favorites = ref.watch(favoriteSpotIdsProvider);
     final profile = me.valueOrNull;
+    final basicEligible =
+        !me.isLoading &&
+        !me.hasError &&
+        !verificationRequired &&
+        profile?.emailVerified == true &&
+        profile?.canAccessLiveForecast(spotId) == false;
+    final basic = basicEligible
+        ? ref.watch(spotBasicForecastProvider(spotId))
+        : null;
     final scope = profile == null ? null : _viewerScope(profile);
     final hourlyValue = hourly.valueOrNull;
     final tideValue = tides.valueOrNull;
@@ -414,6 +490,29 @@ class SpotDetailPage extends ConsumerWidget {
                       context.go('/');
                     },
                   ),
+                if (basicEligible) ...[
+                  BasicForecastPanel(
+                    key: ValueKey('basic-${profile!.id}-$spotId'),
+                    forecast:
+                        basic?.valueOrNull is _ScopedBasicForecast &&
+                            (basic!.valueOrNull! as _ScopedBasicForecast)
+                                    .viewer !=
+                                scope
+                        ? BasicForecastModel.unavailable(spotId)
+                        : basic?.valueOrNull ??
+                              BasicForecastModel.unavailable(spotId),
+                    loading: basic?.isLoading == true,
+                    error: basic?.hasError == true
+                        ? friendlyLoadErrorMessage(
+                            basic!.error!,
+                            label: 'the basic daily outlook',
+                          )
+                        : null,
+                    onRetry: () =>
+                        ref.invalidate(spotBasicForecastProvider(spotId)),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 if (profile != null && !profile.premium) ...[
                   _ForecastUnlockCard(
                     profile: profile,
@@ -740,8 +839,8 @@ class _ForecastUnlockCard extends ConsumerWidget {
             unlocked
                 ? 'Explore the full hourly desk here. Premium lets you compare conditions at every mapped break, without changing your free spot.'
                 : remaining != null
-                ? 'Your free spot is already selected. You can switch in ${_cooldown(remaining)}. Premium opens the hourly forecast desk at every break.'
-                : 'Choose this as your free spot for hourly wave, swell and wind model forecasts, plus available tide predictions. You can switch your free spot once every 24 hours.',
+                ? 'Basic daily wave outlooks are free at every spot. Your full free spot is already selected; you can switch in ${_cooldown(remaining)}. Premium opens the hourly forecast desk at every break.'
+                : 'Basic daily wave outlooks are free at every spot. Choose one free spot for hourly wave, swell and wind model forecasts, plus available tide predictions. You can switch your free spot once every 24 hours.',
             style: TextStyle(
               color: dark
                   ? theme.colorScheme.onSurfaceVariant

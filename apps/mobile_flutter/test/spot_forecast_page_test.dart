@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_flutter/core/network/api_models.dart';
+import 'package:mobile_flutter/core/network/basic_forecast_models.dart';
 import 'package:mobile_flutter/core/network/demo_persistence.dart';
 import 'package:mobile_flutter/core/network/detailed_forecast_models.dart';
 import 'package:mobile_flutter/core/network/surf_repository.dart';
@@ -132,6 +133,10 @@ class _Repository extends SurfRepository {
     dailyCalls++;
     return [];
   }
+
+  @override
+  Future<BasicForecastModel> fetchBasicForecast(String spotId) async =>
+      BasicForecastModel.unavailable(spotId);
 
   @override
   Future<SurfWindowModel> fetchSurfWindow(String spotId) async {
