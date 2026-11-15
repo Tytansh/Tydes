@@ -78,7 +78,6 @@ class _PostDetailCard extends StatelessWidget {
       handle: post.authorHandle,
       avatarUrl: post.authorAvatarUrl,
       premium: post.authorPremium,
-      subtitle: 'Surf traveler on TYDES',
     );
     final isEvent =
         post.postType == 'surf_plan' || post.postType == 'looking_for_buddy';

@@ -591,8 +591,13 @@ class _ProfileHero extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                Text(profile.bio, style: const TextStyle(color: Colors.white)),
+                if (profile.bio.trim().isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    profile.bio.trim(),
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ],
               ],
             ),
             Positioned(
@@ -791,11 +796,7 @@ PublicProfilePreview _profilePreviewFromUserId(
       surfSkill: profile.surfSkill ?? 'beginner',
     );
   }
-  return PublicProfilePreview(
-    userId: userId,
-    displayName: 'TYDES surfer',
-    subtitle: 'Surf traveler on TYDES',
-  );
+  return PublicProfilePreview(userId: userId, displayName: 'TYDES surfer');
 }
 
 String? _handleFromName(String? name) {
@@ -1823,7 +1824,7 @@ List<_SuggestedPerson> _profileSuggestions(
           initial: profile.displayName.trim().isEmpty
               ? '?'
               : profile.displayName.trim().characters.first.toUpperCase(),
-          reason: profile.subtitle ?? 'New to TYDES',
+          reason: profile.subtitle?.trim() ?? '',
           handle: profile.handle,
           location: profile.location,
         ),

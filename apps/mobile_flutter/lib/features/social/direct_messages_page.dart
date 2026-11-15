@@ -1058,7 +1058,6 @@ PublicProfilePreview _profileFromThread(DirectMessageThread thread) {
         : thread.id,
     displayName: thread.name,
     handle: thread.handle,
-    subtitle: 'Surf traveler on TYDES',
     location: thread.location,
     avatarUrl: thread.avatarUrl,
     premium: thread.premium,
@@ -1332,7 +1331,7 @@ class _NewMessagePersonTile extends StatelessWidget {
                     style: const TextStyle(fontWeight: FontWeight.w900),
                   ),
                   Text(
-                    '@${profile.handle ?? profile.userId} • ${profile.location ?? 'TYDES'}',
+                    '@${profile.handle ?? profile.userId}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -1433,7 +1432,7 @@ class _MessageThreadTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    '@${thread.handle} - ${thread.location}',
+                    '@${thread.handle}',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -2420,7 +2419,6 @@ void _openSharedPostProfile(BuildContext context, DirectChatMessage message) {
       handle: message.sharedPostAuthorHandle,
       avatarUrl: message.sharedPostAuthorAvatarUrl,
       premium: message.sharedPostAuthorPremium,
-      subtitle: 'Surf traveler on TYDES',
     ),
   );
 }

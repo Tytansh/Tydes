@@ -496,10 +496,10 @@ class _PublicProfileHero extends StatelessWidget {
               ].join(' • '),
               style: const TextStyle(color: Colors.white70),
             ),
-            if (profile.subtitle != null && profile.subtitle!.isNotEmpty) ...[
+            if ((profile.subtitle ?? '').trim().isNotEmpty) ...[
               const SizedBox(height: 12),
               Text(
-                profile.subtitle!,
+                profile.subtitle!.trim(),
                 style: const TextStyle(color: Colors.white),
               ),
             ],
@@ -753,11 +753,11 @@ PublicProfilePreview _buildResolvedProfile(
     coverUrl: seed?.coverUrl ?? socialProfile?.coverUrl,
     premium:
         seed?.premium ?? socialProfile?.premium ?? post?.authorPremium ?? false,
-    subtitle:
-        friend?.vibe ??
-        seed?.subtitle ??
-        socialProfile?.subtitle ??
-        'Surf traveler on TYDES.',
+    // A present server profile is authoritative, including a cleared bio.
+    // Route/friend previews may still contain the user's previous biography.
+    subtitle: socialProfile != null
+        ? socialProfile.subtitle?.trim() ?? ''
+        : (seed?.subtitle ?? friend?.vibe)?.trim(),
     location:
         friend?.homeRegion ??
         seed?.location ??
@@ -823,7 +823,6 @@ PublicProfilePreview _profileFromPost(SocialPostModel post) {
     handle: post.authorHandle,
     avatarUrl: post.authorAvatarUrl,
     premium: post.authorPremium,
-    subtitle: 'Surf traveler on TYDES',
   );
 }
 
@@ -943,7 +942,6 @@ PublicProfilePreview _profileForUserId(
     userId: userId,
     displayName: _displayNameFromUserId(userId),
     handle: _handleFromName(userId),
-    subtitle: 'Surf traveler on TYDES',
   );
 }
 

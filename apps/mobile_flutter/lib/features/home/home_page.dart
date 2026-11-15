@@ -493,26 +493,14 @@ class _UserSearchResultTile extends ConsumerWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      [
-                        if ((profile.handle ?? '').isNotEmpty)
-                          '@${profile.handle}',
-                        if ((profile.location ?? '').isNotEmpty)
-                          profile.location,
-                      ].join(' • '),
+                      (profile.handle ?? '').isEmpty
+                          ? ''
+                          : '@${profile.handle}',
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
                     ),
-                    if ((profile.subtitle ?? '').isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        profile.subtitle!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -608,7 +596,6 @@ List<PublicProfilePreview> _searchProfiles({
         handle: post.authorHandle ?? _handleFromName(post.authorName),
         avatarUrl: post.authorAvatarUrl,
         premium: post.authorPremium,
-        subtitle: 'Posted recently on TYDES',
         location: null,
         surfSkill: 'beginner',
       ),

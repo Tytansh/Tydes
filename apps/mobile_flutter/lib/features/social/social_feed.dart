@@ -637,7 +637,7 @@ class _PostCard extends ConsumerWidget {
       handle: authorHandle,
       avatarUrl: authorAvatarUrl,
       premium: authorPremium,
-      subtitle: isOwnPost ? currentViewer.bio : 'Surf traveler on TYDES',
+      subtitle: isOwnPost ? currentViewer.bio : null,
       location: isOwnPost ? currentViewer.homeRegion : null,
       surfSkill: isOwnPost ? currentViewer.surfSkill : 'beginner',
     );
@@ -2459,7 +2459,7 @@ class _ShareRecipientTile extends StatelessWidget {
                         style: const TextStyle(fontWeight: FontWeight.w900),
                       ),
                       Text(
-                        '@${thread.handle} • ${thread.location}',
+                        '@${thread.handle}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(color: scheme.onSurfaceVariant),
@@ -3834,7 +3834,6 @@ class _EventGoingSheet extends ConsumerWidget {
       handle: post.authorHandle,
       avatarUrl: post.authorAvatarUrl,
       premium: post.authorPremium,
-      subtitle: 'Hosting this event',
     );
     final viewerProfile = PublicProfilePreview(
       userId: currentViewer?.id ?? 'current_user',
@@ -3842,7 +3841,7 @@ class _EventGoingSheet extends ConsumerWidget {
       handle: currentViewer?.handle,
       avatarUrl: currentViewer?.avatarUrl,
       premium: currentViewer?.premium ?? false,
-      subtitle: 'Going to this event',
+      subtitle: currentViewer?.bio,
     );
     final currentViewerId = currentViewer?.id;
     final hostIsCurrentUser = currentViewerId == post.userId;
@@ -3861,7 +3860,6 @@ class _EventGoingSheet extends ConsumerWidget {
                 handle: person.handle,
                 avatarUrl: person.avatarUrl,
                 premium: person.premium,
-                subtitle: 'Going to this event',
               ),
             )
             .toList();
