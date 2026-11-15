@@ -75,6 +75,8 @@ class UploadReservation:
     scope_id: str | None = None
     message_id: str | None = None
     client_message_id: str | None = None
+    chat_video_resolutions: str | None = None
+    chat_video_mp4_resolution: str | None = None
 
     @property
     def total_bytes(self) -> int:
@@ -177,6 +179,33 @@ class MediaUploadLedger:
     def complete_chat_media(self, identifier: str, user_id: str) -> None:
         self._transition_chat(identifier, user_id, "complete", {"pending"})
 
+    def complete_chat_video(self, identifier: str, user_id: str,
+                            resolutions: tuple[str, ...], mp4_resolution: str) -> None:
+        # Persist the provider-verified playback choice and readiness together.
+        # Old rows intentionally remain NULL and cannot receive guessed URLs.
+        encoded = ",".join(resolutions)
+        _validate_video_playback(encoded, mp4_resolution)
+        if self.database_url is not None:
+            with self._connect() as connection:
+                row = connection.execute("""UPDATE media_upload_reservations
+                    SET status='complete',chat_video_resolutions=%s,
+                        chat_video_mp4_resolution=%s,updated_at=NOW()
+                    WHERE id=%s AND user_id=%s AND purpose='chat'
+                    AND media_type='video' AND storage_provider='chat_bunny'
+                    AND status='pending' AND message_id IS NULL RETURNING id""",
+                    (encoded, mp4_resolution, identifier, user_id)).fetchone()
+                if row is None:
+                    raise ValueError("Attachment upload is no longer active.")
+            return
+        with self._lock:
+            row = self._memory.get(identifier)
+            if (row is None or row.user_id != user_id or row.purpose != "chat"
+                    or row.media_type != "video" or row.storage_provider != "chat_bunny"
+                    or row.status != "pending" or row.message_id is not None):
+                raise ValueError("Attachment upload is no longer active.")
+            self._memory[identifier] = replace(row, status="complete",
+                chat_video_resolutions=encoded, chat_video_mp4_resolution=mp4_resolution)
+
     def claim_chat_cleanup(self, identifier: str, user_id: str, expected_status: str) -> bool:
         """A cleanup snapshot must not delete an attachment claimed meanwhile."""
         if self.database_url is not None:
@@ -246,6 +275,8 @@ class MediaUploadLedger:
             if (row is None or row.purpose != "chat" or row.scope_type != scope_type
                     or row.scope_id != scope_id or row.status not in {"complete", "used"}):
                 raise ValueError("Message attachment is unavailable or belongs to another conversation.")
+            if row.media_type == "video":
+                verified_chat_video_playback(row)
         return rows
 
     def claim_chat_media(self, user_id: str, scope_type: str, scope_id: str,
@@ -262,6 +293,8 @@ class MediaUploadLedger:
                     or (row.message_id is not None and
                         (row.message_id != message_id or row.client_message_id != client_message_id))):
                 raise ValueError("Message attachment is unavailable or already used.")
+            if row.media_type == "video":
+                verified_chat_video_playback(row)
             return replace(row, status="used", message_id=message_id,
                            client_message_id=client_message_id)
         def sql_claim(conn):
@@ -610,10 +643,12 @@ class MediaUploadLedger:
                         final_name, pending_thumbnail_name, final_thumbnail_name,
                         public_url, thumbnail_public_url, status, created_at,
                         expires_at, storage_provider, external_id,
-                        purpose, scope_type, scope_id, message_id, client_message_id
+                        purpose, scope_type, scope_id, message_id, client_message_id,
+                        chat_video_resolutions, chat_video_mp4_resolution
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s
                     )
                     """,
                     (
@@ -642,6 +677,8 @@ class MediaUploadLedger:
                         reservation.scope_id,
                         reservation.message_id,
                         reservation.client_message_id,
+                        reservation.chat_video_resolutions,
+                        reservation.chat_video_mp4_resolution,
                     ),
                 )
         return reservation
@@ -699,7 +736,9 @@ class MediaUploadLedger:
             )
             for name, definition in (("purpose", "TEXT NOT NULL DEFAULT 'social'"),
                                      ("scope_type", "TEXT"), ("scope_id", "TEXT"),
-                                     ("message_id", "TEXT"), ("client_message_id", "TEXT")):
+                                     ("message_id", "TEXT"), ("client_message_id", "TEXT"),
+                                     ("chat_video_resolutions", "TEXT"),
+                                     ("chat_video_mp4_resolution", "TEXT")):
                 connection.execute(f"ALTER TABLE media_upload_reservations ADD COLUMN IF NOT EXISTS {name} {definition}")
             connection.execute(
                 """
@@ -797,7 +836,28 @@ def _reservation_from_row(row) -> UploadReservation:
         scope_id=row.get("scope_id"),
         message_id=row.get("message_id"),
         client_message_id=row.get("client_message_id"),
+        chat_video_resolutions=row.get("chat_video_resolutions"),
+        chat_video_mp4_resolution=row.get("chat_video_mp4_resolution"),
     )
+
+
+def _validate_video_playback(encoded, mp4_resolution) -> tuple[tuple[str, ...], str]:
+    approved = {"240p", "360p", "480p", "720p"}
+    if not isinstance(encoded, str) or not isinstance(mp4_resolution, str):
+        raise ValueError("Private video playback has not been verified. Choose the video again.")
+    resolutions = tuple(encoded.split(","))
+    if (not resolutions or any(value not in approved for value in resolutions)
+            or len(resolutions) != len(set(resolutions))
+            or resolutions != tuple(sorted(resolutions, key=lambda value: int(value[:-1])))
+            or mp4_resolution not in resolutions):
+        raise ValueError("Private video playback metadata is invalid. Choose the video again.")
+    return resolutions, mp4_resolution
+
+
+def verified_chat_video_playback(row: UploadReservation) -> tuple[tuple[str, ...], str]:
+    if row.purpose != "chat" or row.media_type != "video" or row.storage_provider != "chat_bunny":
+        raise ValueError("Private video playback metadata is unavailable.")
+    return _validate_video_playback(row.chat_video_resolutions, row.chat_video_mp4_resolution)
 
 
 def _aware(value: datetime) -> datetime:

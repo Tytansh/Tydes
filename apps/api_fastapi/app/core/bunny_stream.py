@@ -7,7 +7,6 @@ import hmac
 import base64
 import os
 import re
-from urllib.parse import quote
 
 import httpx
 
@@ -30,6 +29,8 @@ class BunnyVideo:
     length_seconds: float | None
     storage_size: int | None = None
     encode_progress: int | None = None
+    available_resolutions: tuple[str, ...] | None = None
+    has_mp4_fallback: bool | None = None
 
     @property
     def fully_encoded(self) -> bool:
@@ -103,6 +104,9 @@ class BunnyStreamClient:
             length_seconds=length_seconds,
             storage_size=_storage_size(payload.get("storageSize")),
             encode_progress=_storage_size(payload.get("encodeProgress")),
+            available_resolutions=_available_resolutions(payload.get("availableResolutions")),
+            has_mp4_fallback=(payload.get("hasMP4Fallback")
+                              if isinstance(payload.get("hasMP4Fallback"), bool) else None),
         )
 
     def delete_video(self, video_id: str | None) -> None:
@@ -145,17 +149,55 @@ class PrivateChatBunnyClient(BunnyStreamClient):
     def signed_url(self, video_id: str, filename: str, *, expires: int) -> str:
         if not re.fullmatch(r"[A-Za-z0-9-]+", video_id):
             raise ValueError("Invalid video identifier")
-        if filename not in {"playlist.m3u8", "thumbnail.jpg", "play_720p.mp4"}:
+        exact_file = filename == "thumbnail.jpg" or re.fullmatch(r"play_(240|360|480|720)p\.mp4", filename)
+        if not exact_file:
             raise ValueError("Invalid private video resource")
-        path = f"/{video_id}/"
-        # Bunny's advanced directory token: relative HLS variants/segments
-        # inherit this path token rather than losing query-string signatures.
-        signing_data = f"token_path={path}"
-        message = f"{path}{expires}{signing_data}".encode()
+        resource = f"/{video_id}/{filename}"
+        # Short private clips use verified MP4s only. Exact-path tokens cannot
+        # be changed to an original, master playlist, or higher rendition.
+        message = f"{resource}{expires}".encode()
         digest = hmac.new(self.token_key.encode(), message, hashlib.sha256).digest()
         token = "HS256-" + base64.urlsafe_b64encode(digest).decode().rstrip("=")
         return (f"https://{self.cdn_hostname}/bcdn_token={token}"
-                f"&token_path={quote(path, safe='')}&expires={expires}{path}{filename}")
+                f"&expires={expires}{resource}")
+
+    def verified_mp4_resolution(self, video_id: str, resolutions: tuple[str, ...],
+                                *, max_bytes: int) -> str | None:
+        """Check at most four approved MP4 headers once, before readiness.
+
+        availableResolutions describes HLS encodes, not proof that every MP4
+        exists. Never fall back to a guessed path or download a video body.
+        """
+        approved = {"240p", "360p", "480p", "720p"}
+        if not resolutions or any(value not in approved for value in resolutions):
+            raise ValueError("Private video renditions must not exceed 720p.")
+        expires = int((datetime.now(timezone.utc) + timedelta(seconds=120)).timestamp())
+        for resolution in sorted(set(resolutions), key=lambda value: int(value[:-1]), reverse=True):
+            response = httpx.head(
+                self.signed_url(video_id, f"play_{resolution}.mp4", expires=expires),
+                headers={"Referer": "https://tydes.io/"},
+                timeout=httpx.Timeout(5.0, connect=3.0), follow_redirects=False,
+            )
+            if response.status_code == 404:
+                continue
+            response.raise_for_status()
+            size = _storage_size(response.headers.get("content-length"))
+            if (response.status_code not in {200, 206}
+                    or response.headers.get("content-type", "").split(";")[0].lower() != "video/mp4"
+                    or size is None or not 0 < size <= max_bytes):
+                raise RuntimeError("Private video MP4 metadata could not be verified")
+            return resolution
+        return None
+
+
+def _available_resolutions(raw) -> tuple[str, ...] | None:
+    if not isinstance(raw, str):
+        return None
+    values = tuple(value.strip() for value in raw.split(","))
+    known = {"240p", "360p", "480p", "720p", "1080p", "1440p", "2160p"}
+    if not values or any(value not in known for value in values) or len(set(values)) != len(values):
+        return None
+    return tuple(sorted(values, key=lambda value: int(value[:-1])))
 
 
 def _storage_size(raw) -> int | None:

@@ -51,6 +51,9 @@ def _reserve(ledger, user, kind, scope, identifier="private-photo", media_type="
         public_url="", thumbnail_public_url="", status="complete",
         created_at=now, expires_at=now + timedelta(minutes=15),
         purpose=purpose, scope_type=kind, scope_id=scope,
+        storage_provider="chat_bunny" if media_type == "video" else "chat_r2",
+        chat_video_resolutions="240p,480p" if media_type == "video" else None,
+        chat_video_mp4_resolution="480p" if media_type == "video" else None,
     )
     return ledger.reserve(row, UploadLimits.from_env())
 

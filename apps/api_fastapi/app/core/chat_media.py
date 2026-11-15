@@ -11,7 +11,8 @@ from fastapi import HTTPException
 
 from app.core.bunny_stream import PrivateChatBunnyClient
 from app.core.media_storage import PrivateChatR2Storage
-from app.core.media_uploads import UploadLimits, UploadQuotaExceeded, UploadReservation, upload_ledger
+from app.core.media_uploads import (UploadLimits, UploadQuotaExceeded, UploadReservation,
+                                   upload_ledger, verified_chat_video_playback)
 from app.core.models import User
 
 PHOTO_MAX_BYTES = 8 * 1024 * 1024
@@ -149,6 +150,11 @@ def complete(user: User, identifier: str) -> dict:
     _require_provider(row.media_type)
     result = {"id": row.id, "media_type": row.media_type, "status": "ready"}
     if row.status in {"complete", "used"}:
+        if row.media_type == "video":
+            try:
+                verified_chat_video_playback(row)
+            except ValueError as error:
+                raise HTTPException(409, str(error)) from error
         return result
     if row.status != "pending":
         raise HTTPException(409, "This attachment upload is no longer active.")
@@ -165,7 +171,8 @@ def complete(user: User, identifier: str) -> dict:
             if max(width, height) > PHOTO_MAX_EDGE or width * height > PHOTO_MAX_PIXELS:
                 raise ValueError("Photo dimensions are too large. Resize to at most 8192 pixels per side and 32 megapixels.")
         else:
-            video = PrivateChatBunnyClient().get_video(row.external_id)
+            bunny = PrivateChatBunnyClient()
+            video = bunny.get_video(row.external_id)
             if video.failed:
                 raise ValueError("Video processing failed.")
             if video.storage_size is not None and video.storage_size > VIDEO_MAX_BYTES:
@@ -180,6 +187,18 @@ def complete(user: User, identifier: str) -> dict:
                 raise ValueError("Videos must be no longer than 30 seconds.")
             if video.storage_size is None or video.storage_size <= 0:
                 raise RuntimeError("Actual video storage metadata is not available yet")
+            if video.available_resolutions is None or video.has_mp4_fallback is None:
+                raise RuntimeError("Actual video playback metadata is not available yet")
+            if not video.available_resolutions or any(
+                    value not in {"240p", "360p", "480p", "720p"}
+                    for value in video.available_resolutions):
+                raise ValueError("Private videos must be encoded at 720p or lower.")
+            if not video.has_mp4_fallback:
+                raise ValueError("This video has no supported private playback file. Choose it again.")
+            mp4_resolution = bunny.verified_mp4_resolution(row.external_id,
+                video.available_resolutions, max_bytes=VIDEO_MAX_BYTES)
+            if mp4_resolution is None:
+                return {**result, "status": "processing"}
     except ValueError as error:
         _delete(row)
         upload_ledger.set_status(row.id, user.id, "rejected")
@@ -187,10 +206,19 @@ def complete(user: User, identifier: str) -> dict:
     except Exception as error:
         raise HTTPException(503, "Attachment verification is temporarily unavailable.") from error
     try:
-        upload_ledger.complete_chat_media(row.id, user.id)
+        if row.media_type == "video":
+            upload_ledger.complete_chat_video(row.id, user.id,
+                video.available_resolutions, mp4_resolution)
+        else:
+            upload_ledger.complete_chat_media(row.id, user.id)
     except ValueError as error:
         current = _reservation(row.id, user.id)
         if current.status in {"complete", "used"}:
+            if row.media_type == "video":
+                try:
+                    verified_chat_video_playback(current)
+                except ValueError as verification_error:
+                    raise HTTPException(409, str(verification_error)) from verification_error
             return result
         raise HTTPException(409, str(error)) from error
     return result
@@ -223,6 +251,11 @@ def access(user: User, identifier: str, scope_type: str, scope_id: str) -> dict:
     if not _message_exists(user, row):
         raise HTTPException(404, "Attachment message is no longer available.")
     _require_provider(row.media_type)
+    if row.media_type == "video":
+        try:
+            _, mp4_resolution = verified_chat_video_playback(row)
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from error
     try:
         ttl = min(600, max(300, int(os.getenv("CHAT_MEDIA_READ_TTL_SECONDS", "300"))))
     except ValueError:
@@ -236,8 +269,9 @@ def access(user: User, identifier: str, scope_type: str, scope_id: str) -> dict:
         bunny = PrivateChatBunnyClient()
         def signed(filename):
             return bunny.signed_url(row.external_id, filename, expires=int(expires_at.timestamp()))
-        return {"id": row.id, "media_type": row.media_type, "url": signed("playlist.m3u8"),
-                "thumbnail_url": signed("thumbnail.jpg"), "fallback_url": signed("play_720p.mp4"),
+        video_url = signed(f"play_{mp4_resolution}.mp4")
+        return {"id": row.id, "media_type": row.media_type, "url": video_url,
+                "thumbnail_url": signed("thumbnail.jpg"), "fallback_url": video_url,
                 "expires_at": expires_at.isoformat()}
     except Exception as error:
         raise HTTPException(503, "Private attachment access is temporarily unavailable.") from error
