@@ -338,6 +338,16 @@ class OpenMeteoMarineProvider:
             now = datetime.now(UTC)
             local_now = now.astimezone(ZoneInfo(cached.timezone))
             local_day = local_now.date()
+            hourly_days: dict[date, list[dict[str, Any]]] = {}
+            for hour in cached.hourly_rows if isinstance(cached.hourly_rows, list) else []:
+                if not isinstance(hour, dict):
+                    continue
+                try:
+                    stamp = _utc_stamp(hour.get("time_utc") or hour.get("time"), cached.timezone)
+                    day = stamp.astimezone(ZoneInfo(cached.timezone)).date()
+                    hourly_days.setdefault(day, []).append(hour)
+                except (ValueError, TypeError, OverflowError, OSError):
+                    continue
             days = []
             for row in sorted(cached.data, key=lambda entry: entry.day):
                 wave = row.wave_height_m
@@ -345,9 +355,19 @@ class OpenMeteoMarineProvider:
                         and wave is not None and math.isfinite(wave) and wave >= 0):
                     # This is the daily mean calculated from model hourly sea
                     # heights, not the legacy cosmetic +/-0.1m locked range.
-                    days.append(BasicForecastDay(day=row.day, wave_height_m=wave))
+                    wind = _basic_optional_number(row.wind_kts, 0, 250) if cached.weather_available else None
+                    direction, direction_status = _basic_wind_direction(hourly_days.get(row.day, []), wind)
+                    sunrise, sunset = _basic_daylight(cached.days, row.day, cached.timezone) if cached.weather_available else (None, None)
+                    days.append(BasicForecastDay(
+                        day=row.day, wave_height_m=wave,
+                        wind_kts=wind, wind_direction_deg=direction,
+                        wind_direction_status=direction_status,
+                        sea_surface_temperature_c=_basic_optional_number(row.sea_surface_temperature_c, -5, 50),
+                        sunrise_local=sunrise, sunset_local=sunset,
+                    ))
             return BasicSpotForecast(
                 spot_id=spot.id, available=True, source="open-meteo",
+                weather_model="Best Match (automatic)" if cached.weather_available else "Temporarily unavailable",
                 timezone=cached.timezone,
                 utc_offset_seconds=int(local_now.utcoffset().total_seconds()),
                 fetched_at=cached.fetched_at, local_date=local_day, days=days,
@@ -395,13 +415,18 @@ class OpenMeteoMarineProvider:
             )
             if cached is None:
                 return None
-            forecasts = [
-                ForecastEntry.model_validate(item)
-                for item in cached.payload.get("forecasts", [])
-            ]
-            hourly_rows = [
-                dict(item) for item in cached.payload.get("hourly_rows", [])
-            ]
+            forecasts = []
+            for item in cached.payload.get("forecasts", []):
+                # Optional wind/SST corruption must not throw away otherwise
+                # valid model waves or cause an avoidable upstream refresh.
+                payload = dict(item)
+                if "wind_kts" in payload:
+                    payload["wind_kts"] = _basic_optional_number(payload["wind_kts"], 0, 250)
+                if "sea_surface_temperature_c" in payload:
+                    payload["sea_surface_temperature_c"] = _basic_optional_number(payload["sea_surface_temperature_c"], -5, 50)
+                forecasts.append(ForecastEntry.model_validate(payload))
+            raw_hours = cached.payload.get("hourly_rows", [])
+            hourly_rows = [dict(item) for item in raw_hours if isinstance(item, dict)] if isinstance(raw_hours, list) else []
             if not forecasts:
                 return None
             return _CacheItem(
@@ -410,7 +435,7 @@ class OpenMeteoMarineProvider:
                 hourly_rows=hourly_rows,
                 timezone=str(cached.payload.get("timezone") or "UTC"),
                 utc_offset_seconds=int(cached.payload.get("utc_offset_seconds") or 0),
-                days=[ForecastDaylight.model_validate(day) for day in cached.payload.get("days", [])],
+                days=_cached_daylight_days(cached.payload.get("days", [])),
                 weather_available=bool(cached.payload.get("weather_available", True)),
             )
         except Exception:
@@ -508,8 +533,8 @@ class OpenMeteoMarineProvider:
             avg_swell_direction = _average_direction(
                 row["swell_wave_direction"] for row in rows
             )
-            avg_temp = _average(row["sea_surface_temperature"] for row in rows)
-            avg_wind_speed = _average(row["wind_speed"] for row in rows)
+            avg_temp = _average(_basic_optional_number(row["sea_surface_temperature"], -5, 50) for row in rows)
+            avg_wind_speed = _average(_basic_optional_number(row["wind_speed"], 0, 250) for row in rows)
 
             forecasts.append(
                 ForecastEntry(
@@ -545,6 +570,84 @@ def _optional_value(values: list[Any], index: int) -> float | None:
     except (ValueError, TypeError):
         return None
     return numeric if math.isfinite(numeric) else None
+
+
+def _basic_optional_number(value: Any, minimum: float, maximum: float) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (ValueError, TypeError, OverflowError):
+        return None
+    return numeric if math.isfinite(numeric) and minimum <= numeric <= maximum else None
+
+
+def _basic_wind_direction(rows: list[dict[str, Any]], mean_wind: float | None) -> tuple[int | None, str]:
+    if mean_wind is None:
+        return None, "unavailable"
+    if mean_wind < 1:
+        return None, "calm"
+    pairs = []
+    noncalm_count = 0
+    for row in rows:
+        speed = _basic_optional_number(row.get("wind_speed"), 1, 250)
+        direction = _basic_optional_number(row.get("wind_direction"), 0, 360)
+        if speed is not None:
+            noncalm_count += 1
+        if speed is not None and direction is not None:
+            pairs.append((speed, math.radians(direction % 360)))
+    # Avoid reporting one sparse direction as representative of the full day:
+    # at least 3 paired samples and half of valid non-calm hours are required.
+    if len(pairs) < 3 or len(pairs) < noncalm_count / 2:
+        return None, "unavailable"
+    x = sum(speed * math.cos(angle) for speed, angle in pairs)
+    y = sum(speed * math.sin(angle) for speed, angle in pairs)
+    # Resultant strength <0.3 marks a widely spread/opposing daily wind, not
+    # a trustworthy single compass bearing. Calm hours (<1kt) are excluded.
+    if math.hypot(x, y) / sum(speed for speed, _ in pairs) < 0.3:
+        return None, "variable"
+    return round(math.degrees(math.atan2(y, x))) % 360, "available"
+
+
+def _basic_daylight(days: Any, day: date, timezone_name: str) -> tuple[str | None, str | None]:
+    if not isinstance(days, (list, tuple)):
+        return None, None
+    matching = next((item for item in days if getattr(item, "day", None) == day), None)
+    zone = ZoneInfo(timezone_name)
+    def local_label(value):
+        if not isinstance(value, str):
+            return None
+        try:
+            stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if stamp.utcoffset() is None:
+                return None
+            local = stamp.astimezone(zone)
+            return local.strftime("%H:%M") if local.date() == day else None
+        except (ValueError, TypeError, OverflowError):
+            return None
+    sunrise = local_label(getattr(matching, "sunrise", None))
+    sunset = local_label(getattr(matching, "sunset", None))
+    if sunrise is not None and sunset is not None and sunrise >= sunset:
+        return None, None
+    return sunrise, sunset
+
+
+def _cached_daylight_days(raw: Any) -> list[ForecastDaylight]:
+    days = []
+    if not isinstance(raw, list):
+        return days
+    for row in raw:
+        if not isinstance(row, dict):
+            continue
+        try:
+            days.append(ForecastDaylight(
+                day=row["day"],
+                sunrise=row.get("sunrise") if isinstance(row.get("sunrise"), str) else None,
+                sunset=row.get("sunset") if isinstance(row.get("sunset"), str) else None,
+            ))
+        except (ValueError, KeyError, TypeError):
+            continue
+    return days
 
 
 def _direction_value(value: Any) -> float | None:
@@ -600,16 +703,24 @@ def _utc_stamp(value: Any, timezone_name: str = "UTC") -> datetime:
 
 def _daylight_days(payload: dict[str, Any], timezone_name: str) -> list[ForecastDaylight]:
     daily = payload.get("daily", {})
+    if not isinstance(daily, dict) or not isinstance(daily.get("time", []), list):
+        return []
     zone = _zone(timezone_name)
     days = []
     for index, value in enumerate(daily.get("time", [])):
-        stamp = _utc_stamp(value, timezone_name) if not (isinstance(value, str) and len(value) == 10) else None
-        day = stamp.astimezone(zone).date() if stamp else date.fromisoformat(value)
+        try:
+            stamp = _utc_stamp(value, timezone_name) if not (isinstance(value, str) and len(value) == 10) else None
+            day = stamp.astimezone(zone).date() if stamp else date.fromisoformat(value)
+        except (ValueError, TypeError, OverflowError, OSError):
+            continue
         def daylight(name: str) -> str | None:
             values = daily.get(name, [])
-            if index >= len(values) or values[index] is None:
+            if not isinstance(values, list) or index >= len(values) or values[index] is None:
                 return None
-            return _utc_stamp(values[index], timezone_name).astimezone(zone).isoformat()
+            try:
+                return _utc_stamp(values[index], timezone_name).astimezone(zone).isoformat()
+            except (ValueError, TypeError, OverflowError, OSError):
+                return None
         days.append(ForecastDaylight(day=day, sunrise=daylight("sunrise"), sunset=daylight("sunset")))
     return days
 

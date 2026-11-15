@@ -41,8 +41,8 @@ def test_basic_reuses_daily_detail_cache_snapshot_mean_and_real_timestamp(monkey
     assert "Daily mean significant combined sea height" in first.note
     assert "not breaking-wave face height" in first.note
     assert len(calls) == 2 and reservations == [3]
-    assert set(first.model_dump()) == {"spot_id", "available", "source", "marine_model", "timezone", "utc_offset_seconds", "fetched_at", "local_date", "note", "days"}
-    assert set(first.days[0].model_dump()) == {"day", "wave_height_m"}
+    assert set(first.model_dump()) == {"spot_id", "available", "source", "marine_model", "weather_model", "timezone", "utc_offset_seconds", "fetched_at", "local_date", "note", "days"}
+    assert set(first.days[0].model_dump()) == {"day", "wave_height_m", "wind_kts", "wind_direction_deg", "wind_direction_status", "sea_surface_temperature_c", "sunrise_local", "sunset_local"}
 
 
 def test_basic_concurrent_requests_share_existing_singleflight_and_budget(monkeypatch):

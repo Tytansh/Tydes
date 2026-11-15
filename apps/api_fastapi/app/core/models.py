@@ -127,6 +127,12 @@ class BasicForecastDay(BaseModel):
     model_config = ConfigDict(extra="forbid")
     day: date
     wave_height_m: float = Field(ge=0, allow_inf_nan=False, strict=True)
+    wind_kts: float | None = Field(default=None, ge=0, le=250, allow_inf_nan=False)
+    wind_direction_deg: int | None = Field(default=None, ge=0, le=359, strict=True)
+    wind_direction_status: Literal["available", "variable", "calm", "unavailable"] = "unavailable"
+    sea_surface_temperature_c: float | None = Field(default=None, ge=-5, le=50, allow_inf_nan=False)
+    sunrise_local: str | None = Field(default=None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    sunset_local: str | None = Field(default=None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 
 
 class BasicSpotForecast(BaseModel):
@@ -135,6 +141,7 @@ class BasicSpotForecast(BaseModel):
     available: bool
     source: Literal["open-meteo", "unavailable"] = "unavailable"
     marine_model: Literal["Best Match (automatic)"] = "Best Match (automatic)"
+    weather_model: Literal["Best Match (automatic)", "Temporarily unavailable"] | None = None
     timezone: str = "UTC"
     utc_offset_seconds: int = 0
     fetched_at: datetime | None = None
