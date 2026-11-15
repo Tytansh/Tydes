@@ -63,9 +63,19 @@ class _FeedRefreshIndicatorState extends State<FeedRefreshIndicator> {
 
   void _wheel(PointerSignalEvent event) {
     if (event is! PointerScrollEvent ||
+        !event.scrollDelta.isFinite ||
         event.scrollDelta.dy.abs() <= event.scrollDelta.dx.abs()) {
       return;
     }
+    // A deeper media/map listener or Scrollable gets first refusal. Only an
+    // unconsumed wheel overscroll belongs to this refresh indicator; handling
+    // it during raw dispatch would also refresh while panning zoomed media.
+    GestureBinding.instance.pointerSignalResolver.register(event, (_) {
+      if (mounted) _resolvedWheel(event);
+    });
+  }
+
+  void _resolvedWheel(PointerScrollEvent event) {
     final now = DateTime.now();
     if (event.scrollDelta.dy > 0) _dismissSpinner();
     if (event.scrollDelta.dy >= 0 || !_atTop || _refreshing) {

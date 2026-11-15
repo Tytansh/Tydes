@@ -26,11 +26,13 @@ class _PostMediaZoomState extends State<PostMediaZoom>
   Animation<Matrix4>? _animation;
   Matrix4 _matrix = Matrix4.identity();
   Size _size = Size.zero;
-  Offset _anchor = Offset.zero;
+  Offset _lastFocalPoint = Offset.zero;
   Offset _doubleTapPosition = Offset.zero;
   double _startScale = 1;
   bool _pinned = false;
   bool _zooming = false;
+  bool _gestureActive = false;
+  bool _firstUpdate = false;
 
   @override
   void initState() {
@@ -51,25 +53,77 @@ class _PostMediaZoomState extends State<PostMediaZoom>
   }
 
   void _start(ScaleStartDetails details) {
+    _gestureActive = details.pointerCount >= 2 || _pinned;
+    if (!_gestureActive) return;
     _reset.stop();
     _startScale = _matrix.getMaxScaleOnAxis();
-    _anchor = Offset(
-      (details.localFocalPoint.dx - _matrix.storage[12]) / _startScale,
-      (details.localFocalPoint.dy - _matrix.storage[13]) / _startScale,
-    );
+    _lastFocalPoint = details.localFocalPoint;
+    _firstUpdate = true;
     if (details.pointerCount >= 2) _pinned = false;
     _setZooming(true);
   }
 
   void _update(ScaleUpdateDetails details) {
+    if (!_gestureActive ||
+        !details.scale.isFinite ||
+        details.scale <= 0 ||
+        !details.localFocalPoint.isFinite ||
+        !details.focalPointDelta.isFinite) {
+      return;
+    }
     final scale = (_startScale * details.scale).clamp(1.0, 4.0);
-    final offset = details.localFocalPoint - _anchor * scale;
+    final currentScale = _matrix.getMaxScaleOnAxis();
+    // Rebase against the already bounded transform on every update. A fixed
+    // initial anchor forces users to undo overscroll before a photo moves back
+    // from its edge. The first delta also includes the pan that won the arena.
+    final previousFocal = _firstUpdate
+        ? details.localFocalPoint - details.focalPointDelta
+        : _lastFocalPoint;
+    final anchor = Offset(
+      (previousFocal.dx - _matrix.storage[12]) / currentScale,
+      (previousFocal.dy - _matrix.storage[13]) / currentScale,
+    );
+    final offset = details.localFocalPoint - anchor * scale;
+    _lastFocalPoint = details.localFocalPoint;
+    _firstUpdate = false;
     setState(() {
       _matrix = _transform(scale, offset);
     });
   }
 
+  void _end(int pointerCount) {
+    _gestureActive = false;
+    // Scale recognizers also end on contact reconfiguration. Keep the zoom
+    // while at least two fingers remain, and still reset if all fingers lift
+    // without any intervening move that would restart the recognizer.
+    if (pointerCount < 2 && !_pinned && _zooming && !_reset.isAnimating) {
+      _resetZoom();
+    }
+  }
+
   void _onPointerSignal(PointerSignalEvent event) {
+    if (event is PointerScrollEvent) {
+      // At normal size the feed owns every scroll. While zoom is held, an
+      // explicitly classified trackpad gesture pans the media. Do not guess
+      // from wheel deltas: mouse wheels must still scroll the page.
+      if (!_pinned ||
+          _matrix.getMaxScaleOnAxis() <= 1 ||
+          !event.scrollDelta.isFinite ||
+          event.kind != PointerDeviceKind.trackpad) {
+        return;
+      }
+      GestureBinding.instance.pointerSignalResolver.register(event, (_) {
+        _reset.stop();
+        setState(() {
+          _matrix = _transform(
+            _matrix.getMaxScaleOnAxis(),
+            Offset(_matrix.storage[12], _matrix.storage[13]) -
+                event.scrollDelta,
+          );
+        });
+      });
+      return;
+    }
     if (event is! PointerScaleEvent ||
         !event.scale.isFinite ||
         event.scale <= 0 ||
@@ -151,11 +205,13 @@ class _PostMediaZoomState extends State<PostMediaZoom>
                       >(() => _PinchGestureRecognizer(), (recognizer) {
                         recognizer
                           ..allowSinglePointerPan = _pinned
+                          ..allowTrackpadPan = _matrix.getMaxScaleOnAxis() > 1
                           ..onStart = _start
                           ..onUpdate = _update
-                          ..onEnd = (_) {
-                            if (!_pinned) _resetZoom();
-                          };
+                          ..onEnd = (details) {
+                            _end(details.pointerCount);
+                          }
+                          ..onContactEnd = _end;
                       }),
                 },
                 child: GestureDetector(
@@ -197,12 +253,48 @@ class _PostMediaZoomState extends State<PostMediaZoom>
 
 class _PinchGestureRecognizer extends ScaleGestureRecognizer {
   bool allowSinglePointerPan = false;
+  bool allowTrackpadPan = false;
+  ValueChanged<int>? onContactEnd;
+  final Set<int> _panZoomPointers = {};
+  bool _trackpadScaling = false;
+
+  @override
+  void addAllowedPointerPanZoom(PointerPanZoomStartEvent event) {
+    if (_panZoomPointers.isEmpty) _trackpadScaling = false;
+    _panZoomPointers.add(event.pointer);
+    super.addAllowedPointerPanZoom(event);
+  }
+
+  @override
+  void handleEvent(PointerEvent event) {
+    if (event is PointerPanZoomUpdateEvent &&
+        event.scale.isFinite &&
+        (event.scale - 1).abs() > .0001) {
+      _trackpadScaling = true;
+    }
+    super.handleEvent(event);
+    if (event is PointerPanZoomEndEvent) _panZoomPointers.remove(event.pointer);
+    if (event is PointerUpEvent ||
+        event is PointerCancelEvent ||
+        event is PointerPanZoomEndEvent) {
+      onContactEnd?.call(pointerCount);
+    }
+  }
+
+  @override
+  void didStopTrackingLastPointer(int pointer) {
+    super.didStopTrackingLastPointer(pointer);
+    _panZoomPointers.clear();
+    _trackpadScaling = false;
+  }
 
   @override
   void resolve(GestureDisposition disposition) {
     if (disposition == GestureDisposition.accepted &&
-        pointerCount < 2 &&
-        !allowSinglePointerPan) {
+        ((pointerCount < 2 && !allowSinglePointerPan) ||
+            (_panZoomPointers.isNotEmpty &&
+                !allowTrackpadPan &&
+                !_trackpadScaling))) {
       return;
     }
     super.resolve(disposition);
