@@ -65,6 +65,20 @@ export function verifyDeferredAdminCode(main, chunks) {
   return adminChunks.map(chunk => chunk.file);
 }
 
+export function verifyDeferredComposerCode(main, chunks) {
+  const markers = [
+    'Saved posts stay here while the app is open.',
+    'Choose an event spot and date before posting.',
+    'Could not add one photo. Try another image.',
+  ];
+  for (const marker of markers) {
+    assert(!main.includes(marker), `Post composer returned to the initial bundle: ${marker}`);
+  }
+  const composerChunks = chunks.filter(chunk => markers.every(marker => chunk.source.includes(marker)));
+  assert.equal(composerChunks.length, 1, 'Post composer must share one deferred chunk.');
+  return composerChunks.map(chunk => chunk.file);
+}
+
 // Repeatable release-size guard. Browser timings/FPS are measured separately;
 // neither bundle size nor widget counts are substitutes for frame profiling.
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
@@ -86,6 +100,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   const deferredAdminChunks = verifyDeferredAdminCode(main.toString('utf8'), chunks.map(file => ({
     file, source: fs.readFileSync(path.join(directory, file), 'utf8'),
   })));
+  const deferredComposerChunks = verifyDeferredComposerCode(main.toString('utf8'), chunks.map(file => ({
+    file, source: fs.readFileSync(path.join(directory, file), 'utf8'),
+  })));
   assert(html.includes('as="script" href="main.dart.js"'), 'Missing early app-script discovery.');
   console.log(JSON.stringify({
     initialJavaScriptBytes: main.length,
@@ -93,6 +110,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     deferredChunks: chunks.map(file => ({ file, bytes: fs.statSync(path.join(directory, file)).size })),
     deferredMapChunks,
     deferredAdminChunks,
+    deferredComposerChunks,
     startupFetchPreloads,
     bootstrap: 'inline',
     status: 'Mobile release-size budget passed',

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { verifyDeferredAdminCode, verifyDeferredMapCode, verifyStartupAssetHints } from './verify_mobile_performance.mjs';
+import { verifyDeferredAdminCode, verifyDeferredComposerCode, verifyDeferredMapCode, verifyStartupAssetHints } from './verify_mobile_performance.mjs';
 
 const html = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
 const fontManifest = [
@@ -59,4 +59,11 @@ test('admin tools stay outside the initial app download', () => {
   assert.deepEqual(verifyDeferredAdminCode('app code', [{ file: 'admin.part.js', source }]), ['admin.part.js']);
   assert.throws(() => verifyDeferredAdminCode(source, []), /initial bundle/);
   assert.throws(() => verifyDeferredAdminCode('app code', []), /one deferred chunk/);
+});
+
+test('post composer stays outside the initial app download', () => {
+  const source = 'Saved posts stay here while the app is open. Choose an event spot and date before posting. Could not add one photo. Try another image.';
+  assert.deepEqual(verifyDeferredComposerCode('app code', [{ file: 'composer.part.js', source }]), ['composer.part.js']);
+  assert.throws(() => verifyDeferredComposerCode(source, []), /initial bundle/);
+  assert.throws(() => verifyDeferredComposerCode('app code', []), /one deferred chunk/);
 });
