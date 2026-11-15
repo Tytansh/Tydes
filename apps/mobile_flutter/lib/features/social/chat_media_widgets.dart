@@ -628,6 +628,9 @@ class _ChatMediaBubbleState extends ConsumerState<ChatMediaBubble> {
                   if (!video || thumbnail != null)
                     Image.network(
                       thumbnail ?? data['url'] as String,
+                      headers: !kIsWeb && video
+                          ? const {'Referer': 'https://tydes.io/'}
+                          : null,
                       fit: BoxFit.contain,
                       cacheWidth: 840,
                       frameBuilder: _privateImageFrame,

@@ -235,10 +235,13 @@ class _ImageClient extends Fake implements HttpClient {
   _ImageClient(this.bytes);
   final Uint8List bytes;
   int reads = 0;
+  final requests = <_ImageRequest>[];
   @override
   Future<HttpClientRequest> getUrl(Uri url) async {
     reads++;
-    return _ImageRequest(bytes);
+    final request = _ImageRequest(bytes);
+    requests.add(request);
+    return request;
   }
 }
 
@@ -246,7 +249,17 @@ class _ImageRequest extends Fake implements HttpClientRequest {
   _ImageRequest(this.bytes);
   final Uint8List bytes;
   @override
+  final _ImageHeaders headers = _ImageHeaders();
+  @override
   Future<HttpClientResponse> close() async => _ImageResponse(bytes);
+}
+
+class _ImageHeaders extends Fake implements HttpHeaders {
+  final values = <String, Object>{};
+  @override
+  void add(String name, Object value, {bool preserveHeaderCase = false}) {
+    values[name] = value;
+  }
 }
 
 class _ImageResponse extends Stream<List<int>> implements HttpClientResponse {
@@ -530,6 +543,28 @@ void main() {
       );
     },
   );
+
+  for (final video in [false, true]) {
+    _mediaWidgetTest(
+      video
+          ? 'native private video thumbnail sends the public-site Referer'
+          : 'native private photo request has no video-only Referer',
+      (tester) async {
+        final client = _stubImages(_rasterPhoto(80, 40));
+        final session = _MediaSession()
+          ..videoAccess = video
+          ..videoThumbnail = video;
+        await _showBubble(tester, session, type: video ? 'video' : 'photo');
+        await _decodedImage(tester);
+        final resized = tester.widget<Image>(find.byType(Image)).image;
+        final network = (resized as ResizeImage).imageProvider as NetworkImage;
+        final expected = video ? {'Referer': 'https://tydes.io/'} : null;
+        expect(network.headers, expected);
+        expect(client.requests.single.headers.values, expected ?? {});
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   _mediaWidgetTest('private access loading retains the compact black frame', (
     tester,
