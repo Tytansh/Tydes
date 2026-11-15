@@ -199,6 +199,7 @@ class _ScopedBasicForecast extends BasicForecastModel {
         available: value.available,
         source: value.source,
         marineModel: value.marineModel,
+        weatherModel: value.weatherModel,
         timezone: value.timezone,
         utcOffsetSeconds: value.utcOffsetSeconds,
         fetchedAt: value.fetchedAt,
@@ -839,8 +840,8 @@ class _ForecastUnlockCard extends ConsumerWidget {
             unlocked
                 ? 'Explore the full hourly desk here. Premium lets you compare conditions at every mapped break, without changing your free spot.'
                 : remaining != null
-                ? 'Basic daily wave outlooks are free at every spot. Your full free spot is already selected; you can switch in ${_cooldown(remaining)}. Premium opens the hourly forecast desk at every break.'
-                : 'Basic daily wave outlooks are free at every spot. Choose one free spot for hourly wave, swell and wind model forecasts, plus available tide predictions. You can switch your free spot once every 24 hours.',
+                ? 'Daily wave, wind, model water temperature and daylight outlooks are free at every spot. Your full free spot is already selected; you can switch in ${_cooldown(remaining)}. Premium opens the hourly forecast desk at every break.'
+                : 'Daily wave, wind, model water temperature and daylight outlooks are free at every spot. Choose one free spot for hourly wave, swell and wind model forecasts, plus available tide predictions. You can switch your free spot once every 24 hours.',
             style: TextStyle(
               color: dark
                   ? theme.colorScheme.onSurfaceVariant

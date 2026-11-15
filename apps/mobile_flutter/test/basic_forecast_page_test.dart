@@ -252,6 +252,13 @@ void main() {
           expect(labels, contains(time));
           expect(labels, contains('UTC'));
           expect(find.text('Reliable Break'), findsOneWidget);
+          // The additive daily details make the panel taller on phones; the
+          // independent guide remains below it in the existing lazy ListView.
+          await tester.scrollUntilVisible(
+            find.text('BREAK GUIDE'),
+            400,
+            scrollable: find.byType(Scrollable).first,
+          );
           expect(find.text('BREAK GUIDE'), findsOneWidget);
           expect(labels, isNot(contains('99.9')));
           expect(labels, isNot(contains('88.8')));

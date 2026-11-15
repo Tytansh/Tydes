@@ -1,11 +1,12 @@
 /// A coarse, dated model outlook, never observed breaking-wave heights.
-/// This deliberately cannot carry hourly, wind, swell or tide data.
+/// This deliberately cannot carry hourly, swell or tide data.
 class BasicForecastModel {
   const BasicForecastModel({
     required this.spotId,
     required this.available,
     this.source = 'unavailable',
     this.marineModel,
+    this.weatherModel,
     this.timezone,
     this.utcOffsetSeconds,
     this.fetchedAt,
@@ -18,6 +19,7 @@ class BasicForecastModel {
   final bool available;
   final String source;
   final String? marineModel;
+  final String? weatherModel;
   final String? timezone;
   final int? utcOffsetSeconds;
   final DateTime? fetchedAt;
@@ -134,6 +136,11 @@ class BasicForecastModel {
       available: available,
       source: source as String,
       marineModel: model,
+      weatherModel: switch (json['weather_model']) {
+        'Best Match (automatic)' => 'Best Match (automatic)',
+        'Temporarily unavailable' => 'Temporarily unavailable',
+        _ => null,
+      },
       timezone: timezone,
       utcOffsetSeconds: offset as int?,
       fetchedAt: stamp?.toUtc(),
@@ -145,22 +152,85 @@ class BasicForecastModel {
 }
 
 class BasicForecastDayModel {
-  const BasicForecastDayModel({required this.day, required this.waveHeightM});
+  const BasicForecastDayModel({
+    required this.day,
+    required this.waveHeightM,
+    this.windKts,
+    this.windDirectionDeg,
+    this.windDirectionStatus = 'unavailable',
+    this.seaSurfaceTemperatureC,
+    this.sunriseLocal,
+    this.sunsetLocal,
+  });
 
   final String day;
   final double waveHeightM;
+  final double? windKts;
+  final int? windDirectionDeg;
+  final String windDirectionStatus;
+  final double? seaSurfaceTemperatureC;
+  final String? sunriseLocal;
+  final String? sunsetLocal;
 
   factory BasicForecastDayModel.fromJson(Map<String, dynamic> json) {
     final height = json['wave_height_m'];
     if (height is! num || !height.toDouble().isFinite || height < 0) {
       throw const FormatException('The daily wave height was invalid.');
     }
+    final wind = _optionalNumber(json['wind_kts'], min: 0, max: 250);
+    final rawDirection = json['wind_direction_deg'];
+    int? direction =
+        rawDirection is int && rawDirection >= 0 && rawDirection <= 359
+        ? rawDirection
+        : null;
+    var status = switch (json['wind_direction_status']) {
+      'available' => 'available',
+      'variable' => 'variable',
+      'calm' => 'calm',
+      _ => 'unavailable',
+    };
+    if (wind == null ||
+        (status == 'available' && (direction == null || wind < 1)) ||
+        (status == 'calm' && wind >= 1) ||
+        (status == 'variable' && wind < 1)) {
+      status = 'unavailable';
+    }
+    if (status != 'available') direction = null;
+    var sunrise = _localTime(json['sunrise_local']);
+    var sunset = _localTime(json['sunset_local']);
+    if (sunrise != null && sunset != null && sunrise.compareTo(sunset) >= 0) {
+      sunrise = null;
+      sunset = null;
+    }
     return BasicForecastDayModel(
       day: _validDate(json['day']),
       waveHeightM: height.toDouble(),
+      windKts: wind,
+      windDirectionDeg: direction,
+      windDirectionStatus: status,
+      seaSurfaceTemperatureC: _optionalNumber(
+        json['sea_surface_temperature_c'],
+        min: -5,
+        max: 50,
+      ),
+      sunriseLocal: sunrise,
+      sunsetLocal: sunset,
     );
   }
 }
+
+double? _optionalNumber(
+  Object? value, {
+  required double min,
+  required double max,
+}) => value is num && value.toDouble().isFinite && value >= min && value <= max
+    ? value.toDouble()
+    : null;
+
+String? _localTime(Object? value) =>
+    value is String && RegExp(r'^(?:[01]\d|2[0-3]):[0-5]\d$').hasMatch(value)
+    ? value
+    : null;
 
 String basicForecastDateKey(DateTime value) =>
     '${value.year.toString().padLeft(4, '0')}-'
