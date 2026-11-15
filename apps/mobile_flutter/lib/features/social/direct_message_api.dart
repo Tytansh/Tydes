@@ -17,17 +17,38 @@ class DirectMessageApi {
   DirectMessageApi(this.dio, this.persistence);
   final Dio dio;
   final DemoPersistence persistence;
+  String? _sessionOwner;
+  String? _sessionToken;
+  Future<DirectMessageSession>? _opening;
 
   Future<DirectMessageSession> openSession(String ownerId) async {
     final token = await persistence.loadAccessToken();
     if (token == null || token.isEmpty) {
       throw StateError('Please sign in to load messages.');
     }
-    final session = DirectMessageSession(dio, persistence, ownerId, token);
-    final user = await session.getMap('/users/me');
-    if (user['id'] != ownerId) {
-      throw StateError('Your account changed. Reopen Messages and try again.');
+    if (_sessionOwner != ownerId ||
+        _sessionToken != token ||
+        _opening == null) {
+      _sessionOwner = ownerId;
+      _sessionToken = token;
+      late final Future<DirectMessageSession> opening;
+      opening = () async {
+        final session = DirectMessageSession(dio, persistence, ownerId, token);
+        final user = await session.getMap('/users/me');
+        if (user['id'] != ownerId) {
+          throw StateError(
+            'Your account changed. Reopen Messages and try again.',
+          );
+        }
+        return session;
+      }();
+      _opening = opening.catchError((Object error) {
+        if (_sessionOwner == ownerId && _sessionToken == token) _opening = null;
+        throw error;
+      });
     }
+    final session = await _opening!;
+    await session.ensureCurrent();
     return session;
   }
 }
@@ -49,11 +70,13 @@ class DirectMessageSession {
     String method,
     String path, {
     Map<String, dynamic>? data,
+    CancelToken? cancelToken,
   }) async {
     await _checkSession();
     final response = await dio.request<Map<String, dynamic>>(
       path,
       data: data,
+      cancelToken: cancelToken,
       options: Options(
         method: method,
         headers: {'Authorization': 'Bearer $_token'},
@@ -68,6 +91,38 @@ class DirectMessageSession {
   }
 
   Future<Map<String, dynamic>> getMap(String path) => _request('GET', path);
+
+  Future<void> ensureCurrent() => _checkSession();
+
+  Future<List<Map<String, dynamic>>> getList(String path) async {
+    await _checkSession();
+    final response = await dio.get<List<dynamic>>(
+      path,
+      options: Options(headers: {'Authorization': 'Bearer $_token'}),
+    );
+    await _checkSession();
+    if (response.data == null) {
+      throw StateError('The conversation response was incomplete.');
+    }
+    return response.data!
+        .map((row) => Map<String, dynamic>.from(row as Map))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> postMap(
+    String path,
+    Map<String, dynamic> data, {
+    CancelToken? cancelToken,
+  }) => _request('POST', path, data: data, cancelToken: cancelToken);
+
+  Future<void> delete(String path) async {
+    await _checkSession();
+    await dio.delete<void>(
+      path,
+      options: Options(headers: {'Authorization': 'Bearer $_token'}),
+    );
+    await _checkSession();
+  }
 
   Future<List<Map<String, dynamic>>> threads() async {
     final result = await getMap('/messages/threads');
@@ -97,6 +152,7 @@ class DirectMessageSession {
     required String text,
     required String clientMessageId,
     String? sharedPostId,
+    String? attachmentId,
   }) async {
     final result = await _request(
       'POST',
@@ -105,6 +161,7 @@ class DirectMessageSession {
         'text': text,
         'client_message_id': clientMessageId,
         'shared_post_id': ?sharedPostId,
+        'attachment_id': ?attachmentId,
       },
     );
     if (result['id'] is! String ||

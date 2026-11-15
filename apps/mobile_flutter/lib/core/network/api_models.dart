@@ -1,3 +1,5 @@
+import 'chat_media_models.dart';
+
 class UserProfile {
   UserProfile({
     required this.id,
@@ -921,6 +923,8 @@ class EventChatMessageModel {
     required this.authorAvatarUrl,
     required this.text,
     required this.createdAt,
+    this.attachment,
+    this.clientMessageId,
   });
 
   final String id;
@@ -931,6 +935,8 @@ class EventChatMessageModel {
   final String? authorAvatarUrl;
   final String text;
   final String createdAt;
+  final ChatMediaAttachment? attachment;
+  final String? clientMessageId;
 
   factory EventChatMessageModel.fromJson(Map<String, dynamic> json) =>
       EventChatMessageModel(
@@ -942,6 +948,12 @@ class EventChatMessageModel {
         authorAvatarUrl: json['author_avatar_url'] as String?,
         text: json['text'] as String,
         createdAt: json['created_at'] as String,
+        clientMessageId: json['client_message_id'] as String?,
+        attachment: json['attachment'] is Map
+            ? ChatMediaAttachment.fromJson(
+                Map<String, dynamic>.from(json['attachment'] as Map),
+              )
+            : null,
       );
 }
 

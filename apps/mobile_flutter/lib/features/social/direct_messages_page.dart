@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:video_player/video_player.dart';
 import '../../core/network/api_models.dart';
+import '../../core/network/chat_media_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../../core/moderation/content_moderation.dart';
 import '../../core/widgets/feed_refresh_indicator.dart';
@@ -12,6 +13,7 @@ import '../../core/network/api_error_message.dart';
 import '../auth/email_verification_sheet.dart';
 import '../home/home_page.dart' show meProvider;
 import 'direct_message_api.dart';
+import 'chat_media_widgets.dart';
 import 'inbox_badges.dart';
 import 'social_profile.dart';
 
@@ -211,6 +213,10 @@ class DirectMessageThreadsNotifier
       online: false,
       requestAccepted: json['request_accepted'] as bool? ?? false,
       requestDeclined: json['request_declined'] as bool? ?? false,
+      canSendAttachments:
+          json['can_send_attachments'] as bool? ??
+          previous?.canSendAttachments ??
+          false,
       messages: json['messages'] is List
           ? (json['messages'] as List)
                 .map(
@@ -307,6 +313,12 @@ class DirectMessageThreadsNotifier
   Future<void> sendMessage(String threadId, String text) =>
       _send(threadId, text.trim());
 
+  Future<void> sendMediaMessage(
+    String threadId,
+    String text,
+    String attachmentId,
+  ) => _send(threadId, text.trim(), attachmentId: attachmentId);
+
   Future<void> sendSharedPost({
     required String threadId,
     required SocialPostModel post,
@@ -318,15 +330,17 @@ class DirectMessageThreadsNotifier
     String threadId,
     String text, {
     String? sharedPostId,
+    String? attachmentId,
   }) async {
-    if (text.isEmpty && sharedPostId == null) return;
+    if (text.isEmpty && sharedPostId == null && attachmentId == null) return;
     if (text.length > 1600) {
       throw StateError('Messages can be up to 1600 characters.');
     }
     if (_sending.contains(threadId)) {
       throw StateError('This message is still sending.');
     }
-    final fingerprint = '$threadId\u0000$text\u0000${sharedPostId ?? ''}';
+    final fingerprint =
+        '$threadId\u0000$text\u0000${sharedPostId ?? ''}\u0000${attachmentId ?? ''}';
     final key = _sendKeys.putIfAbsent(
       fingerprint,
       () => 'dm_${DateTime.now().microsecondsSinceEpoch}_${_sendKeys.length}',
@@ -338,8 +352,16 @@ class DirectMessageThreadsNotifier
         text: text,
         clientMessageId: key,
         sharedPostId: sharedPostId,
+        attachmentId: attachmentId,
       );
       _check();
+      if (attachmentId != null &&
+          (ack['attachment'] is! Map ||
+              (ack['attachment'] as Map)['id'] != attachmentId)) {
+        throw StateError(
+          'The server did not confirm this attachment. Please retry.',
+        );
+      }
       final current = threadByIdOrHandle(threadId);
       if (current == null) {
         throw StateError('Reopen this conversation and try again.');
@@ -347,7 +369,13 @@ class DirectMessageThreadsNotifier
       final message = DirectChatMessage.fromServer(ack, ownerId!);
       _accept(
         current.copyWith(
-          preview: message.text.isNotEmpty ? message.text : 'Shared a post',
+          preview: message.text.isNotEmpty
+              ? message.text
+              : message.attachment != null
+              ? (message.attachment!.mediaType == 'video'
+                    ? 'Sent a video'
+                    : 'Sent a photo')
+              : 'Shared a post',
           time: _messageTime(ack['created_at'] as String?),
           updatedAt: DateTime.tryParse(ack['created_at'] as String? ?? ''),
           messages: [
@@ -1526,7 +1554,11 @@ class _DirectChatPageState extends ConsumerState<_DirectChatPage>
                     itemBuilder: (context, index) {
                       final message =
                           thread.messages[thread.messages.length - 1 - index];
-                      return _MessageBubble(message: message);
+                      return _MessageBubble(
+                        message: message,
+                        ownerId: _chatOwnerId!,
+                        threadId: thread.id,
+                      );
                     },
                   ),
           ),
@@ -1551,23 +1583,17 @@ class _DirectChatPageState extends ConsumerState<_DirectChatPage>
               onDecline: () => _changeRequest(thread.id, false),
             )
           else
-            _MessageComposer(
+            ChatMessageComposer(
+              key: ValueKey('dm-composer-$_chatOwnerId-${thread.id}'),
+              ownerId: _chatOwnerId!,
+              conversationType: 'direct',
+              conversationId: thread.id,
               controller: _messageController,
-              sending: _sending,
-              onSend: () => _sendMessage(thread.id),
-              onAddAttachment: () => _openAttachmentSheet(thread.id),
+              attachmentsAllowed: thread.canSendAttachments,
+              onSend: (text, attachmentId) =>
+                  _sendMessage(thread.id, text, attachmentId),
             ),
         ],
-      ),
-    );
-  }
-
-  Future<void> _openAttachmentSheet(String threadId) async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Private photo and video messages are not available yet. Send text or share a post instead.',
-        ),
       ),
     );
   }
@@ -1594,35 +1620,23 @@ class _DirectChatPageState extends ConsumerState<_DirectChatPage>
     }
   }
 
-  Future<void> _sendMessage(String threadId) async {
-    if (_sending) return;
-    final text = _messageController.text.trim();
-    if (text.isEmpty) return;
+  Future<void> _sendMessage(
+    String threadId,
+    String text,
+    String? attachmentId,
+  ) async {
+    if (_sending) throw StateError('This message is still sending.');
+    if (!_isVisible) throw StateError('Reopen this conversation to send.');
     if (hasBlockedContent(text)) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text(contentBlockedMessage)));
-      return;
+      throw StateError(contentBlockedMessage);
     }
     setState(() => _sending = true);
     try {
-      await ref
-          .read(directMessageThreadsProvider.notifier)
-          .sendMessage(threadId, text);
-      if (mounted && _messageController.text.trim() == text) {
-        _messageController.clear();
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Message not sent. ${friendlyErrorMessage(error)}'),
-            action: SnackBarAction(
-              label: 'Retry',
-              onPressed: () => _sendMessage(threadId),
-            ),
-          ),
-        );
+      final notifier = ref.read(directMessageThreadsProvider.notifier);
+      if (attachmentId == null) {
+        await notifier.sendMessage(threadId, text);
+      } else {
+        await notifier.sendMediaMessage(threadId, text, attachmentId);
       }
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -1774,9 +1788,14 @@ class _BlockedDirectThreadNotice extends StatelessWidget {
 }
 
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message});
+  const _MessageBubble({
+    required this.message,
+    required this.ownerId,
+    required this.threadId,
+  });
 
   final DirectChatMessage message;
+  final String ownerId, threadId;
 
   @override
   Widget build(BuildContext context) {
@@ -1788,7 +1807,7 @@ class _MessageBubble extends StatelessWidget {
     final textColor = message.isMe
         ? theme.colorScheme.onPrimary
         : theme.colorScheme.onSurface;
-    final hasMedia = message.mediaPath != null;
+    final hasMedia = message.mediaPath != null || message.attachment != null;
     final isSharedPost = message.sharedPostId != null;
 
     return Align(
@@ -1826,6 +1845,8 @@ class _MessageBubble extends StatelessWidget {
                 ),
                 child: _MessageContent(
                   message: message,
+                  ownerId: ownerId,
+                  threadId: threadId,
                   textColor: isSharedPost || hasMedia
                       ? theme.colorScheme.onSurface
                       : textColor,
@@ -1858,10 +1879,16 @@ class _MessageBubble extends StatelessWidget {
 }
 
 class _MessageContent extends StatelessWidget {
-  const _MessageContent({required this.message, required this.textColor});
+  const _MessageContent({
+    required this.message,
+    required this.textColor,
+    required this.ownerId,
+    required this.threadId,
+  });
 
   final DirectChatMessage message;
   final Color textColor;
+  final String ownerId, threadId;
 
   @override
   Widget build(BuildContext context) {
@@ -1871,6 +1898,18 @@ class _MessageContent extends StatelessWidget {
 
     if (message.sharedPostId != null) {
       children.add(_SharedPostPreview(message: message));
+    }
+
+    if (message.attachment != null) {
+      children.add(
+        ChatMediaBubble(
+          key: ValueKey(message.attachment!.id),
+          attachment: message.attachment!,
+          ownerId: ownerId,
+          conversationType: 'direct',
+          conversationId: threadId,
+        ),
+      );
     }
 
     if (mediaPath != null) {
@@ -2378,84 +2417,6 @@ class _VideoAttachmentPreviewState extends State<_VideoAttachmentPreview> {
   }
 }
 
-class _MessageComposer extends StatelessWidget {
-  const _MessageComposer({
-    required this.controller,
-    required this.onSend,
-    required this.onAddAttachment,
-    this.sending = false,
-  });
-
-  final TextEditingController controller;
-  final VoidCallback onSend;
-  final VoidCallback onAddAttachment;
-  final bool sending;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
-        child: Row(
-          children: [
-            IconButton(
-              onPressed: onAddAttachment,
-              icon: const Icon(Icons.add_circle_outline),
-              color: scheme.primary,
-            ),
-            Expanded(
-              child: TextField(
-                key: const ValueKey('dm-message-input'),
-                controller: controller,
-                minLines: 1,
-                maxLines: 4,
-                textInputAction: TextInputAction.send,
-                onSubmitted: (_) {
-                  if (!sending) onSend();
-                },
-                maxLength: 1600,
-                decoration: InputDecoration(
-                  hintText: 'Message...',
-                  counterText: '',
-                  filled: true,
-                  fillColor: Theme.of(context).cardColor,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            FilledButton(
-              key: const ValueKey('dm-send-message'),
-              onPressed: sending ? null : onSend,
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(46, 46),
-                padding: EdgeInsets.zero,
-                shape: const CircleBorder(),
-              ),
-              child: sending
-                  ? const SizedBox.square(
-                      dimension: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.arrow_upward_rounded),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _MessageRequestActions extends StatelessWidget {
   const _MessageRequestActions({
     required this.thread,
@@ -2653,6 +2614,7 @@ class DirectMessageThread {
     required this.online,
     this.requestAccepted = false,
     this.requestDeclined = false,
+    this.canSendAttachments = false,
     required this.messages,
     this.avatarUrl,
     this.premium = false,
@@ -2671,6 +2633,7 @@ class DirectMessageThread {
   final bool online;
   final bool requestAccepted;
   final bool requestDeclined;
+  final bool canSendAttachments;
   final List<DirectChatMessage> messages;
   final String? avatarUrl;
   final bool premium;
@@ -2699,6 +2662,7 @@ class DirectMessageThread {
       online: online,
       requestAccepted: requestAccepted ?? this.requestAccepted,
       requestDeclined: requestDeclined ?? this.requestDeclined,
+      canSendAttachments: canSendAttachments,
       messages: messages ?? this.messages,
       avatarUrl: avatarUrl,
       premium: premium,
@@ -2720,6 +2684,7 @@ class DirectMessageThread {
       online: json['online'] as bool? ?? false,
       requestAccepted: json['request_accepted'] as bool? ?? false,
       requestDeclined: json['request_declined'] as bool? ?? false,
+      canSendAttachments: json['can_send_attachments'] as bool? ?? false,
       messages: (json['messages'] as List<dynamic>? ?? const [])
           .map(
             (item) => DirectChatMessage.fromJson(item as Map<String, dynamic>),
@@ -2745,6 +2710,7 @@ class DirectMessageThread {
       'online': online,
       'request_accepted': requestAccepted,
       'request_declined': requestDeclined,
+      'can_send_attachments': canSendAttachments,
       'messages': messages.map((message) => message.toJson()).toList(),
       'avatar_url': avatarUrl,
       'premium': premium,
@@ -2774,6 +2740,7 @@ class DirectChatMessage {
     this.id,
     this.senderUserId,
     this.createdAt,
+    this.attachment,
   });
 
   final String text;
@@ -2795,6 +2762,7 @@ class DirectChatMessage {
   final String? id;
   final String? senderUserId;
   final String? createdAt;
+  final ChatMediaAttachment? attachment;
 
   factory DirectChatMessage.fromServer(
     Map<String, dynamic> json,
@@ -2816,6 +2784,11 @@ class DirectChatMessage {
       text: json['text'] as String? ?? '',
       time: _messageTime(json['created_at'] as String?),
       isMe: sender == ownerId,
+      attachment: json['attachment'] is Map
+          ? ChatMediaAttachment.fromJson(
+              Map<String, dynamic>.from(json['attachment'] as Map),
+            )
+          : null,
       sharedPostId: json['shared_post_id'] as String?,
       sharedPostAuthorUserId: post?.userId,
       sharedPostAuthor: post?.authorName,
@@ -2858,6 +2831,11 @@ class DirectChatMessage {
       id: json['id'] as String?,
       senderUserId: json['sender_user_id'] as String?,
       createdAt: json['created_at'] as String?,
+      attachment: json['attachment'] is Map
+          ? ChatMediaAttachment.fromJson(
+              Map<String, dynamic>.from(json['attachment'] as Map),
+            )
+          : null,
     );
   }
 
@@ -2869,6 +2847,7 @@ class DirectChatMessage {
       'id': id,
       'sender_user_id': senderUserId,
       'created_at': createdAt,
+      if (attachment != null) 'attachment': attachment!.toJson(),
       if (mediaPath != null) 'media_path': mediaPath,
       if (mediaType != null) 'media_type': mediaType,
       if (sharedPostId != null) 'shared_post_id': sharedPostId,

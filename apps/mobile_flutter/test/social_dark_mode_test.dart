@@ -7,7 +7,9 @@ import 'package:mobile_flutter/core/network/demo_persistence.dart';
 import 'package:mobile_flutter/core/network/demo_seed.dart';
 import 'package:mobile_flutter/core/network/surf_repository.dart';
 import 'package:mobile_flutter/features/social/event_chat_page.dart';
+import 'package:mobile_flutter/features/social/direct_message_api.dart';
 import 'package:mobile_flutter/features/social/social_feed.dart';
+import 'auth_session_test.dart' show MemorySessions, FakeTransport, body;
 
 final _darkTheme = ThemeData(
   useMaterial3: true,
@@ -151,10 +153,51 @@ void main() {
   testWidgets('event chat uses contrasting own and guest message colors', (
     tester,
   ) async {
+    final repository = _ChatRepository();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          surfRepositoryProvider.overrideWithValue(_ChatRepository()),
+          surfRepositoryProvider.overrideWithValue(repository),
+          directMessageApiProvider.overrideWithValue(
+            DirectMessageApi(
+              Dio(BaseOptions(baseUrl: 'https://test.invalid'))
+                ..httpClientAdapter = FakeTransport((request) async {
+                  expect(
+                    request.headers['Authorization'],
+                    'Bearer old-test-session',
+                  );
+                  if (request.path == '/users/me') {
+                    return body({'id': 'owner'});
+                  }
+                  if (request.path == '/social/posts/dark-event/chat') {
+                    final messages = await repository.fetchEventChat(
+                      'dark-event',
+                    );
+                    return body(
+                      messages
+                          .map(
+                            (message) => {
+                              'id': message.id,
+                              'post_id': message.postId,
+                              'user_id': message.userId,
+                              'author_name': message.authorName,
+                              'author_handle': message.authorHandle,
+                              'author_avatar_url': message.authorAvatarUrl,
+                              'text': message.text,
+                              'created_at': message.createdAt,
+                            },
+                          )
+                          .toList(),
+                    );
+                  }
+                  if (request.path == '/messages/media/capabilities') {
+                    return body({'enabled': false});
+                  }
+                  return body({'detail': 'Unknown fixture route'}, 404);
+                }),
+              MemorySessions(),
+            ),
+          ),
         ],
         child: MaterialApp(
           theme: _darkTheme,

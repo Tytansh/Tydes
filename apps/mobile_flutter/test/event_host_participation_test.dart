@@ -8,8 +8,10 @@ import 'package:mobile_flutter/core/network/demo_seed.dart';
 import 'package:mobile_flutter/core/network/surf_repository.dart';
 import 'package:mobile_flutter/features/home/home_page.dart' show meProvider;
 import 'package:mobile_flutter/features/social/direct_messages_page.dart';
+import 'package:mobile_flutter/features/social/direct_message_api.dart';
 import 'package:mobile_flutter/features/social/event_chat_page.dart';
 import 'package:mobile_flutter/features/social/social_feed.dart';
+import 'auth_session_test.dart' show MemorySessions, FakeTransport, body;
 
 SocialPostModel _post({int guests = 0}) => SocialPostModel(
   id: 'hosted-event',
@@ -165,7 +167,31 @@ void main() {
       final repository = _Repository();
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [surfRepositoryProvider.overrideWithValue(repository)],
+          overrides: [
+            surfRepositoryProvider.overrideWithValue(repository),
+            directMessageApiProvider.overrideWithValue(
+              DirectMessageApi(
+                Dio(BaseOptions(baseUrl: 'https://test.invalid'))
+                  ..httpClientAdapter = FakeTransport((request) async {
+                    expect(
+                      request.headers['Authorization'],
+                      'Bearer old-test-session',
+                    );
+                    if (request.path == '/users/me') {
+                      return body({'id': 'owner'});
+                    }
+                    if (request.path == '/social/posts/hosted-event/chat') {
+                      return body(<Map<String, dynamic>>[]);
+                    }
+                    if (request.path == '/messages/media/capabilities') {
+                      return body({'enabled': false});
+                    }
+                    return body({'detail': 'Unknown fixture route'}, 404);
+                  }),
+                MemorySessions(),
+              ),
+            ),
+          ],
           child: const MaterialApp(home: EventChatPage(postId: 'hosted-event')),
         ),
       );
