@@ -186,6 +186,7 @@ class DemoStore:
         self.rsvp_post_ids: set[str] = set()
         self.rsvp_user_ids_by_post: dict[str, set[str]] = {}
         self.event_chat_messages: list[EventChatMessage] = []
+        self.event_chat_preferences: dict[str, dict[str, dict[str, bool]]] = {}
         self.followed_user_ids: set[str] = set()
         self.follower_user_ids: set[str] = set()
         self.blocked_user_ids: set[str] = set()
@@ -535,6 +536,7 @@ class DemoStore:
             for token_hash, email in self.session_tokens.items()
             if email != normalized_email
         }
+        self.event_chat_preferences.pop(user_id, None)
         return self.logout()
 
     def request_password_reset(self, email: str) -> dict[str, object]:
@@ -1806,13 +1808,65 @@ class DemoStore:
     def list_event_chat_posts(self, *, limit: int = 200) -> list[SocialPost]:
         if self.postgres_social is not None:
             return self.postgres_social.list_event_chat_posts(self.user.id, limit)
+        with self._state_lock:
+            left_post_ids = {
+                post_id for post_id, preferences in self.event_chat_preferences.get(self.user.id, {}).items()
+                if preferences.get("left", False)
+            }
         posts = [
             post for post in self.list_posts(self.user.id, limit=len(self.posts))
             if post.post_type in {"surf_plan", "looking_for_buddy"}
             and (post.user_id == self.user.id
                  or self.user.id in self.rsvp_user_ids_by_post.get(post.id, set()))
+            and post.id not in left_post_ids
         ]
         return posts[:limit]
+
+    def event_chat_preferences_for_posts(self, post_ids: list[str]) -> dict[str, dict[str, bool]]:
+        """One account-scoped batch for the inbox; never changes stored posts."""
+        if self.postgres_social is not None:
+            return self.postgres_social.event_chat_preferences(self.user.id, post_ids)
+        with self._state_lock:
+            preferences = self.event_chat_preferences.get(self.user.id, {})
+            return {post_id: dict(preferences[post_id]) for post_id in post_ids if post_id in preferences}
+
+    def get_event_chat_settings(self, post_id: str) -> dict[str, object] | None:
+        # A person who left may inspect settings and explicitly rejoin, but
+        # cannot use these endpoints to bypass host/RSVP/visibility/block rules.
+        if not self._eligible_for_event_chat(post_id):
+            return None
+        preferences = self.event_chat_preferences_for_posts([post_id]).get(post_id, {})
+        return {"user_id": self.user.id, "post_id": post_id,
+                "muted": preferences.get("muted", False), "left": preferences.get("left", False)}
+
+    def set_event_chat_settings(
+        self, post_id: str, *, muted: bool | None = None, left: bool | None = None,
+    ) -> dict[str, object] | None:
+        if not self._eligible_for_event_chat(post_id):
+            return None
+        user_id = self.user.id
+        if self.postgres_social is not None:
+            preferences = self.postgres_social.set_event_chat_preferences(user_id, post_id, muted=muted, left=left)
+        else:
+            with self._state_lock:
+                previous = self.event_chat_preferences.get(user_id, {}).get(post_id)
+                preferences = {"muted": False, "left": False, **(previous or {})}
+                if muted is not None:
+                    preferences["muted"] = muted
+                if left is not None:
+                    preferences["left"] = left
+                self.event_chat_preferences.setdefault(user_id, {})[post_id] = preferences
+                try:
+                    self._save_state()
+                except Exception:
+                    if previous is None:
+                        self.event_chat_preferences[user_id].pop(post_id, None)
+                        if not self.event_chat_preferences[user_id]:
+                            self.event_chat_preferences.pop(user_id)
+                    else:
+                        self.event_chat_preferences[user_id][post_id] = previous
+                    raise
+        return {"user_id": user_id, "post_id": post_id, **preferences}
 
     def count_user_posts_since(self, user_id: str, since: datetime) -> int:
         if self.postgres_social is not None:
@@ -1860,6 +1914,11 @@ class DemoStore:
             for message in self.event_chat_messages
             if message.post_id != post_id
         ]
+        self.event_chat_preferences = {
+            owner: {event_id: preferences for event_id, preferences in events.items() if event_id != post_id}
+            for owner, events in self.event_chat_preferences.items()
+            if any(event_id != post_id for event_id in events)
+        }
         self.liked_comment_ids.difference_update(removed_comment_ids)
         self._save_state()
         return post
@@ -2033,7 +2092,7 @@ class DemoStore:
             )
         return attendees
 
-    def can_access_event_chat(self, post_id: str, *, sender_user_id: str | None = None) -> bool:
+    def _eligible_for_event_chat(self, post_id: str, *, sender_user_id: str | None = None) -> bool:
         if self.user.banned:
             return False
         post = self.get_visible_post(post_id, self.user.id)
@@ -2058,6 +2117,11 @@ class DemoStore:
         if self.postgres_social is not None:
             return self.postgres_social.is_rsvped(self.user.id, post_id)
         return self.user.id in self.rsvp_user_ids_by_post.get(post_id, set())
+
+    def can_access_event_chat(self, post_id: str, *, sender_user_id: str | None = None) -> bool:
+        if not self._eligible_for_event_chat(post_id, sender_user_id=sender_user_id):
+            return False
+        return not self.event_chat_preferences_for_posts([post_id]).get(post_id, {}).get("left", False)
 
     def list_event_chat_messages(self, post_id: str) -> list[EventChatMessage] | None:
         if not self.can_access_event_chat(post_id):
@@ -2457,6 +2521,19 @@ class DemoStore:
                 if isinstance(item, dict) and self.get_post(str(item.get("post_id", ""))) is not None
             ]
 
+        preferences_data = data.get("event_chat_preferences")
+        if isinstance(preferences_data, dict):
+            self.event_chat_preferences = {
+                user_id: {
+                    post_id: {"muted": preferences.get("muted") is True, "left": preferences.get("left") is True}
+                    for post_id, preferences in events.items()
+                    if isinstance(post_id, str) and isinstance(preferences, dict)
+                    and self.get_post(post_id) is not None
+                }
+                for user_id, events in preferences_data.items()
+                if isinstance(user_id, str) and isinstance(events, dict)
+            }
+
         notifications_data = data.get("social_notifications")
         if isinstance(notifications_data, list):
             self.social_notifications = [
@@ -2628,6 +2705,7 @@ class DemoStore:
                 comment.model_dump(mode="json") for comment in self.comments
             ],
             "event_chat_messages": [message.model_dump(mode="json") for message in self.event_chat_messages],
+            "event_chat_preferences": self.event_chat_preferences,
             "social_notifications": [
                 notification.model_dump(mode="json")
                 for notification in self.social_notifications

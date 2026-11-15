@@ -39,6 +39,11 @@ class ReadMessages(BaseModel):
     last_message_id: str = Field(min_length=1, max_length=120)
 
 
+class UpdateSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    muted: bool = Field(strict=True)
+
+
 class UpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     accepted: bool | None = None
@@ -91,6 +96,18 @@ def send_message(thread_id: str, payload: SendMessage, user: User = Depends(requ
     if payload.attachment_id is not None:
         return service.send(user, thread_id, payload.text, payload.client_message_id, payload.shared_post_id, payload.attachment_id)
     return service.send(user, thread_id, payload.text, payload.client_message_id, payload.shared_post_id)
+
+
+@router.patch("/threads/{thread_id}/settings")
+def update_settings(thread_id: str, payload: UpdateSettings, user: User = Depends(require_authenticated_user), service: DirectMessageService = Depends(get_direct_message_service)):
+    api_rate_limiter.enforce(RateLimitRule(scope="messages:settings", key=user.id, limit=60, window_seconds=300))
+    return service.set_muted(user, thread_id, payload.muted)
+
+
+@router.delete("/threads/{thread_id}")
+def delete_thread(thread_id: str, user: User = Depends(require_authenticated_user), service: DirectMessageService = Depends(get_direct_message_service)):
+    api_rate_limiter.enforce(RateLimitRule(scope="messages:clear", key=user.id, limit=60, window_seconds=300))
+    return service.clear_thread(user, thread_id)
 
 
 @router.post("/threads/{thread_id}/read")

@@ -33,6 +33,9 @@ class LocalSqlConnection:
             CREATE TABLE social_reposts (user_id TEXT, post_id TEXT);
             CREATE TABLE social_follows (follower_user_id TEXT, followed_user_id TEXT);
             CREATE TABLE social_blocks (user_id TEXT, blocked_user_id TEXT);
+            CREATE TABLE social_event_chat_preferences (user_id TEXT, post_id TEXT,
+                muted BOOLEAN NOT NULL DEFAULT FALSE, left_chat BOOLEAN NOT NULL DEFAULT FALSE,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(user_id, post_id));
         """)
 
     def __enter__(self):

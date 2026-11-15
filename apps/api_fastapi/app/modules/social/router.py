@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.auth import optional_authenticated_user, require_authenticated_user
@@ -97,6 +97,11 @@ class EventChatMessageCreateRequest(BaseModel):
         return self
 
 
+class EventChatSettingsUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    muted: bool = Field(strict=True)
+
+
 class SocialReportCreateRequest(BaseModel):
     target_type: Literal["post", "profile", "comment", "message"]
     target_id: str = Field(min_length=1, max_length=120)
@@ -185,11 +190,17 @@ def list_upcoming_events(
 @router.get("/event-chats")
 def list_event_chats(
     request: Request,
+    response: Response,
     limit: int = Query(default=200, ge=1, le=300),
     _user=Depends(require_authenticated_user),
 ):
     _limit_public_read(request, "event-chats", limit=120)
-    return store.list_event_chat_posts(limit=limit)
+    response.headers["Cache-Control"] = "private, no-store"
+    posts = store.list_event_chat_posts(limit=limit)
+    preferences = store.event_chat_preferences_for_posts([post.id for post in posts])
+    return [{**post.model_dump(mode="json"),
+             "chat_muted": preferences.get(post.id, {}).get("muted", False),
+             "chat_left": False} for post in posts]
 
 
 @router.get("/relationships")
@@ -384,11 +395,56 @@ def list_event_chat(post_id: str, _user=Depends(require_authenticated_user)):
         raise HTTPException(status_code=404, detail="Event post not found.")
     messages = store.list_event_chat_messages(post_id)
     if messages is None:
-        raise HTTPException(
-            status_code=403,
-            detail="Join this event to enter its group chat.",
-        )
+        raise _event_chat_forbidden(post_id)
     return messages
+
+
+def _event_chat_forbidden(post_id: str) -> HTTPException:
+    settings = store.get_event_chat_settings(post_id)
+    if settings is not None and settings["left"]:
+        return HTTPException(status_code=403, detail={
+            "code": "event_chat_left",
+            "message": "You left this event chat. Rejoin to read or send messages.",
+        })
+    return HTTPException(status_code=403, detail="Join this event to enter its group chat.")
+
+
+def _event_chat_settings_result(post_id: str, result: dict[str, object] | None, response: Response):
+    if result is None:
+        post = store.get_post(post_id)
+        if post is None or post.post_type not in {"surf_plan", "looking_for_buddy"}:
+            raise HTTPException(status_code=404, detail="Event post not found.")
+        raise HTTPException(status_code=403, detail="Join this event to enter its group chat.")
+    response.headers["Cache-Control"] = "private, no-store"
+    return result
+
+
+@router.get("/posts/{post_id}/chat/settings")
+def get_event_chat_settings(post_id: str, response: Response, _user=Depends(require_authenticated_user)):
+    return _event_chat_settings_result(post_id, store.get_event_chat_settings(post_id), response)
+
+
+@router.patch("/posts/{post_id}/chat/settings")
+def update_event_chat_settings(
+    post_id: str, payload: EventChatSettingsUpdateRequest, response: Response,
+    user=Depends(require_authenticated_user),
+):
+    _limit_user_action(user.id, "event-chat-settings", 200)
+    return _event_chat_settings_result(
+        post_id, store.set_event_chat_settings(post_id, muted=payload.muted), response,
+    )
+
+
+@router.post("/posts/{post_id}/chat/leave")
+def leave_event_chat(post_id: str, response: Response, user=Depends(require_authenticated_user)):
+    _limit_user_action(user.id, "event-chat-settings", 200)
+    return _event_chat_settings_result(post_id, store.set_event_chat_settings(post_id, left=True), response)
+
+
+@router.post("/posts/{post_id}/chat/join")
+def rejoin_event_chat(post_id: str, response: Response, user=Depends(require_authenticated_user)):
+    _limit_user_action(user.id, "event-chat-settings", 200)
+    return _event_chat_settings_result(post_id, store.set_event_chat_settings(post_id, left=False), response)
 
 
 @router.post("/posts/{post_id}/chat")
@@ -418,10 +474,7 @@ def create_event_chat_message(
         attachment_id=payload.attachment_id,
     )
     if message is None:
-        raise HTTPException(
-            status_code=403,
-            detail="Join this event to enter its group chat.",
-        )
+        raise _event_chat_forbidden(post_id)
     return message
 
 

@@ -286,11 +286,51 @@ class PostgresSocialRepository:
                     WHERE (user_id = %s AND blocked_user_id = posts.user_id)
                        OR (blocked_user_id = %s AND user_id = posts.user_id)
                   )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM social_event_chat_preferences AS preferences
+                    WHERE preferences.user_id = %s AND preferences.post_id = posts.id
+                      AND preferences.left_chat = TRUE
+                  )
                 ORDER BY posts.created_at DESC LIMIT %s
                 """,
-                (user_id, user_id, user_id, user_id, user_id, user_id, limit),
+                (user_id, user_id, user_id, user_id, user_id, user_id, user_id, limit),
             ).fetchall()
         return [SocialPost.model_validate(_payload_dict(row["payload"])) for row in rows]
+
+    def event_chat_preferences(self, user_id: str, post_ids: list[str]) -> dict[str, dict[str, bool]]:
+        if not post_ids:
+            return {}
+        placeholders = ", ".join("%s" for _ in post_ids)
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT post_id, muted, left_chat FROM social_event_chat_preferences
+                WHERE user_id = %s AND post_id IN ({placeholders})
+                """,
+                (user_id, *post_ids),
+            ).fetchall()
+        return {row["post_id"]: {"muted": bool(row["muted"]), "left": bool(row["left_chat"])} for row in rows}
+
+    def set_event_chat_preferences(
+        self, user_id: str, post_id: str, *, muted: bool | None = None, left: bool | None = None,
+    ) -> dict[str, bool]:
+        # Each operation changes only its supplied field. Concurrent mute/leave
+        # requests must not overwrite the other preference with an old default.
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                INSERT INTO social_event_chat_preferences (user_id, post_id, muted, left_chat)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (user_id, post_id) DO UPDATE
+                SET muted = COALESCE(%s, social_event_chat_preferences.muted),
+                    left_chat = COALESCE(%s, social_event_chat_preferences.left_chat),
+                    updated_at = NOW()
+                RETURNING muted, left_chat
+                """,
+                (user_id, post_id, muted if muted is not None else False,
+                 left if left is not None else False, muted, left),
+            ).fetchone()
+        return {"muted": bool(row["muted"]), "left": bool(row["left_chat"])}
 
     def save_post(self, post: SocialPost) -> None:
         payload = post.model_dump(mode="json")
@@ -966,6 +1006,7 @@ class PostgresSocialRepository:
                 "social_comment_likes",
                 "social_reposts",
                 "social_rsvps",
+                "social_event_chat_preferences",
             ):
                 connection.execute(
                     f"DELETE FROM {table} WHERE user_id = %s",
@@ -1008,7 +1049,7 @@ class PostgresSocialRepository:
         with self._connect() as connection, connection.transaction():
             from app.core.media_uploads import upload_ledger
             upload_ledger.queue_chat_scope_deletion("event", post_id, connection=connection)
-            for table in ("social_post_likes", "social_reposts", "social_rsvps"):
+            for table in ("social_post_likes", "social_reposts", "social_rsvps", "social_event_chat_preferences"):
                 connection.execute(
                     f"DELETE FROM {table} WHERE post_id = %s",
                     (post_id,),
@@ -1134,6 +1175,21 @@ class PostgresSocialRepository:
                 "CREATE INDEX IF NOT EXISTS social_reposts_feed_cursor_idx ON social_reposts (user_id, created_at DESC, post_id DESC)"
             )
             self._create_user_post_table(connection, "social_rsvps")
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS social_event_chat_preferences (
+                    user_id TEXT NOT NULL,
+                    post_id TEXT NOT NULL,
+                    muted BOOLEAN NOT NULL DEFAULT FALSE,
+                    left_chat BOOLEAN NOT NULL DEFAULT FALSE,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    PRIMARY KEY (user_id, post_id)
+                )
+                """
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS social_event_chat_preferences_post_idx ON social_event_chat_preferences (post_id)"
+            )
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS social_event_messages (

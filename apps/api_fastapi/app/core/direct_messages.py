@@ -55,6 +55,14 @@ def _message_preview(message: dict | None) -> str:
     return "Shared a post"
 
 
+def _visible_thread(thread: dict, user_id: str) -> dict:
+    result = deepcopy(thread)
+    participant = result["participants"][user_id]
+    cutoff = participant.get("cleared_sequence", 0)
+    result["messages"] = [item for item in result["messages"] if item["sequence"] > cutoff]
+    return result
+
+
 class JsonDirectMessageRepository:
     """Durable single-host fallback; file locking also covers multiple workers."""
 
@@ -103,39 +111,42 @@ class JsonDirectMessageRepository:
                     "created_by_user_id": user_id,
                     "created_at": _now().isoformat(), "updated_at": _now().isoformat(), "messages": [],
                     "participants": {
-                        user_id: {"accepted": True, "declined": False, "read_sequence": 0},
-                        peer_id: {"accepted": recipient_accepts, "declined": False, "read_sequence": 0},
+                        user_id: {"accepted": True, "declined": False, "read_sequence": 0, "cleared_sequence": 0, "muted": False},
+                        peer_id: {"accepted": recipient_accepts, "declined": False, "read_sequence": 0, "cleared_sequence": 0, "muted": False},
                     },
                 }
             thread = threads[identifier]
             thread["participants"][user_id].update(accepted=True, declined=False)
-            return deepcopy(thread)
+            return _visible_thread(thread, user_id)
 
     def get_thread(self, thread_id: str, user_id: str) -> dict | None:
         with self._state() as state:
             thread = state["threads"].get(thread_id)
             if thread is None or user_id not in thread["participants"]:
                 return None
-            return deepcopy(thread)
+            return _visible_thread(thread, user_id)
 
     def attachment_message_exists(self, thread_id: str, user_id: str, message_id: str, attachment_id: str) -> bool:
         with self._state() as state:
             thread = state["threads"].get(thread_id)
             return bool(thread is not None and user_id in thread["participants"] and any(
-                item["id"] == message_id and (_attachment(item.get("attachment")) or {}).get("id") == attachment_id
+                item["id"] == message_id and item["sequence"] > thread["participants"][user_id].get("cleared_sequence", 0)
+                and (_attachment(item.get("attachment")) or {}).get("id") == attachment_id
                 for item in thread["messages"]
             ))
 
     def list_threads(self, user_id: str) -> list[dict]:
         with self._state() as state:
-            return deepcopy(sorted(
-                (thread for thread in state["threads"].values()
-                 if user_id in thread["participants"] and not thread["participants"][user_id]["declined"] and thread["messages"]),
+            return sorted(
+                [visible for thread in state["threads"].values()
+                 if user_id in thread["participants"] and not thread["participants"][user_id]["declined"]
+                 if (visible := _visible_thread(thread, user_id))["messages"]],
                 key=lambda item: item["updated_at"], reverse=True,
-            ))
+            )
 
     def unread_threads(self, user_id: str) -> list[dict]:
-        return self.list_threads(user_id)
+        return [thread for thread in self.list_threads(user_id)
+                if not thread["participants"][user_id].get("muted", False)]
 
     def send(self, thread_id: str, user_id: str, text: str, client_id: str, shared_post_id: str | None, daily_limit: int, *, attachment: dict | None = None, claim_attachment=None) -> dict:
         with self._state(True) as state:
@@ -178,7 +189,8 @@ class JsonDirectMessageRepository:
             thread = state["threads"].get(thread_id)
             if thread is None or user_id not in thread["participants"]:
                 raise HTTPException(status_code=404, detail="Conversation not found.")
-            marker = next((item for item in thread["messages"] if item["id"] == last_message_id), None)
+            marker = next((item for item in thread["messages"] if item["id"] == last_message_id
+                           and item["sequence"] > thread["participants"][user_id].get("cleared_sequence", 0)), None)
             if marker is None:
                 raise HTTPException(status_code=404, detail="Message not found in this conversation.")
             participant = thread["participants"][user_id]
@@ -197,7 +209,25 @@ class JsonDirectMessageRepository:
                     participant["declined"] = False
             if declined is not None:
                 participant["declined"] = declined
-            return deepcopy(thread)
+            return _visible_thread(thread, user_id)
+
+    def set_muted(self, thread_id: str, user_id: str, muted: bool) -> dict:
+        with self._state(True) as state:
+            thread = state["threads"].get(thread_id)
+            if thread is None or user_id not in thread["participants"]:
+                raise HTTPException(status_code=404, detail="Conversation not found.")
+            thread["participants"][user_id]["muted"] = muted
+            return _visible_thread(thread, user_id)
+
+    def clear_thread(self, thread_id: str, user_id: str) -> None:
+        with self._state(True) as state:
+            thread = state["threads"].get(thread_id)
+            if thread is None or user_id not in thread["participants"]:
+                raise HTTPException(status_code=404, detail="Conversation not found.")
+            participant = thread["participants"][user_id]
+            cutoff = max((item["sequence"] for item in thread["messages"]), default=0)
+            participant["cleared_sequence"] = max(participant.get("cleared_sequence", 0), cutoff)
+            participant["read_sequence"] = max(participant["read_sequence"], cutoff)
 
     def delete_user(self, user_id: str) -> None:
         with self._state(True) as state:
@@ -235,7 +265,8 @@ def _unread(thread: dict, user_id: str) -> int:
     participant = thread["participants"][user_id]
     if participant["declined"]:
         return 0
-    return sum(message["sender_user_id"] != user_id and message["sequence"] > participant["read_sequence"] for message in thread["messages"])
+    cutoff = max(participant["read_sequence"], participant.get("cleared_sequence", 0))
+    return sum(message["sender_user_id"] != user_id and message["sequence"] > cutoff for message in thread["messages"])
 
 
 class PostgresDirectMessageRepository:
@@ -282,6 +313,8 @@ class PostgresDirectMessageRepository:
                 client_message_id TEXT NOT NULL, shared_post_id TEXT,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 UNIQUE(thread_id, sender_user_id, client_message_id))""")
+            connection.execute("ALTER TABLE direct_message_participants ADD COLUMN IF NOT EXISTS muted BOOLEAN NOT NULL DEFAULT FALSE")
+            connection.execute("ALTER TABLE direct_message_participants ADD COLUMN IF NOT EXISTS cleared_sequence BIGINT NOT NULL DEFAULT 0")
             connection.execute("CREATE INDEX IF NOT EXISTS direct_message_inbox_idx ON direct_message_participants(user_id, thread_id)")
             connection.execute("CREATE INDEX IF NOT EXISTS direct_message_thread_sequence_idx ON direct_messages(thread_id, sequence DESC)")
             connection.execute("ALTER TABLE direct_messages ADD COLUMN IF NOT EXISTS attachment JSONB")
@@ -297,12 +330,13 @@ class PostgresDirectMessageRepository:
         # The aggregate count is exact even when only the newest messages are loaded.
         unread = connection.execute("""SELECT COUNT(*) AS count FROM direct_messages m
             JOIN direct_message_participants p ON p.thread_id=m.thread_id AND p.user_id=%s
-            WHERE m.thread_id=%s AND m.sender_user_id<>%s AND m.sequence>p.read_sequence AND NOT p.declined""", (user_id, thread_id, user_id)).fetchone()
+            WHERE m.thread_id=%s AND m.sender_user_id<>%s AND m.sequence>GREATEST(p.read_sequence,p.cleared_sequence) AND NOT p.declined""", (user_id, thread_id, user_id)).fetchone()
         limit = "" if all_messages else " LIMIT 100"
-        messages = connection.execute("SELECT * FROM direct_messages WHERE thread_id=%s ORDER BY sequence DESC" + limit, (thread_id,)).fetchall()
+        participant = next(item for item in participants if item["user_id"] == user_id)
+        messages = connection.execute("SELECT * FROM direct_messages WHERE thread_id=%s AND sequence>%s ORDER BY sequence DESC" + limit, (thread_id, participant.get("cleared_sequence", 0))).fetchall()
         return {
             **dict(row), "created_at": _iso(row["created_at"]), "updated_at": _iso(row["updated_at"]),
-            "participants": {item["user_id"]: {"accepted": item["accepted"], "declined": item["declined"], "read_sequence": item["read_sequence"]} for item in participants},
+            "participants": {item["user_id"]: {"accepted": item["accepted"], "declined": item["declined"], "read_sequence": item["read_sequence"], "cleared_sequence": item.get("cleared_sequence", 0), "muted": item.get("muted", False)} for item in participants},
             "messages": [{**dict(item), "created_at": _iso(item["created_at"])} for item in reversed(messages)],
             "unread_count": int(unread["count"]),
         }
@@ -333,6 +367,7 @@ class PostgresDirectMessageRepository:
                 SELECT 1 FROM direct_messages m
                 JOIN direct_message_participants p ON p.thread_id=m.thread_id
                 WHERE m.thread_id=%s AND p.user_id=%s AND m.id=%s
+                  AND m.sequence>p.cleared_sequence
                   AND m.attachment->>'id'=%s
                 ) AS present""", (thread_id, user_id, message_id, attachment_id)).fetchone()
         return bool(row and row["present"])
@@ -341,7 +376,7 @@ class PostgresDirectMessageRepository:
         # One bounded query loads only the last preview per thread. Never fetch
         # a hundred message bodies per inbox row, or perform N+1 user lookups.
         with self.social._connect() as connection:
-            rows = connection.execute("""SELECT t.*, p.accepted, p.declined, p.read_sequence,
+            rows = connection.execute("""SELECT t.*, p.accepted, p.declined, p.read_sequence, p.cleared_sequence, p.muted,
                 peer.user_payload AS peer_payload,
                 latest.id AS last_id, latest.sender_user_id AS last_sender,
                 latest.text AS last_text, latest.client_message_id AS last_client_id,
@@ -352,11 +387,11 @@ class PostgresDirectMessageRepository:
                 FROM direct_message_threads t
                 JOIN direct_message_participants p ON p.thread_id=t.id
                 JOIN auth_accounts peer ON peer.user_payload->>'id'=CASE WHEN t.user_a=%s THEN t.user_b ELSE t.user_a END
-                JOIN LATERAL (SELECT * FROM direct_messages m WHERE m.thread_id=t.id
+                JOIN LATERAL (SELECT * FROM direct_messages m WHERE m.thread_id=t.id AND m.sequence>p.cleared_sequence
                     ORDER BY m.sequence DESC LIMIT 1) latest ON TRUE
                 JOIN LATERAL (SELECT COUNT(*) AS count FROM direct_messages m
                     WHERE m.thread_id=t.id AND m.sender_user_id<>%s
-                    AND m.sequence>p.read_sequence) unread ON TRUE
+                    AND m.sequence>GREATEST(p.read_sequence,p.cleared_sequence)) unread ON TRUE
                 WHERE p.user_id=%s AND NOT p.declined
                 AND NOT COALESCE((peer.user_payload->>'banned')::boolean,FALSE)
                 AND NOT EXISTS(SELECT 1 FROM social_blocks b
@@ -366,7 +401,7 @@ class PostgresDirectMessageRepository:
             return [{
                 "id": row["id"], "user_a": row["user_a"], "user_b": row["user_b"],
                 "created_at": _iso(row["created_at"]), "updated_at": _iso(row["updated_at"]),
-                "participants": {user_id: {"accepted": row["accepted"], "declined": row["declined"], "read_sequence": row["read_sequence"]}},
+                "participants": {user_id: {"accepted": row["accepted"], "declined": row["declined"], "read_sequence": row["read_sequence"], "cleared_sequence": row.get("cleared_sequence", 0), "muted": row.get("muted", False)}},
                 "unread_count": int(row["unread_count"]),
                 "_peer": User.model_validate(row["peer_payload"]),
                 "messages": [{"id": row["last_id"], "sender_user_id": row["last_sender"],
@@ -385,7 +420,7 @@ class PostgresDirectMessageRepository:
                 JOIN direct_message_participants p ON p.thread_id=m.thread_id AND p.user_id=%s
                 JOIN direct_message_threads t ON t.id=m.thread_id
                 JOIN auth_accounts peer ON peer.user_payload->>'id'=CASE WHEN t.user_a=%s THEN t.user_b ELSE t.user_a END
-                WHERE m.sender_user_id<>%s AND m.sequence>p.read_sequence AND NOT p.declined
+                WHERE m.sender_user_id<>%s AND m.sequence>GREATEST(p.read_sequence,p.cleared_sequence) AND NOT p.declined AND NOT p.muted
                 AND NOT COALESCE((peer.user_payload->>'banned')::boolean,FALSE)
                 AND NOT EXISTS(SELECT 1 FROM social_blocks b
                     WHERE (b.user_id=%s AND b.blocked_user_id=peer.user_payload->>'id')
@@ -427,13 +462,13 @@ class PostgresDirectMessageRepository:
         with self.social._connect() as connection, connection.transaction():
             marker = connection.execute("""SELECT m.sequence FROM direct_messages m
                 JOIN direct_message_participants p ON p.thread_id=m.thread_id
-                WHERE m.id=%s AND m.thread_id=%s AND p.user_id=%s""", (last_message_id, thread_id, user_id)).fetchone()
+                WHERE m.id=%s AND m.thread_id=%s AND p.user_id=%s AND m.sequence>p.cleared_sequence""", (last_message_id, thread_id, user_id)).fetchone()
             if marker is None:
                 raise HTTPException(status_code=404, detail="Message not found in this conversation.")
             connection.execute("UPDATE direct_message_participants SET read_sequence=GREATEST(read_sequence,%s) WHERE thread_id=%s AND user_id=%s", (marker["sequence"], thread_id, user_id))
             row = connection.execute("""SELECT COUNT(*) AS count FROM direct_messages m
                 JOIN direct_message_participants p ON p.thread_id=m.thread_id AND p.user_id=%s
-                WHERE m.thread_id=%s AND m.sender_user_id<>%s AND m.sequence>p.read_sequence AND NOT p.declined""", (user_id, thread_id, user_id)).fetchone()
+                WHERE m.thread_id=%s AND m.sender_user_id<>%s AND m.sequence>GREATEST(p.read_sequence,p.cleared_sequence) AND NOT p.declined""", (user_id, thread_id, user_id)).fetchone()
             return int(row["count"])
 
     def set_request(self, thread_id: str, user_id: str, accepted: bool | None, declined: bool | None) -> dict:
@@ -458,6 +493,28 @@ class PostgresDirectMessageRepository:
             for row in rows:
                 upload_ledger.queue_chat_scope_deletion("direct", row["id"], connection=connection)
             connection.execute("DELETE FROM direct_message_threads WHERE user_a=%s OR user_b=%s", (user_id, user_id))
+
+    def set_muted(self, thread_id: str, user_id: str, muted: bool) -> dict:
+        with self.social._connect() as connection, connection.transaction():
+            row = connection.execute("""UPDATE direct_message_participants SET muted=%s
+                WHERE thread_id=%s AND user_id=%s RETURNING thread_id""", (muted, thread_id, user_id)).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Conversation not found.")
+            return self._get(connection, thread_id, user_id)
+
+    def clear_thread(self, thread_id: str, user_id: str) -> None:
+        with self.social._connect() as connection, connection.transaction():
+            # Use the same thread lock as send: the cutoff and read marker
+            # include exactly the messages committed before this clear.
+            row = connection.execute("""SELECT t.id FROM direct_message_threads t
+                JOIN direct_message_participants p ON p.thread_id=t.id
+                WHERE t.id=%s AND p.user_id=%s FOR UPDATE OF t""", (thread_id, user_id)).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Conversation not found.")
+            connection.execute("""UPDATE direct_message_participants
+                SET cleared_sequence=GREATEST(cleared_sequence,COALESCE((SELECT MAX(sequence) FROM direct_messages WHERE thread_id=%s),0)),
+                    read_sequence=GREATEST(read_sequence,COALESCE((SELECT MAX(sequence) FROM direct_messages WHERE thread_id=%s),0))
+                WHERE thread_id=%s AND user_id=%s""", (thread_id, thread_id, thread_id, user_id))
 
 
 class DirectMessageService:
@@ -528,8 +585,10 @@ class DirectMessageService:
             "updated_at": thread["updated_at"],
             "unread_count": thread.get("unread_count", _unread(thread, user.id)),
             "request_accepted": participant["accepted"], "request_declined": participant["declined"],
+            "muted": participant.get("muted", False),
         }
         if full:
+            result["cleared"] = participant.get("cleared_sequence", 0) > 0 and not thread["messages"]
             result["can_send_attachments"] = len(thread["participants"]) == 2 and all(
                 item.get("accepted") and not item.get("declined")
                 for item in thread["participants"].values()
@@ -596,6 +655,16 @@ class DirectMessageService:
         _, peer = self._authorized(user, thread_id)
         thread = self.repository.set_request(thread_id, user.id, accepted, declined)
         return self._summary(thread, user, peer)
+
+    def set_muted(self, user: User, thread_id: str, muted: bool) -> dict:
+        _, peer = self._authorized(user, thread_id)
+        thread = self.repository.set_muted(thread_id, user.id, muted)
+        return {"user_id": user.id, **self._summary(thread, user, peer, True)}
+
+    def clear_thread(self, user: User, thread_id: str) -> dict:
+        self._authorized(user, thread_id)
+        self.repository.clear_thread(thread_id, user.id)
+        return {"user_id": user.id, "thread_id": thread_id, "deleted": True}
 
     def unread_count(self, user: User) -> dict:
         if hasattr(self.repository, "unread_count"):
