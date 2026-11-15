@@ -16,6 +16,10 @@ import 'package:mobile_flutter/core/network/surf_repository.dart';
 import 'package:mobile_flutter/core/notifications/notification_service.dart';
 import 'package:mobile_flutter/features/guest/guest_explore_page.dart';
 import 'package:mobile_flutter/features/home/home_page.dart';
+import 'package:mobile_flutter/features/spots/surf_map_markers.dart';
+
+Finder get _eventsSwitch => find.byKey(const ValueKey('guest-map-show-events'));
+Finder get _spotsSwitch => find.byKey(const ValueKey('guest-map-show-spots'));
 
 Map<String, dynamic> _spot(
   String id,
@@ -337,7 +341,7 @@ void main() {
           findsOneWidget,
         );
         expect(find.byKey(const ValueKey('guest-list-batu')), findsNothing);
-        await tester.ensureVisible(find.byType(Switch));
+        await tester.ensureVisible(_eventsSwitch);
         await tester.tap(find.byType(DropdownButtonFormField<String>).first);
         await tester.pumpAndSettle();
         await tester.tap(find.text('Indonesia').last);
@@ -409,7 +413,7 @@ void main() {
             .path,
         '/explore',
       );
-      expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+      expect(tester.widget<Switch>(_eventsSwitch).value, isTrue);
       expect(find.byType(GuestMapCanvas), findsOneWidget);
       expect(find.byType(NavigationBar), findsNothing);
       expect(find.byKey(const ValueKey('guest-event-batu')), findsOneWidget);
@@ -449,7 +453,7 @@ void main() {
           '/explore',
         );
         expect(find.byType(GuestMapCanvas), findsOneWidget);
-        expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+        expect(tester.widget<Switch>(_eventsSwitch).value, isTrue);
         expect(transport.requests.toSet(), {'/public/spots', '/public/events'});
         expect(tester.takeException(), isNull);
       },
@@ -471,7 +475,7 @@ void main() {
           '/explore',
           _Notifications(),
         );
-        await tester.tap(find.byType(Switch));
+        await tester.tap(_eventsSwitch);
         await tester.tap(find.byType(DropdownButtonFormField<String>).first);
         await tester.pumpAndSettle();
         await tester.tap(find.text('Australia').last);
@@ -506,7 +510,7 @@ void main() {
               .path,
           '/explore',
         );
-        expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+        expect(tester.widget<Switch>(_eventsSwitch).value, isTrue);
         expect(
           tester.widget<GuestMapCanvas>(find.byType(GuestMapCanvas)).spots,
           hasLength(_spots.length),
@@ -524,6 +528,77 @@ void main() {
 
   for (final width in [390.0, 1440.0]) {
     testWidgets(
+      'spot and event switches independently preserve guest map camera at $width',
+      (tester) async {
+        tester.view.physicalSize = Size(width, 1000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final transport = _PublicTransport();
+        final notifications = _Notifications();
+        await _show(tester, transport, '/explore', notifications);
+        expect(tester.widget<Switch>(_spotsSwitch).value, isTrue);
+        expect(tester.widget<Switch>(_eventsSwitch).value, isTrue);
+        // Narrow layouts may wrap for larger text without clipping a switch.
+        if (width >= 600) {
+          expect(
+            tester.getCenter(_spotsSwitch).dy,
+            tester.getCenter(_eventsSwitch).dy,
+          );
+        }
+        for (final toggle in [_spotsSwitch, _eventsSwitch]) {
+          expect(tester.getRect(toggle).left, greaterThanOrEqualTo(0));
+          expect(tester.getRect(toggle).right, lessThanOrEqualTo(width));
+        }
+        expect(find.byType(SurfMapSpotPin), findsNWidgets(_spots.length));
+        expect(find.byType(GuestEventMarker), findsOneWidget);
+        final original = tester.state(find.byType(GuestMapCanvas));
+        final map = tester.widget<FlutterMap>(find.byType(FlutterMap));
+        final controller = map.mapController!;
+        controller.move(controller.camera.center, controller.camera.zoom - .1);
+        await tester.pumpAndSettle();
+        final center = controller.camera.center;
+        final zoom = controller.camera.zoom;
+        final requests = List<String>.of(transport.requests);
+
+        await tester.tap(_spotsSwitch);
+        await tester.pumpAndSettle();
+        expect(find.byType(SurfMapSpotPin), findsNothing);
+        expect(find.byType(GuestEventMarker), findsOneWidget);
+        expect(find.byType(FlutterMap), findsOneWidget);
+        expect(tester.state(find.byType(GuestMapCanvas)), same(original));
+        expect(controller.camera.center, center);
+        expect(controller.camera.zoom, zoom);
+        expect(find.text('Popular spots'), findsOneWidget);
+
+        await tester.tap(_eventsSwitch);
+        await tester.pumpAndSettle();
+        expect(find.byType(SurfMapSpotPin), findsNothing);
+        expect(find.byType(GuestEventMarker), findsNothing);
+        expect(find.byType(FlutterMap), findsOneWidget);
+        expect(controller.camera.center, center);
+        expect(controller.camera.zoom, zoom);
+
+        await tester.tap(_spotsSwitch);
+        await tester.pumpAndSettle();
+        expect(find.byType(SurfMapSpotPin), findsNWidgets(_spots.length));
+        expect(find.byType(GuestEventMarker), findsNothing);
+        await tester.tap(_eventsSwitch);
+        await tester.pumpAndSettle();
+        expect(find.byType(GuestEventMarker), findsOneWidget);
+        expect(controller.camera.center, center);
+        expect(controller.camera.zoom, zoom);
+        expect(transport.requests, requests);
+        expect(notifications.initializations, 0);
+        expect(
+          transport.requests.every((p) => p.startsWith('/public/')),
+          isTrue,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
       'events can toggle without losing spots or fetching private data at $width',
       (tester) async {
         tester.view.physicalSize = Size(width, 1000);
@@ -534,11 +609,11 @@ void main() {
         await _show(tester, transport, '/explore', _Notifications());
         expect(find.byType(GuestEventMarker), findsOneWidget);
         final requests = transport.requests.length;
-        await tester.tap(find.byType(Switch));
+        await tester.tap(_eventsSwitch);
         await tester.pumpAndSettle();
         expect(find.byType(GuestEventMarker), findsNothing);
         expect(find.byKey(const ValueKey('guest-spot-batu')), findsOneWidget);
-        await tester.tap(find.byType(Switch));
+        await tester.tap(_eventsSwitch);
         await tester.pumpAndSettle();
         expect(find.byType(GuestEventMarker), findsOneWidget);
         expect(transport.requests.length, requests);
@@ -606,7 +681,7 @@ void main() {
   ) async {
     final transport = _PublicTransport();
     await _show(tester, transport, '/explore', _Notifications());
-    await tester.tap(find.byType(Switch));
+    await tester.tap(_eventsSwitch);
     await tester.enterText(find.byType(TextField), 'Canggu');
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('guest-spot-batu')));
@@ -660,7 +735,7 @@ void main() {
     final transport = _PublicTransport()..emptyEvents = true;
     await _show(tester, transport, '/explore', _Notifications());
     expect(find.byType(GuestMapCanvas), findsOneWidget);
-    expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+    expect(tester.widget<Switch>(_eventsSwitch).value, isTrue);
     expect(
       find.text(
         'No upcoming public events yet. Only public events with a date and mapped spot appear here.',

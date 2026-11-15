@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:mobile_flutter/core/network/api_models.dart';
 import 'package:mobile_flutter/core/network/demo_persistence.dart';
 import 'package:mobile_flutter/core/network/demo_seed.dart';
@@ -11,6 +12,7 @@ import 'package:mobile_flutter/core/network/surf_repository.dart';
 import 'package:mobile_flutter/features/home/home_page.dart';
 import 'package:mobile_flutter/features/social/social_profile.dart';
 import 'package:mobile_flutter/features/spots/map_events.dart';
+import 'package:mobile_flutter/features/spots/map_layer_switches.dart';
 import 'package:mobile_flutter/features/spots/spots_map_page.dart';
 import 'package:mobile_flutter/features/spots/spots_page.dart';
 import 'package:mobile_flutter/features/spots/surf_map_markers.dart';
@@ -97,6 +99,7 @@ class _Tiles extends TileProvider {
 class _Repository extends SurfRepository {
   _Repository() : super(Dio(), DemoPersistence());
   int eventLoads = 0;
+  int catalogLoads = 0;
   bool fail = false;
   List<SocialPostModel>? posts;
   @override
@@ -129,7 +132,10 @@ Future<ProviderContainer> _pump(
   final container = ProviderContainer(
     overrides: [
       surfRepositoryProvider.overrideWithValue(repository),
-      spotsProvider.overrideWith((_) async => spots ?? _spots),
+      spotsProvider.overrideWith((_) async {
+        repository.catalogLoads++;
+        return spots ?? _spots;
+      }),
       meProvider.overrideWith((_) async => DemoSeed.me.copyWith(id: 'viewer')),
       blockedUserIdsProvider.overrideWith((_) => {'blocked'}),
       spotsMapTileProviderFactory.overrideWithValue(() => _Tiles()),
@@ -160,6 +166,189 @@ Future<void> _finish(WidgetTester tester, ProviderContainer container) async {
 }
 
 void main() {
+  testWidgets('map layer switches expose independent accessible labels', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    var spots = true;
+    var events = true;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (_, update) => MapLayerSwitches(
+              showSpots: spots,
+              showEvents: events,
+              spotsSwitchKey: const ValueKey('spots-layer'),
+              eventsSwitchKey: const ValueKey('events-layer'),
+              onSpotsChanged: (value) => update(() => spots = value),
+              onEventsChanged: (value) => update(() => events = value),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.bySemanticsLabel('Show spots'), findsOneWidget);
+    expect(find.bySemanticsLabel('Show events'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('spots-layer')));
+    await tester.pumpAndSettle();
+    expect(spots, isFalse);
+    expect(events, isTrue);
+    semantics.dispose();
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final width in [390.0, 1440.0]) {
+    testWidgets(
+      'all layer combinations preserve camera and request counts at $width',
+      (tester) async {
+        final repository = _Repository();
+        final forecasts = <String>[];
+        final container = await _pump(
+          tester,
+          repository,
+          width: width,
+          forecasts: forecasts,
+        );
+        final spotsToggle = find.byKey(const ValueKey('main-map-show-spots'));
+        final eventsToggle = find.byKey(const ValueKey('main-map-show-events'));
+        expect(tester.widget<Switch>(spotsToggle).value, isTrue);
+        expect(tester.widget<Switch>(eventsToggle).value, isTrue);
+        if (width >= 980) {
+          expect(
+            tester.getTopLeft(spotsToggle).dy,
+            tester.getTopLeft(eventsToggle).dy,
+          );
+          expect(
+            tester.getTopLeft(spotsToggle).dx,
+            lessThan(tester.getTopLeft(eventsToggle).dx),
+          );
+        }
+        for (final toggle in [spotsToggle, eventsToggle]) {
+          expect(tester.getRect(toggle).left, greaterThanOrEqualTo(0));
+          expect(tester.getRect(toggle).right, lessThanOrEqualTo(width));
+        }
+        final map = tester.widget<FlutterMap>(find.byType(FlutterMap));
+        final mapState = tester.state(find.byType(FlutterMap));
+        map.mapController!.move(const LatLng(-8.70, 115.13), 9);
+        await tester.pumpAndSettle();
+        final center = map.mapController!.camera.center;
+        final zoom = map.mapController!.camera.zoom;
+        for (final layers in [
+          (false, true),
+          (false, false),
+          (true, false),
+          (true, true),
+        ]) {
+          if (tester.widget<Switch>(spotsToggle).value != layers.$1) {
+            await tester.tap(spotsToggle);
+            await tester.pumpAndSettle();
+          }
+          if (tester.widget<Switch>(eventsToggle).value != layers.$2) {
+            await tester.tap(eventsToggle);
+            await tester.pumpAndSettle();
+          }
+          expect(find.byType(FlutterMap), findsOneWidget);
+          expect(tester.state(find.byType(FlutterMap)), same(mapState));
+          expect(find.byType(SurfMapSpotPin), findsNWidgets(layers.$1 ? 3 : 0));
+          expect(find.byType(MapEventMarker), findsNWidgets(layers.$2 ? 2 : 0));
+          expect(map.mapController!.camera.center, center);
+          expect(map.mapController!.camera.zoom, zoom);
+        }
+        expect(repository.catalogLoads, 1);
+        expect(repository.eventLoads, 1);
+        expect(forecasts, isEmpty);
+        expect(find.text('Location'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await _finish(tester, container);
+      },
+    );
+
+    testWidgets(
+      'restoring spots respects saved-only without moving camera at $width',
+      (tester) async {
+        final repository = _Repository();
+        final container = await _pump(tester, repository, width: width);
+        container.read(favoriteSpotIdsProvider.notifier).replaceAll({'batu'});
+        await tester.tap(find.byKey(const ValueKey('main-map-saved-only')));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), 'maya');
+        await tester.pumpAndSettle();
+        final map = tester.widget<FlutterMap>(find.byType(FlutterMap));
+        final center = map.mapController!.camera.center;
+        final zoom = map.mapController!.camera.zoom;
+        final toggle = find.byKey(const ValueKey('main-map-show-spots'));
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+        expect(find.byType(SurfMapSpotPin), findsNothing);
+        expect(find.byType(MapEventMarker), findsNWidgets(2));
+        expect(find.byType(FlutterMap), findsOneWidget);
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+        expect(find.byType(SurfMapSpotPin), findsOneWidget);
+        expect(find.byKey(const ValueKey('map-spot-batu')), findsOneWidget);
+        expect(find.byKey(const ValueKey('map-spot-uluwatu')), findsNothing);
+        expect(
+          tester
+              .widget<Switch>(find.byKey(const ValueKey('main-map-saved-only')))
+              .value,
+          isTrue,
+        );
+        expect(map.mapController!.camera.center, center);
+        expect(map.mapController!.camera.zoom, zoom);
+        expect(repository.catalogLoads, 1);
+        expect(repository.eventLoads, 1);
+        expect(
+          tester.widget<TextField>(find.byType(TextField)).controller!.text,
+          'maya',
+        );
+        expect(tester.takeException(), isNull);
+        await _finish(tester, container);
+      },
+    );
+
+    testWidgets(
+      'hiding spots clears selected forecast but preserves location at $width',
+      (tester) async {
+        final repository = _Repository();
+        final forecasts = <String>[];
+        final container = await _pump(
+          tester,
+          repository,
+          width: width,
+          forecasts: forecasts,
+          initialSpotId: 'uluwatu',
+        );
+        expect(forecasts, ['uluwatu']);
+        final map = tester.widget<FlutterMap>(find.byType(FlutterMap));
+        final center = map.mapController!.camera.center;
+        final zoom = map.mapController!.camera.zoom;
+        final toggle = find.byKey(const ValueKey('main-map-show-spots'));
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+        expect(find.byType(SurfMapSpotPin), findsNothing);
+        expect(find.text('Back to Bali'), findsOneWidget);
+        expect(find.byType(MapEventMarker), findsOneWidget);
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+        final restored = tester.widget<SurfMapSpotPin>(
+          find.descendant(
+            of: find.byKey(const ValueKey('map-spot-uluwatu')),
+            matching: find.byType(SurfMapSpotPin),
+          ),
+        );
+        expect(restored.size, lessThan(40));
+        expect(forecasts, ['uluwatu']);
+        expect(map.mapController!.camera.center, center);
+        expect(map.mapController!.camera.zoom, zoom);
+        expect(repository.catalogLoads, 1);
+        expect(repository.eventLoads, 1);
+        expect(tester.takeException(), isNull);
+        await _finish(tester, container);
+      },
+    );
+  }
+
   testWidgets('pinch updates camera without rebuilding the spot catalog', (
     tester,
   ) async {

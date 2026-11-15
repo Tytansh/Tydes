@@ -14,6 +14,7 @@ import '../../core/network/public_preview_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../auth/auth_return_path.dart';
 import '../social/social_profile.dart';
+import '../spots/map_layer_switches.dart';
 import '../spots/map_tile_config.dart' as tiles;
 import '../spots/map_pinch_gestures.dart';
 import '../spots/surf_map_markers.dart';
@@ -177,6 +178,7 @@ class _GuestExplorePageState extends ConsumerState<GuestExplorePage> {
   final _scroll = ScrollController();
   String _country = '', _region = '';
   bool _showEvents = true;
+  bool _showSpots = true;
 
   @override
   void dispose() {
@@ -290,21 +292,36 @@ class _GuestExplorePageState extends ConsumerState<GuestExplorePage> {
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
       child: Column(
         children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Surf map',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-                ),
-              ),
-              const Text('Show events'),
-              const SizedBox(width: 8),
-              Switch(
-                value: _showEvents,
-                onChanged: (value) => setState(() => _showEvents = value),
-              ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const title = Text(
+                'Surf map',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+              );
+              final switches = MapLayerSwitches(
+                showSpots: _showSpots,
+                showEvents: _showEvents,
+                onSpotsChanged: (value) => setState(() => _showSpots = value),
+                onEventsChanged: (value) => setState(() => _showEvents = value),
+                spotsSwitchKey: const ValueKey('guest-map-show-spots'),
+                eventsSwitchKey: const ValueKey('guest-map-show-events'),
+              );
+              if (constraints.maxWidth >= 600) {
+                return Row(
+                  children: [
+                    const Expanded(child: title),
+                    switches,
+                  ],
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  title,
+                  Align(alignment: Alignment.centerRight, child: switches),
+                ],
+              );
+            },
           ),
           TextField(
             controller: _search,
@@ -430,6 +447,7 @@ class _GuestExplorePageState extends ConsumerState<GuestExplorePage> {
             child: GuestMapCanvas(
               key: ValueKey('$_country|$_region|${_search.text}'),
               spots: visible,
+              showSpots: _showSpots,
               eventGroups: groups,
               tileProviderFactory: ref.watch(guestTileProviderFactory),
               onSpot: (spot) => context.push('/spot/${spot.id}'),
@@ -596,12 +614,14 @@ class GuestMapCanvas extends StatefulWidget {
   const GuestMapCanvas({
     super.key,
     required this.spots,
+    this.showSpots = true,
     required this.eventGroups,
     required this.tileProviderFactory,
     required this.onSpot,
     required this.onEvents,
   });
   final List<PublicMapSpotPreview> spots;
+  final bool showSpots;
   final List<GuestMapEventGroup> eventGroups;
   final TileProvider Function() tileProviderFactory;
   final ValueChanged<PublicMapSpotPreview> onSpot;
@@ -649,7 +669,10 @@ class _GuestMapCanvasState extends State<GuestMapCanvas> {
               ),
               MarkerLayer(
                 markers: [
-                  for (final spot in widget.spots)
+                  for (final spot
+                      in widget.showSpots
+                          ? widget.spots
+                          : const <PublicMapSpotPreview>[])
                     Marker(
                       width: 32,
                       height: 32,

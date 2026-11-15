@@ -14,6 +14,7 @@ import '../home/home_page.dart';
 import '../social/social_profile.dart';
 import 'map_events.dart';
 import 'map_pinch_gestures.dart';
+import 'map_layer_switches.dart';
 import 'map_tile_config.dart' as tiles;
 import 'spots_page.dart';
 import 'surf_map_markers.dart';
@@ -52,6 +53,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
   String? _selectedSpotId;
   bool _savedOnly = false;
   bool _didApplyInitialSpot = false;
+  bool _showSpotPins = true;
   bool _showEvents = true;
 
   String get _searchQuery => _searchController.text.trim();
@@ -169,18 +171,17 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
                 child: Column(
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        const Text('Show events'),
-                        const SizedBox(width: 8),
-                        Switch(
-                          key: const ValueKey('main-map-show-events'),
-                          value: _showEvents,
-                          onChanged: (value) =>
-                              setState(() => _showEvents = value),
-                        ),
-                      ],
+                    MapLayerSwitches(
+                      showSpots: _showSpotPins,
+                      showEvents: _showEvents,
+                      spotsSwitchKey: const ValueKey('main-map-show-spots'),
+                      eventsSwitchKey: const ValueKey('main-map-show-events'),
+                      onSpotsChanged: (value) => setState(() {
+                        _showSpotPins = value;
+                        if (!value) _selectedSpotId = null;
+                      }),
+                      onEventsChanged: (value) =>
+                          setState(() => _showEvents = value),
                     ),
                     const SizedBox(height: 10),
                     Card(
@@ -390,6 +391,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                     child: _MapCanvas(
                       mapController: _mapController,
                       spots: displayedVisibleSpots,
+                      showSpots: _showSpotPins,
                       initialCenter: _centerOf(locationSpots),
                       initialZoom:
                           _selectedCountry == _allCountriesLabel &&
@@ -1127,6 +1129,7 @@ class _MapCanvas extends StatefulWidget {
   const _MapCanvas({
     required this.mapController,
     required this.spots,
+    required this.showSpots,
     required this.initialCenter,
     required this.initialZoom,
     required this.selectedSpotId,
@@ -1140,6 +1143,7 @@ class _MapCanvas extends StatefulWidget {
 
   final MapController mapController;
   final List<SpotModel> spots;
+  final bool showSpots;
   final LatLng initialCenter;
   final double initialZoom;
   final String? selectedSpotId;
@@ -1194,29 +1198,36 @@ class _MapCanvasState extends State<_MapCanvas> {
                 tileProvider: _tiles,
               ),
               MarkerLayer(
-                markers: widget.spots
-                    .map(
-                      (spot) => Marker(
-                        point: LatLng(spot.latitude, spot.longitude),
-                        width: widget.selectedSpotId == spot.id ? 120 : 32,
-                        height: widget.selectedSpotId == spot.id ? 112 : 32,
-                        child: GestureDetector(
-                          key: ValueKey('map-spot-${spot.id}'),
-                          onTap: () => widget.onSpotTap(spot),
-                          child: Tooltip(
-                            message: spot.name,
-                            child: _SpotMarker(
-                              spot: spot,
-                              isSelected: widget.selectedSpotId == spot.id,
-                              forecast: widget.selectedSpotId == spot.id
-                                  ? widget.selectedForecast
-                                  : null,
+                markers: !widget.showSpots
+                    ? const []
+                    : widget.spots
+                          .map(
+                            (spot) => Marker(
+                              point: LatLng(spot.latitude, spot.longitude),
+                              width: widget.selectedSpotId == spot.id
+                                  ? 120
+                                  : 32,
+                              height: widget.selectedSpotId == spot.id
+                                  ? 112
+                                  : 32,
+                              child: GestureDetector(
+                                key: ValueKey('map-spot-${spot.id}'),
+                                onTap: () => widget.onSpotTap(spot),
+                                child: Tooltip(
+                                  message: spot.name,
+                                  child: _SpotMarker(
+                                    spot: spot,
+                                    isSelected:
+                                        widget.selectedSpotId == spot.id,
+                                    forecast: widget.selectedSpotId == spot.id
+                                        ? widget.selectedForecast
+                                        : null,
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                      ),
-                    )
-                    .toList(),
+                          )
+                          .toList(),
               ),
               MarkerLayer(
                 markers: [
