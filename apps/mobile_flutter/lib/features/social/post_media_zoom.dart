@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -9,7 +8,7 @@ class PostMediaZoom extends StatefulWidget {
     super.key,
     required this.child,
     this.onZoomChanged,
-    this.showControls = kIsWeb,
+    this.showControls = false,
   });
 
   final Widget child;
@@ -225,7 +224,7 @@ class _PostMediaZoomState extends State<PostMediaZoom>
                   ),
                 ),
               ),
-              if (widget.showControls || _pinned)
+              if (widget.showControls)
                 Positioned(
                   top: 10,
                   right: 10,

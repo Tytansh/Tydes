@@ -1,10 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image/image.dart' as raster;
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
 import 'package:mobile_flutter/core/network/chat_media_models.dart';
 import 'package:mobile_flutter/core/network/api_models.dart';
@@ -98,17 +102,29 @@ class _MediaSession extends ChatMediaSession {
     photosEnabled: true,
     videosEnabled: true,
   );
-  int uploadCount = 0, capabilityReads = 0;
+  int uploadCount = 0, capabilityReads = 0, accessReads = 0;
+  bool videoAccess = false, videoThumbnail = false, failAccess = false;
+  Completer<Map<String, dynamic>>? pendingAccess;
   final canceled = <String>[];
   Completer<ChatMediaAttachment>? pending;
   Completer<void>? reservationGate;
   bool failUpload = false;
   @override
-  Future<Map<String, dynamic>> access(String id) async => {
-    'id': id,
-    'media_type': 'photo',
-    'url': 'https://private.example.invalid/$id.png',
-  };
+  Future<Map<String, dynamic>> access(String id) async {
+    accessReads++;
+    if (failAccess) throw StateError('Private attachment access expired.');
+    return pendingAccess?.future ??
+        {
+          'id': id,
+          'media_type': videoAccess ? 'video' : 'photo',
+          'url':
+              'https://private.example.invalid/$id.${videoAccess ? 'mp4' : 'png'}',
+          if (videoThumbnail)
+            'thumbnail_url':
+                'https://private.example.invalid/$id-thumbnail.png',
+        };
+  }
+
   @override
   Future<ChatMediaCapabilities> capabilities() async {
     capabilityReads++;
@@ -141,11 +157,12 @@ class _MediaSession extends ChatMediaSession {
 }
 
 class _NamedPhoto extends XFile {
-  _NamedPhoto()
+  _NamedPhoto([Uint8List? bytes])
     : super.fromData(
-        base64Decode(
-          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==',
-        ),
+        bytes ??
+            base64Decode(
+              'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==',
+            ),
         mimeType: 'image/png',
       );
   @override
@@ -162,13 +179,14 @@ Future<ProviderContainer> _show(
   bool allowed = true,
   Widget Function(Widget)? host,
   void Function()? onPick,
+  XFile? pickedFile,
 }) async {
   final container = ProviderContainer(
     overrides: [
       chatMediaApiProvider.overrideWithValue(_MediaApi(session)),
       chatMediaPickerProvider.overrideWithValue(() async {
         onPick?.call();
-        return _photo();
+        return pickedFile ?? _photo();
       }),
     ],
   );
@@ -202,7 +220,372 @@ Future<void> _pick(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+Uint8List _rasterPhoto(int width, int height) => Uint8List.fromList(
+  raster.encodePng(
+    raster.fill(
+      raster.Image(width: width, height: height),
+      color: raster.ColorRgb8(230, 70, 40),
+    ),
+  ),
+);
+
+class _ImageClient extends Fake implements HttpClient {
+  _ImageClient(this.bytes);
+  final Uint8List bytes;
+  int reads = 0;
+  @override
+  Future<HttpClientRequest> getUrl(Uri url) async {
+    reads++;
+    return _ImageRequest(bytes);
+  }
+}
+
+class _ImageRequest extends Fake implements HttpClientRequest {
+  _ImageRequest(this.bytes);
+  final Uint8List bytes;
+  @override
+  Future<HttpClientResponse> close() async => _ImageResponse(bytes);
+}
+
+class _ImageResponse extends Stream<List<int>> implements HttpClientResponse {
+  _ImageResponse(this.bytes);
+  final Uint8List bytes;
+  @override
+  int get contentLength => bytes.length;
+  @override
+  int get statusCode => 200;
+  @override
+  HttpClientResponseCompressionState get compressionState =>
+      HttpClientResponseCompressionState.notCompressed;
+  @override
+  StreamSubscription<List<int>> listen(
+    void Function(List<int>)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) => Stream<List<int>>.value(bytes).listen(
+    onData,
+    onError: onError,
+    onDone: onDone,
+    cancelOnError: cancelOnError,
+  );
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+_ImageClient _stubImages(Uint8List bytes) {
+  final previous = debugNetworkImageHttpClientProvider;
+  final client = _ImageClient(bytes);
+  PaintingBinding.instance.imageCache.clear();
+  PaintingBinding.instance.imageCache.clearLiveImages();
+  debugNetworkImageHttpClientProvider = () => client;
+  addTearDown(() {
+    debugNetworkImageHttpClientProvider = previous;
+    PaintingBinding.instance.imageCache.clear();
+    PaintingBinding.instance.imageCache.clearLiveImages();
+  });
+  return client;
+}
+
+void _mediaWidgetTest(
+  String description,
+  Future<void> Function(WidgetTester) run,
+) {
+  testWidgets(description, (tester) async {
+    final previous = debugNetworkImageHttpClientProvider;
+    try {
+      await run(tester);
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      debugNetworkImageHttpClientProvider = previous;
+      PaintingBinding.instance.imageCache.clear();
+      PaintingBinding.instance.imageCache.clearLiveImages();
+      await tester.pump();
+    }
+  });
+}
+
+Future<void> _decodedImage(WidgetTester tester) async {
+  // Codec completion runs outside the fake widget clock; no real I/O occurs.
+  await tester.runAsync(
+    () async => Future<void>.delayed(const Duration(milliseconds: 30)),
+  );
+  await tester.pumpAndSettle();
+  expect(
+    tester.renderObject<RenderImage>(find.byType(RawImage).first).image,
+    isNotNull,
+  );
+}
+
+void _expectLetterbox(
+  WidgetTester tester,
+  Finder image,
+  Size source,
+  Size frame,
+) {
+  expect(tester.getSize(image), frame);
+  expect(tester.widget<Image>(image).fit, BoxFit.contain);
+  final fitted = applyBoxFit(BoxFit.contain, source, frame);
+  expect(
+    fitted.source,
+    source,
+    reason: 'The entire photo/video frame is visible.',
+  );
+  expect(fitted.destination.width, lessThanOrEqualTo(frame.width));
+  expect(fitted.destination.height, lessThanOrEqualTo(frame.height));
+  expect(
+    fitted.destination.width / fitted.destination.height,
+    closeTo(source.width / source.height, .00001),
+  );
+  final black = find.ancestor(
+    of: image,
+    matching: find.byWidgetPredicate(
+      (widget) => widget is ColoredBox && widget.color == Colors.black,
+    ),
+  );
+  expect(black, findsWidgets, reason: 'Unused sides or top/bottom are black.');
+  if ((source.aspectRatio - frame.aspectRatio).abs() > .00001) {
+    expect(
+      fitted.destination == frame,
+      isFalse,
+      reason: 'Aspect mismatch is letterboxed, never cropped or stretched.',
+    );
+  }
+}
+
+Future<ProviderContainer> _showBubble(
+  WidgetTester tester,
+  _MediaSession session, {
+  double width = 600,
+  String type = 'photo',
+  Widget Function(Widget)? host,
+}) async {
+  tester.view.physicalSize = Size(width, 844);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  final container = ProviderContainer(
+    overrides: [
+      meProvider.overrideWith((_) async => DemoSeed.me.copyWith(id: 'alice')),
+      chatMediaApiProvider.overrideWithValue(_MediaApi(session)),
+    ],
+  );
+  addTearDown(container.dispose);
+  await container.read(meProvider.future);
+  final bubble = Align(
+    alignment: Alignment.topLeft,
+    child: SizedBox(
+      width: (width * .78 - 28).clamp(0, 280),
+      child: ChatMediaBubble(
+        key: const ValueKey('stable-attachment'),
+        attachment: ChatMediaAttachment(id: 'private-layout', mediaType: type),
+        ownerId: 'alice',
+        conversationType: 'direct',
+        conversationId: 'thread',
+      ),
+    ),
+  );
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(home: Scaffold(body: host?.call(bubble) ?? bubble)),
+    ),
+  );
+  if (session.pendingAccess == null) {
+    await tester.pump();
+    await tester.pump();
+    await tester.runAsync(
+      () async => Future<void>.delayed(const Duration(milliseconds: 30)),
+    );
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump();
+    await tester.pump();
+  }
+  return container;
+}
+
 void main() {
+  for (final shape in [
+    (80, 40, 'landscape'),
+    (40, 80, 'portrait'),
+    (40, 40, 'square'),
+  ]) {
+    for (final width in [320.0, 600.0]) {
+      _mediaWidgetTest(
+        '${shape.$3} private photo letterboxes within current chat bounds at $width',
+        (tester) async {
+          _stubImages(_rasterPhoto(shape.$1, shape.$2));
+          await _showBubble(tester, _MediaSession(), width: width);
+          await _decodedImage(tester);
+          final frame = Size((width * .78 - 28).clamp(0, 280), 190);
+          expect(tester.getSize(find.byType(ChatMediaBubble)), frame);
+          _expectLetterbox(
+            tester,
+            find.byType(Image),
+            Size(shape.$1.toDouble(), shape.$2.toDouble()),
+            frame,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+    _mediaWidgetTest(
+      '${shape.$3} composer photo keeps whole image in the same64px preview',
+      (tester) async {
+        final text = TextEditingController();
+        addTearDown(text.dispose);
+        await _show(
+          tester,
+          _MediaSession(),
+          text,
+          (_, _) async {},
+          pickedFile: _NamedPhoto(_rasterPhoto(shape.$1, shape.$2)),
+        );
+        await _pick(tester);
+        await _decodedImage(tester);
+        _expectLetterbox(
+          tester,
+          find.byType(Image),
+          Size(shape.$1.toDouble(), shape.$2.toDouble()),
+          const Size(64, 64),
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+    _mediaWidgetTest(
+      '${shape.$3} private video thumbnail is contained, not cropped',
+      (tester) async {
+        _stubImages(_rasterPhoto(shape.$1, shape.$2));
+        await _showBubble(
+          tester,
+          _MediaSession()
+            ..videoAccess = true
+            ..videoThumbnail = true,
+          type: 'video',
+        );
+        await _decodedImage(tester);
+        _expectLetterbox(
+          tester,
+          find.byType(Image),
+          Size(shape.$1.toDouble(), shape.$2.toDouble()),
+          const Size(280, 190),
+        );
+        expect(find.byIcon(Icons.play_circle_fill), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  _mediaWidgetTest(
+    'same-scope rebuild retains resolved signed image and access future',
+    (tester) async {
+      final client = _stubImages(_rasterPhoto(80, 40));
+      final session = _MediaSession();
+      var rebuilds = 0;
+      await _showBubble(
+        tester,
+        session,
+        host: (bubble) => StatefulBuilder(
+          builder: (context, update) => Column(
+            children: [
+              TextButton(
+                onPressed: () => update(() => rebuilds++),
+                child: Text('Unrelated $rebuilds'),
+              ),
+              // Rebuild configuration, not identity, just as unchanged polls do.
+              ChatMediaBubble(
+                key: const ValueKey('stable-attachment'),
+                attachment: const ChatMediaAttachment(
+                  id: 'private-layout',
+                  mediaType: 'photo',
+                ),
+                ownerId: 'alice',
+                conversationType: 'direct',
+                conversationId: 'thread',
+              ),
+            ],
+          ),
+        ),
+      );
+      await _decodedImage(tester);
+      final state = tester.state(find.byType(ChatMediaBubble));
+      final image = tester.element(find.byType(Image));
+      final decoded = tester
+          .renderObject<RenderImage>(find.byType(RawImage))
+          .image;
+      expect(session.accessReads, 1);
+      expect(client.reads, 1);
+      await tester.tap(find.text('Unrelated 0'));
+      await tester.pumpAndSettle();
+      expect(session.accessReads, 1);
+      expect(client.reads, 1);
+      expect(tester.state(find.byType(ChatMediaBubble)), same(state));
+      expect(tester.element(find.byType(Image)), same(image));
+      expect(
+        tester.renderObject<RenderImage>(find.byType(RawImage)).image,
+        same(decoded),
+      );
+    },
+  );
+
+  _mediaWidgetTest('private access loading retains the compact black frame', (
+    tester,
+  ) async {
+    final session = _MediaSession()
+      ..pendingAccess = Completer<Map<String, dynamic>>();
+    await _showBubble(tester, session);
+    expect(tester.getSize(find.byType(ChatMediaBubble)), const Size(280, 190));
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(ChatMediaBubble),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is ColoredBox && widget.color == Colors.black,
+        ),
+      ),
+      findsOneWidget,
+    );
+    session.pendingAccess!.complete({
+      'id': 'private-layout',
+      'media_type': 'photo',
+      'url': 'https://private.example.invalid/layout.png',
+    });
+    await tester.pumpAndSettle();
+  });
+
+  _mediaWidgetTest(
+    'immediately failed viewer renewal renders retry without an uncaught error',
+    (tester) async {
+      _stubImages(_rasterPhoto(80, 40));
+      final session = _MediaSession();
+      await _showBubble(tester, session);
+      await _decodedImage(tester);
+      expect(session.accessReads, 1);
+
+      session.failAccess = true;
+      await tester.tap(
+        find.descendant(
+          of: find.byType(ChatMediaBubble),
+          matching: find.byType(InkWell),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('Reload attachment'), findsOneWidget);
+      expect(session.accessReads, 3);
+
+      session.failAccess = false;
+      await tester.tap(find.text('Reload attachment'));
+      await tester.pump();
+      await tester.pump();
+      await _decodedImage(tester);
+      expect(find.text('Reload attachment'), findsNothing);
+      expect(session.accessReads, 4);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets(
     'private thumbnail and viewer hide while account change is pending',
     (tester) async {

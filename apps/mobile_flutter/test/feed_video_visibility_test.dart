@@ -318,7 +318,9 @@ void main() {
     expect(matrix(), Matrix4.identity());
     expect(changes, [true, false]);
     await pinch(2);
-    await tester.tap(find.byTooltip('Reset zoom'));
+    expect(find.byTooltip('Zoom media'), findsNothing);
+    expect(find.byTooltip('Reset zoom'), findsNothing);
+    await pinch(0.5);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
     await _flushPlayback(tester);

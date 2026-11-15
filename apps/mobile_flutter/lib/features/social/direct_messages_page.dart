@@ -559,6 +559,7 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage>
   Timer? _poll;
   bool _foreground = true;
   bool _openingInitial = false;
+  int _initialGeneration = 0;
   String? _openedInitialId;
   Object? _initialError;
 
@@ -608,8 +609,33 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage>
     }
   }
 
+  @override
+  void didUpdateWidget(covariant DirectMessagesPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialThreadId == widget.initialThreadId &&
+        oldWidget.seedProfile?.userId == widget.seedProfile?.userId) {
+      return;
+    }
+    // Query-string navigation can reuse this page State. Do not keep the old
+    // conversation, draft, or a late opening result when its route changes.
+    final generation = ++_initialGeneration;
+    _openingInitial = false;
+    _openedInitialId = null;
+    _initialError = null;
+    if (widget.initialThreadId?.isNotEmpty == true) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && generation == _initialGeneration) {
+          _openInitialConversation();
+        }
+      });
+    }
+  }
+
   Future<void> _openInitialConversation({bool reloadAccount = false}) async {
     if (_openingInitial) return;
+    final generation = _initialGeneration;
+    final threadId = widget.initialThreadId;
+    final profile = widget.seedProfile;
     setState(() {
       _openingInitial = true;
       _initialError = null;
@@ -618,19 +644,31 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage>
       final account = reloadAccount
           ? await ref.refresh(meProvider.future)
           : await ref.read(meProvider.future);
-      if (!mounted || ref.read(meProvider).valueOrNull?.id != account.id) {
+      if (!mounted ||
+          generation != _initialGeneration ||
+          ref.read(meProvider).valueOrNull?.id != account.id) {
         return;
       }
       final controller = ref.read(directMessageThreadsProvider.notifier);
-      final profile = widget.seedProfile;
       final thread = profile == null
-          ? await controller.loadThread(widget.initialThreadId!)
+          ? await controller.loadThread(threadId!)
           : await controller.ensureThreadForProfile(profile);
-      if (mounted) setState(() => _openedInitialId = thread.id);
+      final current = ref.read(meProvider);
+      if (mounted &&
+          generation == _initialGeneration &&
+          !current.isLoading &&
+          !current.hasError &&
+          current.valueOrNull?.id == account.id) {
+        setState(() => _openedInitialId = thread.id);
+      }
     } catch (error) {
-      if (mounted) setState(() => _initialError = error);
+      if (mounted && generation == _initialGeneration) {
+        setState(() => _initialError = error);
+      }
     } finally {
-      if (mounted) setState(() => _openingInitial = false);
+      if (mounted && generation == _initialGeneration) {
+        setState(() => _openingInitial = false);
+      }
     }
   }
 
@@ -722,7 +760,10 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage>
       if (thread == null) {
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
       }
-      return _DirectChatPage(threadId: thread.id);
+      return _DirectChatPage(
+        key: ValueKey((me.valueOrNull?.id, thread.id)),
+        threadId: thread.id,
+      );
     }
 
     final visibleThreads = threads
@@ -1488,6 +1529,7 @@ class _MessageThreadTile extends StatelessWidget {
 
 class _DirectChatPage extends ConsumerStatefulWidget {
   const _DirectChatPage({
+    super.key,
     required this.threadId,
     this.showRequestActions = false,
   });
@@ -1604,6 +1646,17 @@ class _DirectChatPageState extends ConsumerState<_DirectChatPage>
         if (mounted) _markVisibleRead(marker);
       });
     }
+    // New messages enter at builder index zero because this list is reversed.
+    // Stable, account/conversation-scoped keys let the sliver move existing
+    // rows instead of recreating their private-media access/image state.
+    final messageIndexes = <Key, int>{
+      for (var index = 0; index < thread.messages.length; index++)
+        _directMessageRowKey(
+          _chatOwnerId!,
+          thread.id,
+          thread.messages[thread.messages.length - 1 - index],
+        ): index,
+    };
     final isRequest = !thread.requestAccepted;
     final profile = _profileFromThread(thread);
     final isBlocked = _isBlockedThread(
@@ -1663,15 +1716,22 @@ class _DirectChatPageState extends ConsumerState<_DirectChatPage>
             child: _loading && thread.messages.isEmpty
                 ? const Center(child: CircularProgressIndicator())
                 : ListView.builder(
+                    key: ValueKey(('dm-history', _chatOwnerId, thread.id)),
                     reverse: true,
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                     itemCount: thread.messages.length,
+                    findChildIndexCallback: (key) => messageIndexes[key],
                     itemBuilder: (context, index) {
                       final message =
                           thread.messages[thread.messages.length - 1 - index];
                       return _MessageBubble(
+                        key: _directMessageRowKey(
+                          _chatOwnerId!,
+                          thread.id,
+                          message,
+                        ),
                         message: message,
-                        ownerId: _chatOwnerId!,
+                        ownerId: _chatOwnerId,
                         threadId: thread.id,
                       );
                     },
@@ -2006,8 +2066,15 @@ class _BlockedDirectThreadNotice extends StatelessWidget {
   }
 }
 
+Key _directMessageRowKey(
+  String ownerId,
+  String threadId,
+  DirectChatMessage message,
+) => ValueKey((ownerId, threadId, message.id ?? message));
+
 class _MessageBubble extends StatelessWidget {
   const _MessageBubble({
+    super.key,
     required this.message,
     required this.ownerId,
     required this.threadId,

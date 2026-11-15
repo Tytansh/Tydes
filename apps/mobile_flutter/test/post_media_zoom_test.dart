@@ -127,7 +127,7 @@ void main() {
     tester,
   ) async {
     final changes = <bool>[];
-    await showZoom(tester, onZoomChanged: changes.add);
+    await showZoom(tester, onZoomChanged: changes.add, showControls: true);
     await signal(tester, 1.005);
     expect(transform(tester).getMaxScaleOnAxis(), closeTo(1.005, 1e-9));
     expect(find.byTooltip('Reset zoom'), findsOneWidget);
@@ -172,7 +172,7 @@ void main() {
     tester,
   ) async {
     final changes = <bool>[];
-    await showZoom(tester, onZoomChanged: changes.add);
+    await showZoom(tester, onZoomChanged: changes.add, showControls: true);
     await signal(tester, 2);
     await tester.tap(find.byTooltip('Reset zoom'));
     await tester.pump();
@@ -459,7 +459,7 @@ void main() {
       final size = tester.getSize(find.byType(PostMediaZoom));
       expect(transform(tester).storage[12], -size.width);
       expect(transform(tester).storage[13], -size.height);
-      await tester.tap(find.byTooltip('Reset zoom'));
+      await signal(tester, 0.5);
       await tester.pumpAndSettle();
       expect(transform(tester), Matrix4.identity());
       await tester.sendEventToBinding(
@@ -578,7 +578,29 @@ void main() {
     expect(transform(tester).getMaxScaleOnAxis(), closeTo(1, 0.001));
   });
 
-  testWidgets('desktop zoom controls keep the original media widget mounted', (
+  testWidgets('default media hides magnifiers before and during zoom', (
+    tester,
+  ) async {
+    await showZoom(tester);
+    final media = tester.element(find.text('Original media'));
+    expect(find.byIcon(Icons.zoom_in), findsNothing);
+    expect(find.byIcon(Icons.zoom_out), findsNothing);
+    await signal(tester, 2);
+    expect(transform(tester).getMaxScaleOnAxis(), 2);
+    expect(find.byTooltip('Zoom media'), findsNothing);
+    expect(find.byTooltip('Reset zoom'), findsNothing);
+    expect(tester.element(find.text('Original media')), same(media));
+    await tester.tap(find.byType(PostMediaZoom));
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(find.byType(PostMediaZoom));
+    await tester.pumpAndSettle();
+    expect(transform(tester), Matrix4.identity());
+    expect(tester.element(find.text('Original media')), same(media));
+    expect(find.byIcon(Icons.zoom_in), findsNothing);
+    expect(find.byIcon(Icons.zoom_out), findsNothing);
+  });
+
+  testWidgets('opt-in zoom controls keep the original media widget mounted', (
     tester,
   ) async {
     await tester.pumpWidget(

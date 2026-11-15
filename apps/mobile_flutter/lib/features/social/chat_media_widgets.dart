@@ -303,19 +303,25 @@ class _ChatMessageComposerState extends ConsumerState<ChatMessageComposer> {
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(12),
-                    child: SizedBox(
-                      width: 64,
-                      height: 64,
-                      child: _photo != null
-                          ? Image.memory(
-                              _photo!,
-                              fit: BoxFit.cover,
-                              cacheWidth: 256,
-                            )
-                          : const ColoredBox(
-                              color: Color(0xFF173F45),
-                              child: Icon(Icons.videocam, color: Colors.white),
-                            ),
+                    child: ColoredBox(
+                      color: Colors.black,
+                      child: SizedBox(
+                        width: 64,
+                        height: 64,
+                        child: _photo != null
+                            ? Image.memory(
+                                _photo!,
+                                fit: BoxFit.contain,
+                                cacheWidth: 256,
+                              )
+                            : const ColoredBox(
+                                color: Colors.black,
+                                child: Icon(
+                                  Icons.videocam,
+                                  color: Colors.white,
+                                ),
+                              ),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -458,10 +464,19 @@ class _ChatMediaBubbleState extends ConsumerState<ChatMediaBubble> {
     return session.access(attachment);
   }
 
+  Future<Map<String, dynamic>> _builderAccess() {
+    final access = _load();
+    // A renewal can fail before the next frame attaches FutureBuilder. Observe
+    // that error immediately, while preserving the original future so the
+    // builder still receives it and renders its explicit retry state.
+    unawaited(access.then<void>((_) {}, onError: (Object _, StackTrace _) {}));
+    return access;
+  }
+
   @override
   void initState() {
     super.initState();
-    _access = _load();
+    _access = _builderAccess();
   }
 
   @override
@@ -470,17 +485,18 @@ class _ChatMediaBubbleState extends ConsumerState<ChatMediaBubble> {
     if (old.ownerId != widget.ownerId ||
         old.conversationId != widget.conversationId ||
         old.conversationType != widget.conversationType ||
-        old.attachment.id != widget.attachment.id) {
+        old.attachment.id != widget.attachment.id ||
+        old.attachment.mediaType != widget.attachment.mediaType) {
       _generation++;
       _renewed = false;
-      _access = _load();
+      _access = _builderAccess();
     }
   }
 
   void _refresh() {
     setState(() {
       _generation++;
-      _access = _load();
+      _access = _builderAccess();
     });
   }
 
@@ -513,37 +529,43 @@ class _ChatMediaBubbleState extends ConsumerState<ChatMediaBubble> {
                   maxWidth: 680,
                   maxHeight: 680,
                 ),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (mediaType == 'video')
-                      ChatVideoViewer(
-                        url: access['url'] as String,
-                        fallbackUrl: access['fallback_url'] as String?,
-                      )
-                    else
-                      PostMediaZoom(
-                        child: Image.network(
-                          access['url'] as String,
-                          fit: BoxFit.contain,
-                          cacheWidth: 2048,
-                          errorBuilder: (_, _, _) => const Center(
-                            child: Text(
-                              'Photo unavailable. Close and reopen to retry.',
+                child: ColoredBox(
+                  color: Colors.black,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (mediaType == 'video')
+                        ChatVideoViewer(
+                          url: access['url'] as String,
+                          fallbackUrl: access['fallback_url'] as String?,
+                        )
+                      else
+                        PostMediaZoom(
+                          child: Image.network(
+                            access['url'] as String,
+                            fit: BoxFit.contain,
+                            cacheWidth: 2048,
+                            frameBuilder: _privateImageFrame,
+                            errorBuilder: (_, _, _) => const Center(
+                              child: Text(
+                                'Photo unavailable. Close and reopen to retry.',
+                                style: TextStyle(color: Colors.white70),
+                              ),
                             ),
                           ),
                         ),
+                      Positioned(
+                        right: 4,
+                        top: 4,
+                        child: IconButton(
+                          tooltip: 'Close media',
+                          color: Colors.white,
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close),
+                        ),
                       ),
-                    Positioned(
-                      right: 4,
-                      top: 4,
-                      child: IconButton(
-                        tooltip: 'Close media',
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.close),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             );
@@ -561,15 +583,16 @@ class _ChatMediaBubbleState extends ConsumerState<ChatMediaBubble> {
     if (account.isLoading ||
         account.hasError ||
         account.valueOrNull?.id != widget.ownerId) {
-      return const SizedBox(
-        width: 280,
-        height: 190,
-        child: Center(child: Text('Checking private media access…')),
+      return const _CompactPrivateMediaFrame(
+        child: Center(
+          child: Text(
+            'Checking private media access…',
+            style: TextStyle(color: Colors.white70),
+          ),
+        ),
       );
     }
-    return SizedBox(
-      width: 280,
-      height: 190,
+    return _CompactPrivateMediaFrame(
       child: FutureBuilder<Map<String, dynamic>>(
         key: ValueKey(_generation),
         future: _access,
@@ -577,6 +600,7 @@ class _ChatMediaBubbleState extends ConsumerState<ChatMediaBubble> {
           if (state.hasError) {
             return Center(
               child: TextButton.icon(
+                style: TextButton.styleFrom(foregroundColor: Colors.white),
                 onPressed: _refresh,
                 icon: const Icon(Icons.refresh),
                 label: const Text('Reload attachment'),
@@ -585,7 +609,10 @@ class _ChatMediaBubbleState extends ConsumerState<ChatMediaBubble> {
           }
           if (!state.hasData) {
             return const Center(
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white70,
+              ),
             );
           }
           final data = state.data!;
@@ -601,8 +628,9 @@ class _ChatMediaBubbleState extends ConsumerState<ChatMediaBubble> {
                   if (!video || thumbnail != null)
                     Image.network(
                       thumbnail ?? data['url'] as String,
-                      fit: BoxFit.cover,
+                      fit: BoxFit.contain,
                       cacheWidth: 840,
+                      frameBuilder: _privateImageFrame,
                       errorBuilder: (_, _, _) {
                         if (!_renewed) {
                           _renewed = true;
@@ -611,12 +639,15 @@ class _ChatMediaBubbleState extends ConsumerState<ChatMediaBubble> {
                           });
                         }
                         return const Center(
-                          child: Icon(Icons.broken_image_outlined),
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            color: Colors.white70,
+                          ),
                         );
                       },
                     )
                   else
-                    const ColoredBox(color: Color(0xFF173F45)),
+                    const ColoredBox(color: Colors.black),
                   if (video)
                     const Center(
                       child: Icon(
@@ -634,6 +665,33 @@ class _ChatMediaBubbleState extends ConsumerState<ChatMediaBubble> {
     );
   }
 }
+
+/// Preserve the existing chat footprint while letterboxing every aspect ratio.
+/// This owns no URLs/cache: access remains scoped to the enclosing bubble.
+class _CompactPrivateMediaFrame extends StatelessWidget {
+  const _CompactPrivateMediaFrame({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ClipRRect(
+    borderRadius: BorderRadius.circular(14),
+    child: ColoredBox(
+      color: Colors.black,
+      child: SizedBox(width: 280, height: 190, child: child),
+    ),
+  );
+}
+
+Widget _privateImageFrame(
+  BuildContext context,
+  Widget child,
+  int? frame,
+  bool synchronous,
+) => synchronous || frame != null
+    ? child
+    : const Center(
+        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
+      );
 
 /// Chat videos never autoplay. Explicit play is muted; leaving/covering the
 /// viewer immediately pauses/mutes, including late initialization/play calls.
