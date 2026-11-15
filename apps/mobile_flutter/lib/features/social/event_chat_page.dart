@@ -139,6 +139,13 @@ class _EventChatPageState extends ConsumerState<EventChatPage>
             ),
           )
           .toList();
+      if (!initial &&
+          !_loading &&
+          _error == null &&
+          _viewerId == owner.id &&
+          _sameEventMessages(_messages, messages)) {
+        return;
+      }
       setState(() {
         _messages = messages;
         if (initial) {
@@ -289,6 +296,32 @@ class _EventChatPageState extends ConsumerState<EventChatPage>
             ),
     );
   }
+}
+
+bool _sameEventMessages(
+  List<EventChatMessageModel> previous,
+  List<EventChatMessageModel> next,
+) {
+  if (identical(previous, next)) return true;
+  if (previous.length != next.length) return false;
+  for (var index = 0; index < previous.length; index++) {
+    final a = previous[index];
+    final b = next[index];
+    if (a.id != b.id ||
+        a.postId != b.postId ||
+        a.userId != b.userId ||
+        a.authorName != b.authorName ||
+        a.authorHandle != b.authorHandle ||
+        a.authorAvatarUrl != b.authorAvatarUrl ||
+        a.text != b.text ||
+        a.createdAt != b.createdAt ||
+        a.clientMessageId != b.clientMessageId ||
+        a.attachment?.id != b.attachment?.id ||
+        a.attachment?.mediaType != b.attachment?.mediaType) {
+      return false;
+    }
+  }
+  return true;
 }
 
 class _MessageBubble extends StatelessWidget {

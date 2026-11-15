@@ -167,6 +167,7 @@ class DirectMessageThreadsNotifier
   Future<DirectMessageSession>? _session;
   bool _disposed = false;
   bool _refreshing = false;
+  bool _inboxHasError = false;
   int _revision = 0;
   final Map<String, String> _sendKeys = {};
   final Set<String> _sending = {};
@@ -197,7 +198,7 @@ class DirectMessageThreadsNotifier
     }
     final previous = threadByIdOrHandle(id);
     final name = json['peer_name'] as String? ?? 'TYDES surfer';
-    return DirectMessageThread(
+    final thread = DirectMessageThread(
       id: id,
       profileUserId: peerId,
       name: name,
@@ -228,34 +229,51 @@ class DirectMessageThreadsNotifier
                 .toList()
           : previous?.messages ?? const [],
     );
+    // Keep mounted conversation/media subtrees untouched when a poll confirms
+    // precisely the same content. Compare values, not just IDs/timestamps:
+    // edits, consent, unread counts and shared-post changes must still apply.
+    return previous != null && _sameDirectThread(previous, thread)
+        ? previous
+        : thread;
   }
 
   void _accept(DirectMessageThread thread) {
     _check();
+    _revision++;
+    final previous = threadByIdOrHandle(thread.id);
+    if (previous != null && _sameDirectThread(previous, thread)) return;
     state = [thread, ...state.where((item) => item.id != thread.id)]
       ..sort(
         (a, b) => (b.updatedAt ?? DateTime(1970)).compareTo(
           a.updatedAt ?? DateTime(1970),
         ),
       );
-    _revision++;
   }
 
-  Future<void> refresh() async {
+  Future<void> refresh({bool background = false}) async {
     if (_api == null) return; // Explicit widget-test fixture only.
     if (_refreshing) return;
     _refreshing = true;
-    _onStatus?.call(const AsyncLoading());
+    if (!background) _onStatus?.call(const AsyncLoading());
     final revision = _revision;
     try {
       final items = await (await _connected()).threads();
       _check();
       // A slower inbox response must not overwrite a just-confirmed send/read.
-      if (revision == _revision) state = items.map(_fromServer).toList();
-      _onStatus?.call(const AsyncData(null));
+      if (revision == _revision) {
+        final next = items.map(_fromServer).toList();
+        if (!_sameDirectThreads(state, next)) state = next;
+      }
+      if (!background || _inboxHasError) {
+        _onStatus?.call(const AsyncData(null));
+      }
+      _inboxHasError = false;
       _onCountsChanged?.call();
     } catch (error, stack) {
-      if (!_disposed) _onStatus?.call(AsyncError(error, stack));
+      if (!_disposed) {
+        _inboxHasError = true;
+        _onStatus?.call(AsyncError(error, stack));
+      }
       rethrow;
     } finally {
       _refreshing = false;
@@ -506,7 +524,7 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage>
       unawaited(
         ref
             .read(directMessageThreadsProvider.notifier)
-            .refresh()
+            .refresh(background: true)
             .catchError((Object _) {}),
       );
     });
@@ -1430,12 +1448,12 @@ class _DirectChatPageState extends ConsumerState<_DirectChatPage>
       await ref
           .read(directMessageThreadsProvider.notifier)
           .loadThread(widget.threadId);
-      if (mounted) setState(() => _loadError = null);
+      if (mounted && _loadError != null) setState(() => _loadError = null);
     } catch (error) {
       if (mounted) setState(() => _loadError = error);
     } finally {
       _loadingRequest = false;
-      if (mounted) setState(() => _loading = false);
+      if (mounted && _loading) setState(() => _loading = false);
     }
   }
 
@@ -2599,6 +2617,69 @@ class _MessageRequestsPage extends ConsumerWidget {
     );
   }
 }
+
+bool _sameDirectThreads(
+  List<DirectMessageThread> previous,
+  List<DirectMessageThread> next,
+) {
+  if (identical(previous, next)) return true;
+  if (previous.length != next.length) return false;
+  for (var index = 0; index < previous.length; index++) {
+    if (!_sameDirectThread(previous[index], next[index])) return false;
+  }
+  return true;
+}
+
+bool _sameDirectThread(DirectMessageThread a, DirectMessageThread b) {
+  if (identical(a, b)) return true;
+  if (a.id != b.id ||
+      a.profileUserId != b.profileUserId ||
+      a.name != b.name ||
+      a.handle != b.handle ||
+      a.initial != b.initial ||
+      a.location != b.location ||
+      a.preview != b.preview ||
+      a.time != b.time ||
+      a.unreadCount != b.unreadCount ||
+      a.online != b.online ||
+      a.requestAccepted != b.requestAccepted ||
+      a.requestDeclined != b.requestDeclined ||
+      a.canSendAttachments != b.canSendAttachments ||
+      a.avatarUrl != b.avatarUrl ||
+      a.premium != b.premium ||
+      a.updatedAt != b.updatedAt ||
+      a.messages.length != b.messages.length) {
+    return false;
+  }
+  for (var index = 0; index < a.messages.length; index++) {
+    if (!_sameDirectMessage(a.messages[index], b.messages[index])) return false;
+  }
+  return true;
+}
+
+bool _sameDirectMessage(DirectChatMessage a, DirectChatMessage b) =>
+    identical(a, b) ||
+    (a.id == b.id &&
+        a.senderUserId == b.senderUserId &&
+        a.createdAt == b.createdAt &&
+        a.text == b.text &&
+        a.time == b.time &&
+        a.isMe == b.isMe &&
+        a.mediaPath == b.mediaPath &&
+        a.mediaType == b.mediaType &&
+        a.attachment?.id == b.attachment?.id &&
+        a.attachment?.mediaType == b.attachment?.mediaType &&
+        a.sharedPostId == b.sharedPostId &&
+        a.sharedPostAuthorUserId == b.sharedPostAuthorUserId &&
+        a.sharedPostAuthor == b.sharedPostAuthor &&
+        a.sharedPostAuthorHandle == b.sharedPostAuthorHandle &&
+        a.sharedPostAuthorAvatarUrl == b.sharedPostAuthorAvatarUrl &&
+        a.sharedPostAuthorPremium == b.sharedPostAuthorPremium &&
+        a.sharedPostBody == b.sharedPostBody &&
+        a.sharedPostSpotId == b.sharedPostSpotId &&
+        a.sharedPostSpotName == b.sharedPostSpotName &&
+        a.sharedPostType == b.sharedPostType &&
+        a.sharedPostMediaUrl == b.sharedPostMediaUrl);
 
 class DirectMessageThread {
   const DirectMessageThread({

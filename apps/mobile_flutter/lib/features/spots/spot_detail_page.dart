@@ -9,12 +9,12 @@ import '../../app/router.dart' show currentTabProvider;
 import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/detailed_forecast_models.dart';
+import '../../core/network/spot_catalog_provider.dart';
 import '../../core/network/surf_repository.dart';
 import '../alerts/create_alert_sheet.dart';
 import '../auth/auth_return_path.dart';
 import '../home/home_page.dart';
 import '../public_previews/public_link_button.dart';
-import '../social/social_feed.dart' show travelFeedSpotsProvider;
 import 'pro_forecast_panel.dart';
 import 'spot_alert_panel.dart';
 import 'spots_page.dart';
@@ -27,12 +27,12 @@ final spotDetailProvider = FutureProvider.autoDispose.family<SpotModel, String>(
     final repository = ref.watch(surfRepositoryProvider);
     // Navigation from a loaded feed/map already has this static guide. Do not
     // start a whole catalog request merely to optimize a direct spot link.
-    for (final catalog in [spotsProvider, travelFeedSpotsProvider]) {
-      if (!ref.exists(catalog)) continue;
-      final loaded = ref.read(catalog);
-      if (loaded.isLoading || loaded.hasError) continue;
-      for (final spot in loaded.valueOrNull ?? const <SpotModel>[]) {
-        if (spot.id == spotId) return spot;
+    if (ref.exists(spotCatalogProvider)) {
+      final loaded = ref.read(spotCatalogProvider);
+      if (!loaded.isLoading && !loaded.hasError) {
+        for (final spot in loaded.valueOrNull ?? const <SpotModel>[]) {
+          if (spot.id == spotId) return spot;
+        }
       }
     }
     return repository.fetchSpot(spotId);

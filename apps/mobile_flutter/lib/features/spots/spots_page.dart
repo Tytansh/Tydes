@@ -4,14 +4,13 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
+import '../../core/network/spot_catalog_provider.dart';
 import '../../core/network/surf_repository.dart';
 import '../home/home_page.dart';
 
 const _favoriteAccent = Color(0xFF2AA7A1);
 
-final spotsProvider = FutureProvider(
-  (ref) => ref.watch(surfRepositoryProvider).fetchSpots(),
-);
+final spotsProvider = spotCatalogProvider;
 
 final spotForecastsBySpotProvider =
     FutureProvider.autoDispose<Map<String, ForecastModel>>((ref) async {

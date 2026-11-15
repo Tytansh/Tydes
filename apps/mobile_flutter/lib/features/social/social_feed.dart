@@ -20,6 +20,7 @@ import '../../core/media/video_playback_sources.dart';
 import '../../core/moderation/content_moderation.dart';
 import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
+import '../../core/network/spot_catalog_provider.dart';
 import '../../core/network/surf_repository.dart';
 import '../../core/widgets/media_image_strategy.dart';
 import 'direct_messages_page.dart';
@@ -43,9 +44,7 @@ final travelFeedPostsProvider = FutureProvider<List<SocialPostModel>>((
     posts: await pagination.refreshInitial(),
   );
 });
-final travelFeedSpotsProvider = FutureProvider(
-  (ref) => ref.watch(surfRepositoryProvider).fetchSpots(),
-);
+final travelFeedSpotsProvider = spotCatalogProvider;
 final currentViewerProvider = FutureProvider<UserProfile>(
   (ref) => ref.watch(meProvider.future),
 );

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/network/api_models.dart';
+import '../../core/network/spot_catalog_provider.dart';
 import '../../core/network/surf_repository.dart';
 import '../home/home_page.dart';
 import '../social/direct_messages_page.dart';
@@ -30,9 +31,7 @@ Color _travelBorder(BuildContext context, Color light) =>
     ? Theme.of(context).colorScheme.outlineVariant
     : light;
 
-final travelSpotsProvider = FutureProvider(
-  (ref) => ref.watch(surfRepositoryProvider).fetchSpots(),
-);
+final travelSpotsProvider = spotCatalogProvider;
 
 final nextSwellProvider = FutureProvider(
   (ref) => ref.watch(surfRepositoryProvider).fetchNextSwell(),

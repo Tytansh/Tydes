@@ -12,6 +12,7 @@ import 'package:mobile_flutter/features/social/social_feed.dart'
     show travelFeedSpotsProvider;
 import 'package:mobile_flutter/features/spots/spot_detail_page.dart';
 import 'package:mobile_flutter/features/spots/spots_page.dart';
+import 'package:mobile_flutter/features/trips/trips_page.dart';
 
 import 'auth_session_test.dart' show MemorySessions;
 
@@ -172,14 +173,18 @@ Future<void> _cleanup(WidgetTester tester, ProviderContainer container) async {
 }
 
 void main() {
-  for (final catalog in [spotsProvider, travelFeedSpotsProvider]) {
+  for (final entry in {
+    'Spots': spotsProvider,
+    'Feed': travelFeedSpotsProvider,
+    'Travel': travelSpotsProvider,
+  }.entries) {
     test(
-      'loaded ${catalog == spotsProvider ? 'Spots' : 'Feed'} catalog avoids another spot-detail GET',
+      'loaded ${entry.key} catalog avoids another spot-detail GET',
       () async {
         final repository = _SpotRepository();
         final container = _container(repository);
         addTearDown(container.dispose);
-        final known = await container.read(catalog.future);
+        final known = await container.read(entry.value.future);
         final detail = await container.read(
           spotDetailProvider('test-spot').future,
         );

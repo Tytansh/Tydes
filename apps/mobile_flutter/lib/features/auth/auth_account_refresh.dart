@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/surf_repository.dart';
+import '../../core/network/spot_catalog_provider.dart';
 import '../alerts/alert_state.dart';
 import '../home/home_page.dart';
 import '../social/direct_messages_page.dart';
@@ -20,6 +21,7 @@ void refreshAuthenticatedAccount(WidgetRef ref) {
   ref.invalidate(meProvider);
   ref.invalidate(dashboardProvider);
   ref.invalidate(homeAdsProvider);
+  ref.invalidate(spotCatalogProvider);
   ref.invalidate(spotForecastsBySpotProvider);
   ref.invalidate(spotCardForecastProvider);
   ref.invalidate(spotDetailedForecastProvider);
