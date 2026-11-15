@@ -25,6 +25,7 @@ from app.core.feed_pagination import (
 from app.core.models import (
     AdCard,
     Alert,
+    BasicSpotForecast,
     BillingPlan,
     ChatAttachment,
     Dashboard,
@@ -946,6 +947,26 @@ class DemoStore:
                 local_date=spot_local_date(spot),
                 note="The forecast model is unavailable right now. No estimated chart has been substituted; please try again shortly.",
             )
+
+    def get_basic_forecast(self, spot_id: str) -> BasicSpotForecast:
+        spot = self.get_spot(spot_id)
+        local_day = spot_local_date(spot) if spot is not None else datetime.now(timezone.utc).date()
+        if spot is not None:
+            try:
+                result = self.weather_provider.fetch_spot_basic(spot)
+                # Revalidate even injected/provider model instances. Nothing
+                # from the static legacy daily fallback may reach this API.
+                payload = result.model_dump() if isinstance(result, BasicSpotForecast) else result
+                forecast = BasicSpotForecast.model_validate(payload)
+                if forecast.spot_id != spot_id:
+                    raise ValueError("Mismatched basic forecast spot")
+                return forecast
+            except Exception as error:
+                logger.warning("Basic forecast unavailable for %s (%s)", spot_id, type(error).__name__)
+        return BasicSpotForecast(
+            spot_id=spot_id, available=False, local_date=local_day,
+            note="The basic model outlook is unavailable right now. No static spot-profile readings have been substituted.",
+        )
 
     def _locked_free_forecast_estimate(self, forecast: ForecastEntry) -> ForecastEntry:
         wave_height = (

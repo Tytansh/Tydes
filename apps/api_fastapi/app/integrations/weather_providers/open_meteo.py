@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import httpx
 
 from app.core.models import (
+    BasicForecastDay, BasicSpotForecast,
     DetailedForecastHour, DetailedSpotForecast, ForecastDaylight, ForecastEntry,
     Spot, SurfWindowForecast, SurfWindowHour,
 )
@@ -320,6 +321,41 @@ class OpenMeteoMarineProvider:
                 self._fallback_notes.get(self._cache_identity(spot)),
             ])),
         )
+
+    def fetch_spot_basic(self, spot: Spot) -> BasicSpotForecast:
+        identity = self._cache_identity(spot)
+        with self._locks_guard:
+            lock = self._spot_locks.setdefault(identity, RLock())
+        # Read data and metadata from the exact same cache snapshot as the
+        # existing daily/hourly fetch, holding its reentrant location lock.
+        with lock:
+            self.fetch_spot_forecast(spot, max_cache_age=PREVIEW_FORECAST_MAX_AGE)
+            cached = self._cache.get(identity)
+            if cached is None or not cached.data:
+                raise ValueError("No model snapshot is available")
+            if any(row.source != "open-meteo" or row.spot_id != spot.id for row in cached.data):
+                raise ValueError("Basic outlook cannot substitute static spot estimates")
+            now = datetime.now(UTC)
+            local_now = now.astimezone(ZoneInfo(cached.timezone))
+            local_day = local_now.date()
+            days = []
+            for row in sorted(cached.data, key=lambda entry: entry.day):
+                wave = row.wave_height_m
+                if (local_day <= row.day < local_day + timedelta(days=5)
+                        and wave is not None and math.isfinite(wave) and wave >= 0):
+                    # This is the daily mean calculated from model hourly sea
+                    # heights, not the legacy cosmetic +/-0.1m locked range.
+                    days.append(BasicForecastDay(day=row.day, wave_height_m=wave))
+            return BasicSpotForecast(
+                spot_id=spot.id, available=True, source="open-meteo",
+                timezone=cached.timezone,
+                utc_offset_seconds=int(local_now.utcoffset().total_seconds()),
+                fetched_at=cached.fetched_at, local_date=local_day, days=days,
+                note=" ".join(filter(None, [
+                    "Daily mean significant combined sea height from a numerical model; not breaking-wave face height or an observed surf report.",
+                    self._fallback_notes.get(identity),
+                ])),
+            )
 
     def fetch_spot_surf_window(
         self,

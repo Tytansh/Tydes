@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.core.auth import require_authenticated_user
-from app.core.models import DetailedSpotForecast, User
+from app.core.models import BasicSpotForecast, DetailedSpotForecast, User
 
 from app.core.rate_limit import (
     RateLimitRule,
@@ -38,6 +38,18 @@ def get_detailed_forecast(
     if store.get_spot(spot_id) is None:
         raise HTTPException(status_code=404, detail="Spot not found")
     return store.get_detailed_forecast(spot_id)
+
+
+@router.get("/basic", response_model=BasicSpotForecast)
+def get_basic_forecast(
+    spot_id: str, request: Request, response: Response,
+    _user: User = Depends(require_authenticated_user),
+):
+    _limit_forecast_request(request, "basic", limit=60)
+    response.headers["Cache-Control"] = "private, no-store"
+    if store.get_spot(spot_id) is None:
+        raise HTTPException(status_code=404, detail="Spot not found")
+    return store.get_basic_forecast(spot_id)
 
 
 @router.get("/surf-window")

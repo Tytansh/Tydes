@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
+from zoneinfo import ZoneInfo
 
 from app.core.runtime import public_media_url
 
@@ -120,6 +121,48 @@ class DetailedForecastHour(BaseModel):
     wind_gusts_kts: float | None = None
     wind_direction_deg: float | None = None
     sea_surface_temperature_c: float | None = None
+
+
+class BasicForecastDay(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    day: date
+    wave_height_m: float = Field(ge=0, allow_inf_nan=False, strict=True)
+
+
+class BasicSpotForecast(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    spot_id: str
+    available: bool
+    source: Literal["open-meteo", "unavailable"] = "unavailable"
+    marine_model: Literal["Best Match (automatic)"] = "Best Match (automatic)"
+    timezone: str = "UTC"
+    utc_offset_seconds: int = 0
+    fetched_at: datetime | None = None
+    local_date: date
+    note: str | None = None
+    days: list[BasicForecastDay] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_model_outlook(self):
+        if not self.available:
+            if self.days:
+                raise ValueError("Unavailable outlooks must not contain readings.")
+            return self
+        now = datetime.now(timezone.utc)
+        zone = ZoneInfo(self.timezone)
+        local_now = now.astimezone(zone)
+        if (self.source != "open-meteo" or self.fetched_at is None
+                or self.fetched_at.utcoffset() is None
+                or not -timedelta(minutes=1) <= now - self.fetched_at <= timedelta(hours=24)
+                or self.local_date != local_now.date()
+                or self.utc_offset_seconds != int(local_now.utcoffset().total_seconds())
+                or not self.days):
+            raise ValueError("Basic outlook requires a current, timestamped model snapshot.")
+        dates = [row.day for row in self.days]
+        if (dates != sorted(set(dates))
+                or any(not self.local_date <= day < self.local_date + timedelta(days=5) for day in dates)):
+            raise ValueError("Basic outlook days must be unique and within the current five-day window.")
+        return self
 
 
 class ForecastDaylight(BaseModel):
