@@ -34,7 +34,7 @@ class User(BaseModel):
     email: EmailStr
     display_name: str
     handle: str = "ty"
-    bio: str = "Looking for clean waves, easy travel days, and people to paddle out with."
+    bio: str = ""
     surf_skill: Literal["", "beginner", "intermediate", "pro"] = "intermediate"
     avatar_url: str | None = None
     cover_url: str | None = None

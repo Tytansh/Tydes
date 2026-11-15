@@ -1478,7 +1478,7 @@ class DemoStore:
                     "cover_url": user.cover_url,
                     "premium": user.premium,
                     "location": user.home_region or None,
-                    "subtitle": "TYDES surfer",
+                    "subtitle": user.bio.strip(),
                     "surf_skill": user.surf_skill or None,
                 }
             )
@@ -1539,7 +1539,7 @@ class DemoStore:
                     "cover_url": user.cover_url,
                     "premium": user.premium,
                     "location": user.home_region or None,
-                    "subtitle": "TYDES surfer",
+                    "subtitle": user.bio.strip(),
                     "surf_skill": user.surf_skill or None,
                 }
             )
