@@ -725,6 +725,9 @@ class _ChatVideoViewerState extends State<ChatVideoViewer>
     );
     final controller = VideoPlayerController.networkUrl(
       Uri.parse(_fallback ? widget.fallbackUrl! : source.primary),
+      // Native players do not have a browser page to supply the public-site
+      // referrer required by the private CDN's direct-file protection.
+      httpHeaders: kIsWeb ? const {} : const {'Referer': 'https://tydes.io/'},
     );
     _controller = controller;
     try {

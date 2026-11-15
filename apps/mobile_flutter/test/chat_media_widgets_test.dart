@@ -23,10 +23,12 @@ class _VideoPlatform extends VideoPlayerPlatform {
   final events = <int, StreamController<VideoEvent>>{};
   final playing = <int>{};
   final volumes = <int, double>{};
+  final sources = <DataSource>[];
   @override
   Future<void> init() async {}
   @override
   Future<int?> createWithOptions(VideoCreationOptions options) async {
+    sources.add(options.dataSource);
     final id = events.length;
     events[id] = StreamController<VideoEvent>()
       ..add(
@@ -731,6 +733,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    expect(platform.sources.single.httpHeaders, {
+      'Referer': 'https://tydes.io/',
+    });
     expect(platform.playing, isEmpty);
     expect(platform.volumes.values, everyElement(0));
     await tester.tap(find.byTooltip('Play video'));
