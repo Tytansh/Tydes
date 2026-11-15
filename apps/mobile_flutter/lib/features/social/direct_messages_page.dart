@@ -14,6 +14,7 @@ import '../auth/email_verification_sheet.dart';
 import '../home/home_page.dart' show meProvider;
 import 'direct_message_api.dart';
 import 'chat_media_widgets.dart';
+import 'event_chat_controls.dart';
 import 'inbox_badges.dart';
 import 'social_profile.dart';
 
@@ -29,12 +30,19 @@ final directMessageThreadsProvider =
             ref.read(dmInboxStatusProvider.notifier).state = status,
         onCountsChanged: () =>
             ref.read(inboxCountsRefreshKeyProvider.notifier).state++,
+        onControlsChanged: (pending) =>
+            ref.read(dmThreadControlsPendingProvider.notifier).state = pending,
       ),
     );
 
 final dmInboxStatusProvider = StateProvider<AsyncValue<void>>(
   (ref) => const AsyncData(null),
 );
+
+final dmThreadControlsPendingProvider = StateProvider<Set<String>>((ref) {
+  ref.watch(meProvider.select((value) => value.valueOrNull?.id));
+  return const {};
+});
 
 class _VerifyEmailAction extends ConsumerWidget {
   const _VerifyEmailAction();
@@ -102,9 +110,13 @@ final dmSocialProfilesProvider = FutureProvider.autoDispose((ref) {
 final joinedEventChatsProvider =
     FutureProvider.autoDispose<List<JoinedEventChatSummary>>((ref) async {
       ref.watch(socialRefreshKeyProvider);
+      ref.watch(eventChatInboxRevisionProvider);
       final repository = ref.watch(surfRepositoryProvider);
       final posts = await repository.fetchEventChatPosts();
-      final chats = posts.map(JoinedEventChatSummary.fromPost).toList();
+      final chats = posts
+          .where((post) => !post.chatLeft)
+          .map(JoinedEventChatSummary.fromPost)
+          .toList();
       chats.sort((a, b) => a.sortDate.compareTo(b.sortDate));
       return chats;
     });
@@ -116,6 +128,7 @@ class JoinedEventChatSummary {
     required this.hostName,
     required this.meetupDate,
     required this.sortDate,
+    this.muted = false,
   });
 
   final String postId;
@@ -123,6 +136,7 @@ class JoinedEventChatSummary {
   final String hostName;
   final String? meetupDate;
   final DateTime sortDate;
+  final bool muted;
 
   factory JoinedEventChatSummary.fromPost(SocialPostModel post) {
     final title = post.body.trim();
@@ -133,6 +147,7 @@ class JoinedEventChatSummary {
       hostName: post.authorName,
       meetupDate: post.meetupDate,
       sortDate: parsedDate ?? DateTime(9999),
+      muted: post.chatMuted,
     );
   }
 }
@@ -144,9 +159,11 @@ class DirectMessageThreadsNotifier
     required this.ownerId,
     required void Function(AsyncValue<void>) onStatus,
     required VoidCallback onCountsChanged,
+    void Function(Set<String>)? onControlsChanged,
   }) : _api = api,
        _onStatus = onStatus,
        _onCountsChanged = onCountsChanged,
+       _onControlsChanged = onControlsChanged,
        super(const []) {
     if (ownerId != null) {
       Future.microtask(() => refresh().catchError((Object _) {}));
@@ -158,12 +175,14 @@ class DirectMessageThreadsNotifier
     : _api = null,
       ownerId = 'test-owner',
       _onStatus = null,
-      _onCountsChanged = null;
+      _onCountsChanged = null,
+      _onControlsChanged = null;
 
   final DirectMessageApi? _api;
   final String? ownerId;
   final void Function(AsyncValue<void>)? _onStatus;
   final VoidCallback? _onCountsChanged;
+  final void Function(Set<String>)? _onControlsChanged;
   Future<DirectMessageSession>? _session;
   bool _disposed = false;
   bool _refreshing = false;
@@ -171,6 +190,7 @@ class DirectMessageThreadsNotifier
   int _revision = 0;
   final Map<String, String> _sendKeys = {};
   final Set<String> _sending = {};
+  final Set<String> _controlsPending = {};
 
   Future<DirectMessageSession> _connected() {
     if (_disposed || ownerId == null || _api == null) {
@@ -218,6 +238,8 @@ class DirectMessageThreadsNotifier
           json['can_send_attachments'] as bool? ??
           previous?.canSendAttachments ??
           false,
+      muted: json['muted'] as bool? ?? false,
+      cleared: json['cleared'] as bool? ?? false,
       messages: json['messages'] is List
           ? (json['messages'] as List)
                 .map(
@@ -252,7 +274,7 @@ class DirectMessageThreadsNotifier
 
   Future<void> refresh({bool background = false}) async {
     if (_api == null) return; // Explicit widget-test fixture only.
-    if (_refreshing) return;
+    if (_refreshing || _controlsPending.isNotEmpty) return;
     _refreshing = true;
     if (!background) _onStatus?.call(const AsyncLoading());
     final revision = _revision;
@@ -295,16 +317,63 @@ class DirectMessageThreadsNotifier
   }
 
   Future<DirectMessageThread> loadThread(String threadId) async {
+    if (_controlsPending.contains(threadId)) {
+      final current = threadByIdOrHandle(threadId);
+      if (current != null) return current;
+      throw StateError('This chat is being updated.');
+    }
     final revision = _revision;
     final result = await (await _connected()).thread(threadId);
     _check();
     if (revision != _revision) {
       final current = threadByIdOrHandle(threadId);
       if (current != null) return current;
+      throw StateError('This conversation changed. Reopen Messages.');
     }
     final thread = _fromServer(result);
     _accept(thread);
     return thread;
+  }
+
+  Future<void> setMuted(String threadId, bool muted) =>
+      _changeControl(threadId, (session) async {
+        final result = await session.setMuted(threadId, muted);
+        _check();
+        _accept(_fromServer(result));
+      });
+
+  Future<void> deleteChat(String threadId) =>
+      _changeControl(threadId, (session) async {
+        await session.deleteThread(threadId);
+        _check();
+        _revision++;
+        state = [
+          for (final item in state)
+            if (item.id != threadId) item,
+        ];
+      });
+
+  Future<void> _changeControl(
+    String threadId,
+    Future<void> Function(DirectMessageSession) change,
+  ) async {
+    _check();
+    if (_controlsPending.contains(threadId) || _sending.contains(threadId)) {
+      throw StateError('This chat is still updating. Please wait.');
+    }
+    _controlsPending.add(threadId);
+    _revision++;
+    _onControlsChanged?.call(Set.unmodifiable(_controlsPending));
+    try {
+      await change(await _connected());
+      _check();
+      _onCountsChanged?.call();
+    } finally {
+      _controlsPending.remove(threadId);
+      if (!_disposed) {
+        _onControlsChanged?.call(Set.unmodifiable(_controlsPending));
+      }
+    }
   }
 
   Future<void> markRead(String threadId) async {
@@ -351,6 +420,9 @@ class DirectMessageThreadsNotifier
     String? attachmentId,
   }) async {
     if (text.isEmpty && sharedPostId == null && attachmentId == null) return;
+    if (_controlsPending.contains(threadId)) {
+      throw StateError('This chat is still updating. Please wait.');
+    }
     if (text.length > 1600) {
       throw StateError('Messages can be up to 1600 characters.');
     }
@@ -387,6 +459,7 @@ class DirectMessageThreadsNotifier
       final message = DirectChatMessage.fromServer(ack, ownerId!);
       _accept(
         current.copyWith(
+          cleared: false,
           preview: message.text.isNotEmpty
               ? message.text
               : message.attachment != null
@@ -656,6 +729,7 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage>
         .where(
           (thread) =>
               !thread.requestDeclined &&
+              !thread.cleared &&
               !_isBlockedThread(thread, blockedUserIds),
         )
         .toList();
@@ -732,33 +806,6 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage>
                   child: const Text('Retry'),
                 ),
               ),
-            if (eventChats.isLoading && !eventChats.hasValue)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 16),
-                child: LinearProgressIndicator(minHeight: 2),
-              ),
-            if (eventChats.hasError)
-              ListTile(
-                title: const Text('Could not load event chats'),
-                trailing: TextButton(
-                  onPressed: () => ref.invalidate(joinedEventChatsProvider),
-                  child: const Text('Retry'),
-                ),
-              ),
-            if (filteredEventChats.isNotEmpty) ...[
-              Text(
-                'Event chats',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 6),
-              ...filteredEventChats.map(
-                (chat) => _EventChatThreadTile(
-                  chat: chat,
-                  onTap: () => context.push('/event/${chat.postId}/chat'),
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
             Row(
               children: [
                 Text('Primary', style: Theme.of(context).textTheme.titleLarge),
@@ -792,6 +839,33 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage>
                   ),
                 ),
               ),
+            if (eventChats.isLoading && !eventChats.hasValue)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 16),
+                child: LinearProgressIndicator(minHeight: 2),
+              ),
+            if (eventChats.hasError)
+              ListTile(
+                title: const Text('Could not load event chats'),
+                trailing: TextButton(
+                  onPressed: () => ref.invalidate(joinedEventChatsProvider),
+                  child: const Text('Retry'),
+                ),
+              ),
+            if (filteredEventChats.isNotEmpty) ...[
+              Text(
+                'Event chats',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 6),
+              ...filteredEventChats.map(
+                (chat) => _EventChatThreadTile(
+                  chat: chat,
+                  onTap: () => context.push('/event/${chat.postId}/chat'),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
           ],
         ),
       ),
@@ -799,14 +873,18 @@ class _DirectMessagesPageState extends ConsumerState<DirectMessagesPage>
   }
 }
 
-class _EventChatThreadTile extends StatelessWidget {
+class _EventChatThreadTile extends ConsumerWidget {
   const _EventChatThreadTile({required this.chat, required this.onTap});
 
   final JoinedEventChatSummary chat;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(
+      eventChatControlsProvider.select((state) => state.settings[chat.postId]),
+    );
+    if (settings?.left == true) return const SizedBox.shrink();
     final theme = Theme.of(context);
     return InkWell(
       borderRadius: BorderRadius.circular(22),
@@ -861,6 +939,16 @@ class _EventChatThreadTile extends StatelessWidget {
             Icon(
               Icons.chevron_right,
               color: theme.colorScheme.onSurfaceVariant,
+            ),
+            if (settings?.muted ?? chat.muted)
+              const Icon(
+                Icons.notifications_off_outlined,
+                size: 18,
+                semanticLabel: 'Muted chat',
+              ),
+            EventChatOptionsButton(
+              postId: chat.postId,
+              initialMuted: chat.muted,
             ),
           ],
         ),
@@ -1332,6 +1420,15 @@ class _MessageThreadTile extends StatelessWidget {
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
+                      if (thread.muted)
+                        const Padding(
+                          padding: EdgeInsets.only(left: 6),
+                          child: Icon(
+                            Icons.notifications_off_outlined,
+                            size: 16,
+                            semanticLabel: 'Muted chat',
+                          ),
+                        ),
                     ],
                   ),
                   const SizedBox(height: 3),
@@ -1382,6 +1479,7 @@ class _MessageThreadTile extends StatelessWidget {
                 Icons.chevron_right,
                 color: theme.colorScheme.onSurfaceVariant,
               ),
+            _DirectChatControlsMenu(thread: thread),
           ],
         ),
       ),
@@ -1662,7 +1760,86 @@ class _DirectChatPageState extends ConsumerState<_DirectChatPage>
   }
 }
 
-enum _DirectChatSafetyAction { report, block }
+enum _DirectChatSafetyAction { report, block, mute, delete }
+
+class _DirectChatControlsMenu extends ConsumerWidget {
+  const _DirectChatControlsMenu({required this.thread});
+  final DirectMessageThread thread;
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pending = ref.watch(
+      dmThreadControlsPendingProvider.select(
+        (value) => value.contains(thread.id),
+      ),
+    );
+    return PopupMenuButton<_DirectChatSafetyAction>(
+      key: ValueKey('dm-controls-${thread.id}'),
+      tooltip: 'Chat options for @${thread.handle}',
+      enabled: !pending,
+      icon: const Icon(Icons.more_horiz_rounded),
+      itemBuilder: (_) => [
+        PopupMenuItem(
+          value: _DirectChatSafetyAction.mute,
+          child: Text(thread.muted ? 'Unmute chat' : 'Mute chat'),
+        ),
+        const PopupMenuItem(
+          value: _DirectChatSafetyAction.delete,
+          child: Text('Delete chat'),
+        ),
+      ],
+      onSelected: (action) =>
+          _changeDirectChatControl(context, ref, thread, action),
+    );
+  }
+}
+
+Future<void> _changeDirectChatControl(
+  BuildContext context,
+  WidgetRef ref,
+  DirectMessageThread thread,
+  _DirectChatSafetyAction action, {
+  bool closeAfterDelete = false,
+}) async {
+  final controller = ref.read(directMessageThreadsProvider.notifier);
+  try {
+    if (action == _DirectChatSafetyAction.mute) {
+      await controller.setMuted(thread.id, !thread.muted);
+    } else if (action == _DirectChatSafetyAction.delete) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Delete chat for you?'),
+          content: const Text(
+            'This clears this conversation only for you. The other person keeps their copy. New messages will make the chat appear again.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Delete chat'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+      await controller.deleteChat(thread.id);
+      if (closeAfterDelete &&
+          context.mounted &&
+          Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+    }
+  } catch (error) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
+    }
+  }
+}
 
 class _DirectChatSafetyMenu extends ConsumerWidget {
   const _DirectChatSafetyMenu({required this.thread, required this.profile});
@@ -1672,21 +1849,46 @@ class _DirectChatSafetyMenu extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final pending = ref.watch(
+      dmThreadControlsPendingProvider.select(
+        (value) => value.contains(thread.id),
+      ),
+    );
     return PopupMenuButton<_DirectChatSafetyAction>(
       tooltip: 'Chat options',
       icon: const Icon(Icons.more_horiz_rounded),
-      itemBuilder: (context) => const [
+      enabled: !pending,
+      itemBuilder: (context) => [
         PopupMenuItem(
+          value: _DirectChatSafetyAction.mute,
+          child: Text(thread.muted ? 'Unmute chat' : 'Mute chat'),
+        ),
+        const PopupMenuItem(
+          value: _DirectChatSafetyAction.delete,
+          child: Text('Delete chat'),
+        ),
+        const PopupMenuItem(
           value: _DirectChatSafetyAction.report,
           child: Text('Report conversation'),
         ),
-        PopupMenuItem(
+        const PopupMenuItem(
           value: _DirectChatSafetyAction.block,
           child: Text('Block surfer'),
         ),
       ],
       onSelected: (action) {
         switch (action) {
+          case _DirectChatSafetyAction.mute:
+          case _DirectChatSafetyAction.delete:
+            unawaited(
+              _changeDirectChatControl(
+                context,
+                ref,
+                thread,
+                action,
+                closeAfterDelete: true,
+              ),
+            );
           case _DirectChatSafetyAction.report:
             unawaited(_reportDirectThread(context, ref, thread, profile));
           case _DirectChatSafetyAction.block:
@@ -2645,6 +2847,8 @@ bool _sameDirectThread(DirectMessageThread a, DirectMessageThread b) {
       a.requestAccepted != b.requestAccepted ||
       a.requestDeclined != b.requestDeclined ||
       a.canSendAttachments != b.canSendAttachments ||
+      a.muted != b.muted ||
+      a.cleared != b.cleared ||
       a.avatarUrl != b.avatarUrl ||
       a.premium != b.premium ||
       a.updatedAt != b.updatedAt ||
@@ -2696,6 +2900,8 @@ class DirectMessageThread {
     this.requestAccepted = false,
     this.requestDeclined = false,
     this.canSendAttachments = false,
+    this.muted = false,
+    this.cleared = false,
     required this.messages,
     this.avatarUrl,
     this.premium = false,
@@ -2715,6 +2921,8 @@ class DirectMessageThread {
   final bool requestAccepted;
   final bool requestDeclined;
   final bool canSendAttachments;
+  final bool muted;
+  final bool cleared;
   final List<DirectChatMessage> messages;
   final String? avatarUrl;
   final bool premium;
@@ -2727,6 +2935,8 @@ class DirectMessageThread {
     int? unreadCount,
     bool? requestAccepted,
     bool? requestDeclined,
+    bool? muted,
+    bool? cleared,
     List<DirectChatMessage>? messages,
     DateTime? updatedAt,
   }) {
@@ -2744,6 +2954,8 @@ class DirectMessageThread {
       requestAccepted: requestAccepted ?? this.requestAccepted,
       requestDeclined: requestDeclined ?? this.requestDeclined,
       canSendAttachments: canSendAttachments,
+      muted: muted ?? this.muted,
+      cleared: cleared ?? this.cleared,
       messages: messages ?? this.messages,
       avatarUrl: avatarUrl,
       premium: premium,
@@ -2766,6 +2978,8 @@ class DirectMessageThread {
       requestAccepted: json['request_accepted'] as bool? ?? false,
       requestDeclined: json['request_declined'] as bool? ?? false,
       canSendAttachments: json['can_send_attachments'] as bool? ?? false,
+      muted: json['muted'] as bool? ?? false,
+      cleared: json['cleared'] as bool? ?? false,
       messages: (json['messages'] as List<dynamic>? ?? const [])
           .map(
             (item) => DirectChatMessage.fromJson(item as Map<String, dynamic>),
@@ -2792,6 +3006,8 @@ class DirectMessageThread {
       'request_accepted': requestAccepted,
       'request_declined': requestDeclined,
       'can_send_attachments': canSendAttachments,
+      'muted': muted,
+      'cleared': cleared,
       'messages': messages.map((message) => message.toJson()).toList(),
       'avatar_url': avatarUrl,
       'premium': premium,

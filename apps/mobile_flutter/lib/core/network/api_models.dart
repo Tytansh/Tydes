@@ -837,6 +837,8 @@ class SocialPostModel {
     this.likeCount = 0,
     this.repostCount = 0,
     this.rsvpCount = 0,
+    this.chatMuted = false,
+    this.chatLeft = false,
   });
 
   final String id;
@@ -856,6 +858,9 @@ class SocialPostModel {
   final int likeCount;
   final int repostCount;
   final int rsvpCount;
+  // Private event-inbox metadata, absent from ordinary/public post responses.
+  final bool chatMuted;
+  final bool chatLeft;
 
   factory SocialPostModel.fromJson(
     Map<String, dynamic> json,
@@ -882,6 +887,8 @@ class SocialPostModel {
     likeCount: json['like_count'] as int? ?? 0,
     repostCount: json['repost_count'] as int? ?? 0,
     rsvpCount: json['rsvp_count'] as int? ?? 0,
+    chatMuted: json['chat_muted'] as bool? ?? false,
+    chatLeft: json['chat_left'] as bool? ?? false,
   );
 }
 

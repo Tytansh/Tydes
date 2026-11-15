@@ -58,6 +58,14 @@ class _Fixture {
         ..httpClientAdapter = FakeTransport((request) async {
           expect(request.headers['Authorization'], 'Bearer old-test-session');
           if (request.path == '/users/me') return body({'id': 'owner'});
+          if (request.path == '/social/posts/$_eventId/chat/settings') {
+            return body({
+              'user_id': 'owner',
+              'post_id': _eventId,
+              'muted': false,
+              'left': false,
+            });
+          }
           if (request.path == '/social/posts/$_eventId/chat') {
             expect(request.method, 'GET');
             reads++;

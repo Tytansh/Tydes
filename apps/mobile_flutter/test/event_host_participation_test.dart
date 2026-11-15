@@ -180,6 +180,15 @@ void main() {
                     if (request.path == '/users/me') {
                       return body({'id': 'owner'});
                     }
+                    if (request.path ==
+                        '/social/posts/hosted-event/chat/settings') {
+                      return body({
+                        'user_id': 'owner',
+                        'post_id': 'hosted-event',
+                        'muted': false,
+                        'left': false,
+                      });
+                    }
                     if (request.path == '/social/posts/hosted-event/chat') {
                       return body(<Map<String, dynamic>>[]);
                     }

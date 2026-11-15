@@ -92,6 +92,11 @@ class DirectMessageSession {
 
   Future<Map<String, dynamic>> getMap(String path) => _request('GET', path);
 
+  Future<Map<String, dynamic>> patchMap(
+    String path,
+    Map<String, dynamic> data,
+  ) => _request('PATCH', path, data: data);
+
   Future<void> ensureCurrent() => _checkSession();
 
   Future<List<Map<String, dynamic>>> getList(String path) async {
@@ -145,6 +150,33 @@ class DirectMessageSession {
       throw StateError('The conversation response was incomplete.');
     }
     return result;
+  }
+
+  Future<Map<String, dynamic>> setMuted(String threadId, bool muted) async {
+    final result = await _request(
+      'PATCH',
+      '/messages/threads/${Uri.encodeComponent(threadId)}/settings',
+      data: {'muted': muted},
+    );
+    if (result['user_id'] != ownerId ||
+        result['id'] != threadId ||
+        result['muted'] != muted ||
+        result['messages'] is! List) {
+      throw StateError('The chat setting was not confirmed. Please retry.');
+    }
+    return result;
+  }
+
+  Future<void> deleteThread(String threadId) async {
+    final result = await _request(
+      'DELETE',
+      '/messages/threads/${Uri.encodeComponent(threadId)}',
+    );
+    if (result['user_id'] != ownerId ||
+        result['thread_id'] != threadId ||
+        result['deleted'] != true) {
+      throw StateError('The chat deletion was not confirmed. Please retry.');
+    }
   }
 
   Future<Map<String, dynamic>> send({
