@@ -112,12 +112,30 @@ void verifyWebIcons(Directory webRoot) {
 
   for (final name in const [
     'index.html',
+    '404.html',
     'about/index.html',
     'support/index.html',
     'privacy/index.html',
     'terms/index.html',
   ]) {
-    final html = File('${webRoot.path}/$name').readAsStringSync();
+    _check(
+      File('${webRoot.path}/$name').existsSync(),
+      'Missing public home-screen metadata page: $name',
+    );
+  }
+
+  // Include future public or fallback HTML pages automatically, not only the
+  // known entrypoints above. Each page must install the same approved artwork.
+  final pages =
+      webRoot
+          .listSync(recursive: true, followLinks: false)
+          .whereType<File>()
+          .where((file) => file.path.toLowerCase().endsWith('.html'))
+          .toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
+  for (final page in pages) {
+    final name = page.path;
+    final html = page.readAsStringSync();
     final links = RegExp(r'<link\b[^>]*>').allMatches(html).map((m) => m[0]!);
     final appleLinks = links.where(
       (link) => link.contains('rel="apple-touch-icon"'),
@@ -148,6 +166,69 @@ void verifyWebIcons(Directory webRoot) {
       '$name must reference the current same-origin web manifest.',
     );
   }
+
+  _verifyMainInstallDiscovery(
+    File('${webRoot.path}/index.html').readAsStringSync(),
+  );
+}
+
+void _verifyMainInstallDiscovery(String html) {
+  final links = RegExp(
+    r'<link\b[^>]*>',
+  ).allMatches(html).map((match) => match[0]!).toList();
+  final entrypoints = links.where(
+    (link) =>
+        link.contains('rel="preload"') &&
+        link.contains('as="script"') &&
+        link.contains('href="main.dart.js"'),
+  );
+  _check(
+    entrypoints.length == 1,
+    'index.html must declare one main Flutter script preload.',
+  );
+  final apple = links.singleWhere(
+    (link) => link.contains('rel="apple-touch-icon"'),
+  );
+  final manifest = links.firstWhere(
+    (link) =>
+        link.contains('rel="manifest"') &&
+        link.contains('href="/manifest.json?v=tydes-wave-3"'),
+  );
+  final mainPosition = html.indexOf(entrypoints.single);
+  _check(
+    html.indexOf(apple) < mainPosition && html.indexOf(manifest) < mainPosition,
+    'index.html install metadata must precede the main Flutter preload.',
+  );
+  final applePreloads = links.where(
+    (link) =>
+        link.contains('rel="preload"') &&
+        link.contains('as="image"') &&
+        link.contains('type="image/png"') &&
+        link.contains('href="/icons/tydes-apple-touch-v3.png"'),
+  );
+  _check(
+    applePreloads.length == 1,
+    'index.html must preload its exact Apple icon URL as a PNG image.',
+  );
+  final applePreload = applePreloads.single;
+  _check(
+    !applePreload.contains('crossorigin'),
+    'index.html Apple icon preload must not set crossorigin.',
+  );
+  _check(
+    html.indexOf(applePreload) < mainPosition,
+    'index.html Apple icon preload must precede the main Flutter preload.',
+  );
+  _check(
+    links.any(
+      (link) =>
+          link.contains('rel="icon"') &&
+          link.contains('type="image/png"') &&
+          link.contains('sizes="192x192"') &&
+          link.contains('href="/icons/tydes-app-192.png?v=tydes-wave-3"'),
+    ),
+    'index.html must declare the approved 192px generic PNG icon.',
+  );
 }
 
 void _check(bool condition, String message) {

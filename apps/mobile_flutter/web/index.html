@@ -17,6 +17,18 @@
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
+  <!-- Publish install metadata before the much larger Flutter preloads. Fetch
+       the small icon on first visit too, rather than waiting for the iOS share
+       sheet to request it while the app is still downloading. -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="TYDES">
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/tydes-apple-touch-v3.png">
+  <link rel="preload" as="image" type="image/png" href="/icons/tydes-apple-touch-v3.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=tydes-wave-3">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/tydes-app-192.png?v=tydes-wave-3">
+  <link rel="manifest" href="/manifest.json?v=tydes-wave-3">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="Explore surf spots, live forecasts, tides, community, travel plans and alerts with TYDES.">
   <meta name="theme-color" content="#0b6f78">
@@ -41,20 +53,7 @@
   <link rel="preload" as="fetch" href="assets/assets/fonts/Sora-Variable.ttf" crossorigin="anonymous">
   <link rel="preload" as="fetch" href="assets/packages/cupertino_icons/assets/CupertinoIcons.ttf" crossorigin="anonymous">
 
-  <!-- iOS meta tags & icons -->
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="TYDES">
-  <!-- Keep one unambiguous, opaque iPhone icon. The root aliases remain for
-       Safari versions that probe apple-touch-icon.png automatically. -->
-  <link rel="apple-touch-icon" sizes="180x180" href="/icons/tydes-apple-touch-v3.png">
-
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=tydes-wave-3"/>
-
   <title>TYDES — Surf forecasts, community and travel</title>
-  <link rel="manifest" href="/manifest.json?v=tydes-wave-3">
   <style>
     :root { color-scheme: light; }
     :root[data-theme="dark"] { color-scheme: dark; }
