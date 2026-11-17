@@ -1,13 +1,18 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:mobile_flutter/core/network/api_models.dart';
+import 'package:mobile_flutter/core/network/basic_forecast_models.dart';
 import 'package:mobile_flutter/core/network/demo_persistence.dart';
 import 'package:mobile_flutter/core/network/demo_seed.dart';
+import 'package:mobile_flutter/core/network/detailed_forecast_models.dart';
 import 'package:mobile_flutter/core/network/surf_repository.dart';
 import 'package:mobile_flutter/features/home/home_page.dart';
 import 'package:mobile_flutter/features/social/social_profile.dart';
@@ -100,8 +105,41 @@ class _Repository extends SurfRepository {
   _Repository() : super(Dio(), DemoPersistence());
   int eventLoads = 0;
   int catalogLoads = 0;
+  int forecastLoads = 0;
+  int selectionWrites = 0;
+  int detailGuideLoads = 0;
   bool fail = false;
   List<SocialPostModel>? posts;
+  @override
+  Future<BasicForecastModel> fetchBasicForecast(String spotId) async {
+    forecastLoads++;
+    return BasicForecastModel.unavailable(spotId);
+  }
+
+  @override
+  Future<DetailedForecastModel> fetchDetailedForecast(String spotId) async {
+    forecastLoads++;
+    return DetailedForecastModel.unavailable(spotId);
+  }
+
+  @override
+  Future<TideForecastModel> fetchTides(String spotId) async {
+    forecastLoads++;
+    return TideForecastModel.unavailable(spotId);
+  }
+
+  @override
+  Future<SpotModel> fetchSpot(String spotId) async {
+    detailGuideLoads++;
+    return _spots.firstWhere((spot) => spot.id == spotId);
+  }
+
+  @override
+  Future<UserProfile> setFreeLiveSpot(String spotId) async {
+    selectionWrites++;
+    throw StateError('This shortcut must not change a selection.');
+  }
+
   @override
   Future<List<SocialPostModel>> fetchMapEvents() async {
     eventLoads++;
@@ -124,6 +162,10 @@ Future<ProviderContainer> _pump(
   String? initialSpotId,
   ThemeData? theme,
   List<SpotModel>? spots,
+  UserProfile? profile,
+  Future<UserProfile> Function()? loadProfile,
+  String? verificationRequiredToken,
+  bool withRouter = false,
 }) async {
   tester.view.physicalSize = Size(width, 1100);
   tester.view.devicePixelRatio = 1;
@@ -136,7 +178,14 @@ Future<ProviderContainer> _pump(
         repository.catalogLoads++;
         return spots ?? _spots;
       }),
-      meProvider.overrideWith((_) async => DemoSeed.me.copyWith(id: 'viewer')),
+      meProvider.overrideWith(
+        (_) async => loadProfile != null
+            ? loadProfile()
+            : profile ?? DemoSeed.me.copyWith(id: 'viewer'),
+      ),
+      emailVerificationRequiredTokenProvider.overrideWith(
+        (_) => verificationRequiredToken,
+      ),
       blockedUserIdsProvider.overrideWith((_) => {'blocked'}),
       spotsMapTileProviderFactory.overrideWithValue(() => _Tiles()),
       spotCardForecastProvider.overrideWith((_, id) async {
@@ -146,17 +195,63 @@ Future<ProviderContainer> _pump(
     ],
   );
   addTearDown(container.dispose);
+  final page = SpotsMapPage(initialSpotId: initialSpotId);
+  final router = withRouter
+      ? GoRouter(
+          routes: [
+            GoRoute(path: '/', builder: (_, _) => page),
+            GoRoute(
+              path: '/spot/:spotId',
+              builder: (_, state) => Scaffold(
+                body: Text('Routed spot ${state.pathParameters['spotId']}'),
+              ),
+            ),
+          ],
+        )
+      : null;
+  if (router != null) addTearDown(router.dispose);
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: MaterialApp(
-        theme: theme,
-        home: SpotsMapPage(initialSpotId: initialSpotId),
-      ),
+      child: router != null
+          ? MaterialApp.router(theme: theme, routerConfig: router)
+          : MaterialApp(theme: theme, home: page),
     ),
   );
   await tester.pumpAndSettle();
   return container;
+}
+
+UserProfile _freeProfile({String? spotId = 'uluwatu'}) => DemoSeed.me.copyWith(
+  id: 'viewer',
+  premium: false,
+  emailVerified: true,
+  clearFreeLiveSpotId: spotId == null,
+  freeLiveSpotId: spotId,
+);
+
+const _freeCard = ValueKey('free-premium-spot-card');
+const _freeOpen = ValueKey('free-premium-spot-open');
+
+Future<void> _revealFreeCard(WidgetTester tester) async {
+  // A drag through the viewport's center can pan the map instead of scrolling
+  // its parent. Move the outer list directly to reveal lazily built content.
+  for (
+    var attempt = 0;
+    attempt < 20 && find.byKey(_freeCard).evaluate().isEmpty;
+    attempt++
+  ) {
+    final position = tester
+        .state<ScrollableState>(find.byType(Scrollable).first)
+        .position;
+    position.jumpTo(
+      (position.pixels + 250).clamp(0.0, position.maxScrollExtent),
+    );
+    await tester.pump();
+  }
+  expect(find.byKey(_freeCard), findsOneWidget);
+  await tester.ensureVisible(find.byKey(_freeCard));
+  await tester.pumpAndSettle();
 }
 
 Future<void> _finish(WidgetTester tester, ProviderContainer container) async {
@@ -166,6 +261,249 @@ Future<void> _finish(WidgetTester tester, ProviderContainer container) async {
 }
 
 void main() {
+  for (final width in [390.0, 1440.0]) {
+    for (final dark in [false, true]) {
+      testWidgets(
+        'free Premium shortcut precedes events without forecast work at $width dark=$dark',
+        (tester) async {
+          const name =
+              'Uluwatu Peak with a very long surf break name along the Bukit coast';
+          final repository = _Repository();
+          final forecasts = <String>[];
+          final container = await _pump(
+            tester,
+            repository,
+            width: width,
+            profile: _freeProfile(),
+            forecasts: forecasts,
+            spots: [
+              _spots.first,
+              _spot('uluwatu', name, 'advanced', -8.82),
+              _spots.last,
+            ],
+            theme: dark
+                ? ThemeData.dark(useMaterial3: true)
+                : ThemeData.light(useMaterial3: true),
+          );
+          await _revealFreeCard(tester);
+          final card = find.byKey(_freeCard);
+          expect(find.text('Your free Premium spot'), findsOneWidget);
+          expect(
+            find.descendant(of: card, matching: find.text(name)),
+            findsOneWidget,
+          );
+          expect(find.byKey(_freeOpen), findsOneWidget);
+          expect(find.text('View forecast'), findsOneWidget);
+          expect(tester.getRect(card).left, greaterThanOrEqualTo(0));
+          expect(tester.getRect(card).right, lessThanOrEqualTo(width));
+          expect(
+            tester.getBottomLeft(card).dy,
+            lessThanOrEqualTo(
+              tester.getTopLeft(find.text('2 upcoming events')).dy,
+            ),
+          );
+          expect(forecasts, isEmpty);
+          expect(repository.forecastLoads, 0);
+          expect(repository.selectionWrites, 0);
+          expect(repository.detailGuideLoads, 0);
+          expect(repository.catalogLoads, 1);
+          expect(repository.eventLoads, 1);
+          expect(tester.takeException(), isNull);
+          await _finish(tester, container);
+        },
+      );
+    }
+
+    testWidgets(
+      'free shortcut survives event, saved and location filters at $width',
+      (tester) async {
+        final repository = _Repository();
+        final forecasts = <String>[];
+        final container = await _pump(
+          tester,
+          repository,
+          width: width,
+          profile: _freeProfile(),
+          forecasts: forecasts,
+          initialSpotId: 'batu',
+        );
+        expect(find.byKey(const ValueKey('map-spot-uluwatu')), findsNothing);
+        await _revealFreeCard(tester);
+        expect(find.text('Your free Premium spot'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byKey(_freeCard),
+            matching: find.text('Uluwatu'),
+          ),
+          findsOneWidget,
+        );
+        tester
+            .state<ScrollableState>(find.byType(Scrollable).first)
+            .position
+            .jumpTo(0);
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('main-map-show-events')));
+        await tester.pumpAndSettle();
+        container.read(favoriteSpotIdsProvider.notifier).replaceAll({});
+        await tester.tap(find.byKey(const ValueKey('main-map-saved-only')));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), 'no matching spot');
+        await tester.pumpAndSettle();
+        await _revealFreeCard(tester);
+        expect(find.byKey(_freeCard), findsOneWidget);
+        expect(find.byType(FlutterMap), findsOneWidget);
+        expect(find.byType(SurfMapSpotPin), findsNothing);
+        expect(find.byType(MapEventMarker), findsNothing);
+        expect(find.textContaining('upcoming events'), findsNothing);
+        expect(forecasts, ['batu']);
+        expect(repository.forecastLoads, 0);
+        expect(repository.selectionWrites, 0);
+        expect(repository.catalogLoads, 1);
+        expect(repository.eventLoads, 1);
+        expect(tester.takeException(), isNull);
+        await _finish(tester, container);
+      },
+    );
+  }
+
+  for (final entry in {
+    'Premium': _freeProfile().copyWith(premium: true),
+    'no selected spot': _freeProfile(spotId: null),
+    'unknown selected spot': _freeProfile(spotId: 'removed-spot'),
+    'empty selected spot': _freeProfile(spotId: ''),
+    'unverified': _freeProfile().copyWith(emailVerified: false),
+  }.entries) {
+    testWidgets('free shortcut is hidden for ${entry.key}', (tester) async {
+      final repository = _Repository();
+      final container = await _pump(tester, repository, profile: entry.value);
+      final position = tester
+          .state<ScrollableState>(find.byType(Scrollable).first)
+          .position;
+      position.jumpTo(position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      expect(find.byKey(_freeCard), findsNothing);
+      expect(find.byKey(_freeOpen), findsNothing);
+      expect(repository.forecastLoads, 0);
+      expect(repository.selectionWrites, 0);
+      expect(tester.takeException(), isNull);
+      await _finish(tester, container);
+    });
+  }
+
+  testWidgets('verification latch hides a selected shortcut without requests', (
+    tester,
+  ) async {
+    final repository = _Repository();
+    final container = await _pump(
+      tester,
+      repository,
+      profile: _freeProfile(),
+      verificationRequiredToken: 'verification-required-fixture',
+    );
+    final position = tester
+        .state<ScrollableState>(find.byType(Scrollable).first)
+        .position;
+    position.jumpTo(position.maxScrollExtent);
+    await tester.pumpAndSettle();
+    expect(find.byKey(_freeCard), findsNothing);
+    expect(repository.forecastLoads, 0);
+    expect(repository.selectionWrites, 0);
+    await _finish(tester, container);
+  });
+
+  testWidgets('profile failure never uses the previous selected shortcut', (
+    tester,
+  ) async {
+    final repository = _Repository();
+    var failProfile = false;
+    final container = await _pump(
+      tester,
+      repository,
+      loadProfile: () async {
+        if (failProfile) throw StateError('Profile unavailable');
+        return _freeProfile();
+      },
+    );
+    await _revealFreeCard(tester);
+    failProfile = true;
+    container.invalidate(meProvider);
+    await tester.pumpAndSettle();
+    expect(container.read(meProvider).hasError, isTrue);
+    expect(find.byKey(_freeCard), findsNothing);
+    expect(repository.forecastLoads, 0);
+    expect(repository.selectionWrites, 0);
+    expect(tester.takeException(), isNull);
+    await _finish(tester, container);
+  });
+
+  testWidgets(
+    'View forecast opens the confirmed free spot, not the map selection',
+    (tester) async {
+      final repository = _Repository();
+      final forecasts = <String>[];
+      final container = await _pump(
+        tester,
+        repository,
+        profile: _freeProfile(),
+        initialSpotId: 'batu',
+        forecasts: forecasts,
+        withRouter: true,
+      );
+      await _revealFreeCard(tester);
+      await tester.tap(find.byKey(_freeOpen));
+      await tester.pumpAndSettle();
+      expect(find.text('Routed spot uluwatu'), findsOneWidget);
+      expect(find.text('Routed spot batu'), findsNothing);
+      expect(forecasts, ['batu']);
+      expect(repository.forecastLoads, 0);
+      expect(repository.selectionWrites, 0);
+      expect(repository.detailGuideLoads, 0);
+      expect(tester.takeException(), isNull);
+      await _finish(tester, container);
+    },
+  );
+
+  testWidgets(
+    'pending account replacement removes the old free spot shortcut',
+    (tester) async {
+      final repository = _Repository();
+      Completer<UserProfile>? replacement;
+      final container = await _pump(
+        tester,
+        repository,
+        loadProfile: () => replacement?.future ?? Future.value(_freeProfile()),
+        withRouter: true,
+      );
+      await _revealFreeCard(tester);
+      expect(find.byKey(_freeCard), findsOneWidget);
+      replacement = Completer<UserProfile>();
+      container.invalidate(meProvider);
+      expect(container.read(meProvider).isLoading, isTrue);
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(_freeCard), findsNothing);
+      replacement.complete(
+        _freeProfile(spotId: 'batu').copyWith(id: 'other-viewer'),
+      );
+      await tester.pumpAndSettle();
+      await _revealFreeCard(tester);
+      expect(
+        find.descendant(
+          of: find.byKey(_freeCard),
+          matching: find.text('Batu Bolong'),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(_freeOpen));
+      await tester.pumpAndSettle();
+      expect(find.text('Routed spot batu'), findsOneWidget);
+      expect(repository.forecastLoads, 0);
+      expect(repository.selectionWrites, 0);
+      expect(tester.takeException(), isNull);
+      await _finish(tester, container);
+    },
+  );
+
   testWidgets('map layer switches expose independent accessible labels', (
     tester,
   ) async {

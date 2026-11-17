@@ -12,6 +12,7 @@ import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../home/home_page.dart';
 import '../social/social_profile.dart';
+import 'free_premium_spot_card.dart';
 import 'map_events.dart';
 import 'map_pinch_gestures.dart';
 import 'map_layer_switches.dart';
@@ -70,7 +71,11 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
     final spots = ref.watch(spotsProvider);
     final favoriteSpotIds = ref.watch(favoriteSpotIdsProvider);
     final eventPosts = _showEvents ? ref.watch(mapEventPostsProvider) : null;
-    final viewer = ref.watch(meProvider).valueOrNull;
+    final me = ref.watch(meProvider);
+    final viewer = me.valueOrNull;
+    final verificationRequired = ref.watch(
+      emailVerificationRequiredTokenProvider,
+    );
     final blocked = ref.watch(blockedUserIdsProvider);
     final followed = ref.watch(followedUserIdsProvider);
 
@@ -88,6 +93,22 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
       ),
       body: spots.when(
         data: (items) {
+          // Resolve from the complete catalogue, not the current map filters.
+          // Do not fetch forecasts just to render this account shortcut.
+          SpotModel? freePremiumSpot;
+          if (!me.isLoading &&
+              !me.hasError &&
+              viewer != null &&
+              viewer.emailVerified &&
+              !viewer.premium &&
+              verificationRequired == null) {
+            for (final spot in items) {
+              if (spot.id == viewer.freeLiveSpotId) {
+                freePremiumSpot = spot;
+                break;
+              }
+            }
+          }
           final sourceItems = _savedOnly
               ? items
                     .where((spot) => favoriteSpotIds.contains(spot.id))
@@ -424,6 +445,11 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                     ),
                   ),
                 ),
+                if (freePremiumSpot != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+                    child: FreePremiumSpotCard(spot: freePremiumSpot),
+                  ),
                 if (_showEvents) ...[
                   Padding(
                     padding: const EdgeInsets.fromLTRB(18, 18, 18, 8),
