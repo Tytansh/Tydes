@@ -184,7 +184,11 @@ void main() {
       expect(external.options.method, 'PUT');
       expect(external.options.uri.host, 'private-r2.fixture.invalid');
       expect(external.options.headers['If-None-Match'], '*');
-      expect(external.options.headers['Content-Length'], bytes.length);
+      // Dio serializes browser binary-body lengths as decimal header strings.
+      expect(
+        external.options.headers['Content-Length'].toString(),
+        bytes.length.toString(),
+      );
       expect(external.options.headers['Authorization'], isNull);
       expect(external.bytes, orderedEquals(bytes));
       final reserve = fixture.accountTransport.calls.singleWhere(
@@ -225,7 +229,10 @@ void main() {
     expect(external.options.uri.host, 'private-r2.fixture.invalid');
     expect(external.options.headers['Content-Type'], 'video/mp4');
     expect(external.options.headers['If-None-Match'], '*');
-    expect(external.options.headers['Content-Length'], bytes.length);
+    expect(
+      external.options.headers['Content-Length'].toString(),
+      bytes.length.toString(),
+    );
     expect(external.options.headers['Authorization'], isNull);
     expect(external.options.headers['AuthorizationSignature'], isNull);
     expect(external.options.headers['Tus-Resumable'], isNull);
