@@ -513,23 +513,36 @@ class TydesDesktopPostWidth extends StatelessWidget {
   }
 }
 
-/// Preserve phone proportions without growing taller than the desktop media.
+/// A full-frame portrait stage, capped so desktop posts never become oversized.
 class SocialPostMediaFrame extends StatelessWidget {
   const SocialPostMediaFrame({super.key, required this.child});
 
   // A 680px post has 4px card margins and 18px content padding on each side.
   static const maxHeight = TydesDesktopPostWidth.maxWidth - 44;
+  static const aspectRatio = 9 / 16;
 
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final desktop = MediaQuery.sizeOf(context).width >= 980;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        final height = (width / (desktop ? 1 : 4 / 5)).clamp(0.0, maxHeight);
-        return SizedBox(width: width, height: height, child: child);
+        final heightLimit = constraints.hasBoundedHeight
+            ? constraints.maxHeight.clamp(0.0, maxHeight)
+            : maxHeight;
+        final width = constraints.maxWidth.clamp(
+          0.0,
+          heightLimit * aspectRatio,
+        );
+        return Align(
+          alignment: Alignment.topCenter,
+          heightFactor: 1,
+          child: SizedBox(
+            width: width,
+            height: width / aspectRatio,
+            child: child,
+          ),
+        );
       },
     );
   }
@@ -2638,110 +2651,113 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
       mediaCount: media.length,
     );
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(widget.borderRadius),
-      child: SocialPostMediaFrame(
-        child: Stack(
-          children: [
-            PageView.builder(
-              controller: _pageController,
-              physics: _zooming
-                  ? const NeverScrollableScrollPhysics()
-                  : socialPostMediaCarouselPhysics(isWeb: kIsWeb),
-              itemCount: media.length,
-              onPageChanged: _pageChanged,
-              itemBuilder: (context, index) {
-                final item = media[index];
-                if (item.mediaType == 'video') {
-                  final sources = videoPlaybackSources(
-                    url: item.url,
-                    fallbackUrl: item.fallbackUrl,
-                    isWeb: kIsWeb,
-                    supportsNativeHls: kIsWeb && nativeHlsPlaybackSupported(),
-                  );
-                  return AutoplayVideoPlayer(
+    return SocialPostMediaFrame(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(widget.borderRadius),
+        child: ColoredBox(
+          color: Colors.black,
+          child: Stack(
+            children: [
+              PageView.builder(
+                controller: _pageController,
+                physics: _zooming
+                    ? const NeverScrollableScrollPhysics()
+                    : socialPostMediaCarouselPhysics(isWeb: kIsWeb),
+                itemCount: media.length,
+                onPageChanged: _pageChanged,
+                itemBuilder: (context, index) {
+                  final item = media[index];
+                  if (item.mediaType == 'video') {
+                    final sources = videoPlaybackSources(
+                      url: item.url,
+                      fallbackUrl: item.fallbackUrl,
+                      isWeb: kIsWeb,
+                      supportsNativeHls: kIsWeb && nativeHlsPlaybackSupported(),
+                    );
+                    return AutoplayVideoPlayer(
+                      key: ValueKey(item.id),
+                      url: sources.primary,
+                      fallbackUrl: sources.fallback,
+                      thumbnailUrl: item.thumbnailUrl,
+                      borderRadius: 0,
+                      expand: true,
+                      active: index == _pageIndex,
+                      enableZoom: true,
+                      onZoomChanged: _zoomChanged,
+                    );
+                  }
+                  return PostMediaZoom(
                     key: ValueKey(item.id),
-                    url: sources.primary,
-                    fallbackUrl: sources.fallback,
-                    thumbnailUrl: item.thumbnailUrl,
-                    borderRadius: 0,
-                    expand: true,
-                    active: index == _pageIndex,
-                    enableZoom: true,
                     onZoomChanged: _zoomChanged,
+                    child: _PostPhoto(url: item.url),
                   );
-                }
-                return PostMediaZoom(
-                  key: ValueKey(item.id),
-                  onZoomChanged: _zoomChanged,
-                  child: _PostPhoto(url: item.url),
-                );
-              },
-            ),
-            if (showWebArrows && !_zooming) ...[
-              if (_pageIndex > 0)
-                Positioned(
-                  left: 12,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: PostMediaArrowButton(
-                      tooltip: 'Previous photo',
-                      icon: Icons.chevron_left_rounded,
-                      onPressed: () => _showPage(_pageIndex - 1),
+                },
+              ),
+              if (showWebArrows && !_zooming) ...[
+                if (_pageIndex > 0)
+                  Positioned(
+                    left: 12,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: PostMediaArrowButton(
+                        tooltip: 'Previous photo',
+                        icon: Icons.chevron_left_rounded,
+                        onPressed: () => _showPage(_pageIndex - 1),
+                      ),
                     ),
                   ),
-                ),
-              if (_pageIndex < media.length - 1)
-                Positioned(
-                  right: 12,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: PostMediaArrowButton(
-                      tooltip: 'Next photo',
-                      icon: Icons.chevron_right_rounded,
-                      onPressed: () => _showPage(_pageIndex + 1),
+                if (_pageIndex < media.length - 1)
+                  Positioned(
+                    right: 12,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: PostMediaArrowButton(
+                        tooltip: 'Next photo',
+                        icon: Icons.chevron_right_rounded,
+                        onPressed: () => _showPage(_pageIndex + 1),
+                      ),
                     ),
                   ),
-                ),
-            ],
-            if (media.length > 1 && !_zooming)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 12,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(media.length, (index) {
-                    final selected = index == _pageIndex;
-                    return Semantics(
-                      button: true,
-                      selected: selected,
-                      label: 'Media ${index + 1} of ${media.length}',
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => _showPage(index),
-                        child: Padding(
-                          padding: const EdgeInsets.all(5),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 180),
-                            width: selected ? 8 : 6,
-                            height: selected ? 8 : 6,
-                            decoration: BoxDecoration(
-                              color: selected
-                                  ? Colors.white
-                                  : Colors.white.withValues(alpha: 0.45),
-                              shape: BoxShape.circle,
+              ],
+              if (media.length > 1 && !_zooming)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 12,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(media.length, (index) {
+                      final selected = index == _pageIndex;
+                      return Semantics(
+                        button: true,
+                        selected: selected,
+                        label: 'Media ${index + 1} of ${media.length}',
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => _showPage(index),
+                          child: Padding(
+                            padding: const EdgeInsets.all(5),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              width: selected ? 8 : 6,
+                              height: selected ? 8 : 6,
+                              decoration: BoxDecoration(
+                                color: selected
+                                    ? Colors.white
+                                    : Colors.white.withValues(alpha: 0.45),
+                                shape: BoxShape.circle,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    );
-                  }),
+                      );
+                    }),
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -2809,7 +2825,7 @@ class _PostPhotoState extends State<_PostPhoto> {
   Widget build(BuildContext context) {
     return Image.network(
       _requestUrl,
-      fit: BoxFit.cover,
+      fit: BoxFit.contain,
       gaplessPlayback: true,
       webHtmlElementStrategy: mediaImageStrategy(_requestUrl),
       loadingBuilder: (context, child, progress) {
@@ -3251,7 +3267,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
     return ColoredBox(
       color: Colors.black,
       child: FittedBox(
-        fit: BoxFit.cover,
+        fit: BoxFit.contain,
         clipBehavior: Clip.hardEdge,
         child: SizedBox(
           width: size.width,
@@ -3544,7 +3560,7 @@ class _VideoPosterFrame extends StatelessWidget {
     if (thumbnailUrl == null) return fallback;
     return Image.network(
       thumbnailUrl!,
-      fit: BoxFit.cover,
+      fit: BoxFit.contain,
       gaplessPlayback: true,
       webHtmlElementStrategy: mediaImageStrategy(thumbnailUrl!),
       frameBuilder: (context, child, frame, synchronous) {
