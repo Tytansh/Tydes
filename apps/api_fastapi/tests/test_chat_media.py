@@ -16,13 +16,14 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.core import chat_media, media_cleanup
-from app.core.bunny_stream import BunnyUploadTarget, BunnyVideo, PrivateChatBunnyClient
+from app.core.bunny_stream import BunnyFetchRejected, BunnyVideo, PrivateChatBunnyClient
 from app.core.media_storage import PrivateChatR2Storage, StoredObjectMetadata
 from app.core.media_uploads import MediaUploadLedger, UploadLimits, UploadQuotaExceeded
 from app.core.models import build_seed
 from app.core.auth import require_authenticated_user
 from app.core.rate_limit import api_rate_limiter
 from app.modules.messages.media_router import router as media_router
+from app.core.video_validation import ValidatedVideo
 
 
 class PhotoStorage:
@@ -37,6 +38,7 @@ class PhotoStorage:
     def read_object_range(self, *args):
         return self.header
     def signed_read_url(self, name, **kwargs):
+        self.read_target = (name, kwargs)
         return "https://private-r2.example.invalid/object?signature=temporary"
     def delete_object(self, name):
         self.deleted.append(name)
@@ -49,10 +51,11 @@ class VideoStorage:
     reads = 0
     probes = 0
     mp4_resolution = "480p"
-    def create_upload(self, title, *, expires_seconds):
-        return BunnyUploadTarget("video-guid", "https://video.bunnycdn.com/tusupload",
-            {"VideoId": "video-guid", "AuthorizationSignature": "temporary"},
-            datetime.now(timezone.utc) + timedelta(seconds=expires_seconds))
+    def fetch_validated_source(self, url, title, *, etag):
+        self.fetches.append((url, title, etag))
+    def resolve_imported_video(self, title):
+        self.resolves.append(title)
+        return self.resolved_id
     def get_video(self, identifier):
         self.reads += 1
         return self.video
@@ -66,6 +69,21 @@ class VideoStorage:
         return f"https://private-video.example.invalid/signed/{identifier}/{filename}"
 
 
+class DurableFixtureLedger:
+    """Advertise the tested production prerequisite without opening a database.
+
+    Every operation remains bound to a separate in-memory ledger. Merely
+    changing that ledger's database_url would accidentally invoke psycopg.
+    """
+    database_url = "postgresql://fixture.invalid/tydes-test-only"
+
+    def __init__(self):
+        self.memory = MediaUploadLedger()
+
+    def __getattr__(self, name):
+        return getattr(self.memory, name)
+
+
 @pytest.fixture
 def fixture(monkeypatch):
     values = {
@@ -75,18 +93,23 @@ def fixture(monkeypatch):
         "CHAT_BUNNY_STREAM_LIBRARY_ID": "private-library", "CHAT_BUNNY_STREAM_API_KEY": "fake-video",
         "CHAT_BUNNY_STREAM_CDN_HOSTNAME": "private.example.invalid",
         "CHAT_BUNNY_STREAM_TOKEN_KEY": "fake-token-key",
+        "CHAT_VIDEO_STAGING_VERIFIED": "true",
     }
     for key, value in values.items():
         monkeypatch.setenv(key, value)
-    ledger = MediaUploadLedger()
+    ledger = DurableFixtureLedger()
     photo, video = PhotoStorage(), VideoStorage()
     photo.deleted, video.deleted = [], []
+    video.fetches, video.resolves, video.resolved_id = [], [], "video-guid"
     video.reads = video.probes = 0
     monkeypatch.setattr(chat_media, "upload_ledger", ledger)
     monkeypatch.setattr(chat_media, "PrivateChatR2Storage", lambda: photo)
     monkeypatch.setattr(chat_media, "PrivateChatBunnyClient", lambda: video)
     monkeypatch.setattr(chat_media, "authorize_context", lambda *args, **kwargs: None)
     monkeypatch.setattr(chat_media, "_message_exists", lambda *args: True)
+    monkeypatch.setattr(chat_media.video_validation, "is_available", lambda: True)
+    monkeypatch.setattr(chat_media.video_validation, "validate_staged_video", lambda *args:
+        ValidatedVideo('"' + "a" * 32 + '"', 18, 320, 180, 540))
     user = build_seed()["user"].model_copy(update={"id": "alice", "email_verified": True})
     return user, ledger, photo, video
 
@@ -114,6 +137,29 @@ def test_photos_can_work_without_private_video(fixture, monkeypatch):
         upload(fixture, "video")
     assert error.value.status_code == 503
     assert fixture[1]._memory == {}
+
+
+def test_videos_require_the_constructed_durable_ledger_not_only_a_database_environment(fixture, monkeypatch):
+    user, _, _, bunny = fixture
+    memory = MediaUploadLedger()
+    monkeypatch.setattr(chat_media, "upload_ledger", memory)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://fixture.invalid/not-opened")
+    caps = chat_media.capabilities()
+    assert caps["photos_enabled"] is True and caps["enabled"] is True
+    assert caps["videos_enabled"] is False
+    with pytest.raises(HTTPException) as error:
+        chat_media.reserve(user, "direct", "thread-a", "video", "video/mp4", 16, "127.0.0.1")
+    assert error.value.status_code == 503 and memory._memory == {}
+    assert bunny.fetches == []
+    photo = chat_media.reserve(user, "direct", "thread-a", "photo", "image/jpeg", 16, "127.0.0.1")
+    assert chat_media.complete(user, photo["id"])["status"] == "ready"
+
+
+def test_video_durable_gate_uses_initialized_ledger_even_if_environment_changes(fixture, monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    assert fixture[1].database_url
+    assert fixture[1].memory.database_url is None  # All test I/O is memory-only.
+    assert chat_media.capabilities()["videos_enabled"] is True
 
 
 def test_photo_upload_has_no_public_url_and_requires_sent_binding(fixture):
@@ -186,7 +232,7 @@ def test_invalid_photo_is_rejected_and_deleted(fixture, bad_size, bad_header):
 def test_video_processing_and_actual_encoded_storage_guard(fixture):
     user, ledger, _, video = fixture
     identifier = upload(fixture, "video")["id"]
-    assert ledger.get(identifier, user.id).total_bytes == chat_media.VIDEO_MAX_BYTES
+    assert ledger.get(identifier, user.id).total_bytes == chat_media.VIDEO_MAX_BYTES + 16
     video.video = BunnyVideo("video-guid", 2, None, 100)
     assert chat_media.complete(user, identifier)["status"] == "processing"
     video.video = BunnyVideo("video-guid", 3, 18, chat_media.VIDEO_MAX_BYTES + 1)
@@ -548,11 +594,11 @@ def test_tiny_png_with_huge_ihdr_is_rejected_before_ready(fixture):
     assert photo.deleted
 
 
-def test_private_video_upload_link_expires_after_thirty_minutes(fixture):
+def test_private_video_staging_link_expires_after_fifteen_minutes(fixture):
     user, ledger, _, _ = fixture
     target = upload(fixture, "video")
     row = ledger.get(target["id"], user.id)
-    assert timedelta(minutes=29) < row.expires_at - row.created_at < timedelta(minutes=31)
+    assert timedelta(minutes=14) < row.expires_at - row.created_at < timedelta(minutes=16)
 
 
 def test_scope_deletion_queues_other_participants_without_releasing_retained_bytes(fixture):
@@ -568,3 +614,316 @@ def test_scope_deletion_queues_other_participants_without_releasing_retained_byt
     with pytest.raises(UploadQuotaExceeded):
         ledger.reserve(replace(row, id="another", status="pending"),
                        replace(UploadLimits.from_env(), user_retained_bytes=16))
+
+
+def test_private_video_reserves_exact_immutable_r2_source_without_any_bunny_grant(fixture):
+    user, ledger, storage, bunny = fixture
+    target = upload(fixture, "video")
+    row = ledger.get(target["id"], user.id)
+    assert target["upload"]["protocol"] == "put"
+    assert target["upload"]["headers"] == {"Content-Type": "video/mp4", "If-None-Match": "*"}
+    assert storage.target[1] == {"content_type": "video/mp4", "content_length": 16, "expires_seconds": 900}
+    assert row.chat_source_name == row.pending_name
+    assert row.chat_source_bytes == 16 and row.expected_bytes == chat_media.VIDEO_MAX_BYTES
+    assert row.external_id is None and row.chat_import_state == "staged"
+    assert row.total_bytes == chat_media.VIDEO_MAX_BYTES + 16
+    assert bunny.fetches == bunny.resolves == []
+    assert "Bunny" not in str(target) and "AuthorizationSignature" not in str(target)
+
+
+@pytest.mark.parametrize("disabled", ["staging", "r2", "decoder"])
+def test_private_video_requires_every_staging_safety_gate(fixture, monkeypatch, disabled):
+    if disabled == "staging":
+        monkeypatch.delenv("CHAT_VIDEO_STAGING_VERIFIED")
+    elif disabled == "r2":
+        monkeypatch.setenv("CHAT_R2_PRIVATE_VERIFIED", "false")
+    else:
+        monkeypatch.setattr(chat_media.video_validation, "is_available", lambda: False)
+    assert not chat_media.capabilities()["videos_enabled"]
+    with pytest.raises(HTTPException) as error:
+        upload(fixture, "video")
+    assert error.value.status_code == 503 and fixture[1]._memory == {}
+
+
+def test_rejected_source_never_creates_or_imports_paid_video_and_waits_for_write_expiry(fixture, monkeypatch):
+    user, ledger, storage, bunny = fixture
+    identifier = upload(fixture, "video")["id"]
+    def invalid(*args):
+        raise ValueError("Videos must be no longer than 30 seconds.")
+    monkeypatch.setattr(chat_media.video_validation, "validate_staged_video", invalid)
+    with pytest.raises(HTTPException) as error:
+        chat_media.complete(user, identifier)
+    assert error.value.status_code == 400
+    assert ledger.get(identifier, user.id).status == "rejected"
+    assert bunny.fetches == bunny.resolves == bunny.deleted == storage.deleted == []
+    ledger._memory[identifier] = replace(ledger.get(identifier, user.id),
+        expires_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+    chat_media._delete(ledger.get(identifier, user.id))
+    assert storage.deleted and ledger.get(identifier, user.id).chat_source_deleted_at is not None
+
+
+@pytest.mark.parametrize("exception,code", [
+    (chat_media.video_validation.ValidationBusy, None),
+    (chat_media.video_validation.VideoValidationUnavailable, 503),
+])
+def test_busy_or_unavailable_validator_does_not_consume_fetch_intent(fixture, monkeypatch, exception, code):
+    user, ledger, _, bunny = fixture
+    identifier = upload(fixture, "video")["id"]
+    def fail(*args):
+        raise exception()
+    monkeypatch.setattr(chat_media.video_validation, "validate_staged_video", fail)
+    if code:
+        with pytest.raises(HTTPException) as error:
+            chat_media.complete(user, identifier)
+        assert error.value.status_code == code
+    else:
+        assert chat_media.complete(user, identifier)["status"] == "processing"
+    assert ledger.get(identifier, user.id).chat_import_state == "staged"
+    assert bunny.fetches == bunny.resolves == []
+
+
+def test_fetch_cas_is_durable_before_http_and_timeout_retries_are_read_only(fixture):
+    user, ledger, storage, bunny = fixture
+    identifier = upload(fixture, "video")["id"]
+    bunny.resolved_id = None
+    def timeout(url, title, *, etag):
+        row = ledger.get(identifier, user.id)
+        assert row.chat_import_state == "fetch_started" and row.chat_source_etag == etag
+        assert row.chat_source_duration_seconds == 18 and row.chat_source_read_expires_at
+        bunny.fetches.append((url, title, etag))
+        raise httpx.ReadTimeout("fake timeout")
+    bunny.fetch_validated_source = timeout
+    for _ in range(3):
+        assert chat_media.complete(user, identifier)["status"] == "processing"
+    assert len(bunny.fetches) == 1 and len(bunny.resolves) == 3
+    assert storage.read_target == (ledger.get(identifier, user.id).chat_source_name,
+        {"expires_seconds": 600, "etag": '"' + "a" * 32 + '"'})
+    assert ledger.get(identifier, user.id).chat_import_state == "fetch_started"
+    bunny.resolved_id = "video-guid"
+    assert chat_media.complete(user, identifier)["status"] == "ready"
+    assert len(bunny.fetches) == 1
+    assert ledger.get(identifier, user.id).chat_import_state == "imported"
+
+
+def test_two_workers_validate_but_only_one_submits_fetch(fixture, monkeypatch):
+    from threading import Barrier
+    user, ledger, _, bunny = fixture
+    identifier = upload(fixture, "video")["id"]
+    gate = Barrier(2)
+    def validate(*args):
+        gate.wait(timeout=5)
+        return ValidatedVideo('"' + "a" * 32 + '"', 18, 320, 180, 540)
+    monkeypatch.setattr(chat_media.video_validation, "validate_staged_video", validate)
+    bunny.resolved_id = None
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: chat_media.complete(user, identifier), range(2)))
+    assert all(result["status"] == "processing" for result in results)
+    assert len(bunny.fetches) == 1 and ledger.get(identifier, user.id).chat_import_state == "fetch_submitted"
+
+
+def test_cancel_during_validation_prevents_fetch_and_cannot_be_reimported(fixture, monkeypatch):
+    user, ledger, _, bunny = fixture
+    identifier = upload(fixture, "video")["id"]
+    def validate(*args):
+        chat_media.cancel(user, identifier)
+        return ValidatedVideo('"' + "a" * 32 + '"', 18, 320, 180, 540)
+    monkeypatch.setattr(chat_media.video_validation, "validate_staged_video", validate)
+    with pytest.raises(HTTPException) as error:
+        chat_media.complete(user, identifier)
+    assert error.value.status_code == 409
+    assert ledger.get(identifier, user.id).status == "canceled" and bunny.fetches == []
+
+
+def test_stale_validation_failure_cannot_reject_or_delete_another_workers_sent_video(fixture, monkeypatch):
+    user, ledger, storage, bunny = fixture
+    identifier = upload(fixture, "video")["id"]
+    def stale_failure(*args):
+        ledger._memory[identifier] = replace(ledger.get(identifier, user.id),
+            status="used", message_id="sent-message", external_id="video-guid",
+            chat_import_state="imported", chat_video_resolutions="480p", chat_video_mp4_resolution="480p")
+        raise ValueError("Stale validation failure")
+    monkeypatch.setattr(chat_media.video_validation, "validate_staged_video", stale_failure)
+    with pytest.raises(HTTPException) as error:
+        chat_media.complete(user, identifier)
+    assert error.value.status_code == 409
+    assert ledger.get(identifier, user.id).status == "used"
+    assert storage.deleted == bunny.deleted == bunny.fetches == []
+
+
+def test_crash_after_fetch_intent_never_authorizes_another_post(fixture, monkeypatch):
+    user, ledger, _, bunny = fixture
+    identifier = upload(fixture, "video")["id"]
+    bunny.resolved_id = None
+    original = ledger.begin_chat_video_fetch
+    class SimulatedWorkerExit(BaseException):
+        pass
+    def crash(*args, **kwargs):
+        assert original(*args, **kwargs)
+        raise SimulatedWorkerExit()
+    monkeypatch.setattr(ledger, "begin_chat_video_fetch", crash)
+    with pytest.raises(SimulatedWorkerExit):
+        chat_media.complete(user, identifier)
+    assert ledger.get(identifier, user.id).chat_import_state == "fetch_started"
+    assert chat_media.complete(user, identifier)["status"] == "processing"
+    assert bunny.fetches == [] and len(bunny.resolves) == 1
+
+
+def test_response_persistence_failure_recovers_guid_without_resubmission(fixture, monkeypatch):
+    user, ledger, _, bunny = fixture
+    identifier = upload(fixture, "video")["id"]
+    def failure(*args, **kwargs):
+        raise RuntimeError("fake durable write failure")
+    monkeypatch.setattr(ledger, "record_chat_video_fetch_outcome", failure)
+    with pytest.raises(HTTPException) as error:
+        chat_media.complete(user, identifier)
+    assert error.value.status_code == 503
+    assert ledger.get(identifier, user.id).chat_import_state == "fetch_started"
+    assert chat_media.complete(user, identifier)["status"] == "ready"
+    assert len(bunny.fetches) == 1
+
+
+def test_expired_source_is_never_validated_or_submitted(fixture, monkeypatch):
+    user, ledger, _, bunny = fixture
+    identifier = upload(fixture, "video")["id"]
+    ledger._memory[identifier] = replace(ledger.get(identifier, user.id),
+        expires_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+    monkeypatch.setattr(chat_media.video_validation, "validate_staged_video", lambda *args:
+        pytest.fail("An expired upload must not consume validation resources"))
+    with pytest.raises(HTTPException) as error:
+        chat_media.complete(user, identifier)
+    assert error.value.status_code == 410 and bunny.fetches == bunny.resolves == []
+
+
+def test_explicit_fetch_rejection_never_retries_and_keeps_staging_quota_until_safe_cleanup(fixture):
+    user, ledger, storage, bunny = fixture
+    identifier = upload(fixture, "video")["id"]
+    def rejected(url, title, *, etag):
+        bunny.fetches.append((url, title, etag))
+        raise BunnyFetchRejected("fake rejection")
+    bunny.fetch_validated_source = rejected
+    with pytest.raises(HTTPException) as error:
+        chat_media.complete(user, identifier)
+    assert error.value.status_code == 400
+    row = ledger.get(identifier, user.id)
+    assert row.chat_import_state == "fetch_rejected" and row.status == "rejected"
+    assert len(bunny.fetches) == 1 and bunny.resolves == [] and storage.deleted == []
+    with pytest.raises(HTTPException):
+        chat_media.complete(user, identifier)
+    assert len(bunny.fetches) == 1
+
+
+def test_unknown_canceled_import_reconciles_before_cleanup_without_resubmitting(fixture):
+    user, ledger, storage, bunny = fixture
+    identifier = upload(fixture, "video")["id"]
+    bunny.resolved_id = None
+    assert chat_media.complete(user, identifier)["status"] == "processing"
+    chat_media.cancel(user, identifier)
+    row = ledger.get(identifier, user.id)
+    with pytest.raises(RuntimeError, match="reconciliation"):
+        chat_media._delete(row)
+    assert storage.deleted == bunny.deleted == []
+    assert row.total_bytes == chat_media.VIDEO_MAX_BYTES + 16
+    past = datetime.now(timezone.utc) - timedelta(seconds=1)
+    ledger._memory[identifier] = replace(row, expires_at=past, chat_source_read_expires_at=past)
+    bunny.resolved_id = "video-guid"
+    chat_media._delete(row)  # Deliberately pass the old snapshot: reread is required.
+    current = ledger.get(identifier, user.id)
+    assert current.external_id == "video-guid" and current.chat_import_state == "imported"
+    assert bunny.deleted == ["video-guid"] and current.chat_source_deleted_at
+    assert len(bunny.fetches) == 1
+
+
+def test_video_can_finish_processing_after_put_expires_without_renewing_any_grant(fixture):
+    user, ledger, _, bunny = fixture
+    identifier = upload(fixture, "video")["id"]
+    bunny.resolved_id = None
+    assert chat_media.complete(user, identifier)["status"] == "processing"
+    row = ledger.get(identifier, user.id)
+    ledger._memory[identifier] = replace(row, expires_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+    bunny.resolved_id = "video-guid"
+    assert chat_media.complete(user, identifier)["status"] == "ready"
+    assert len(bunny.fetches) == 1
+
+
+def test_private_client_cannot_create_an_unbounded_tus_grant(fixture):
+    with pytest.raises(RuntimeError, match="staging"):
+        PrivateChatBunnyClient().create_upload("ignored", expires_seconds=300)
+
+
+def test_server_fetch_only_sends_validated_signed_source_and_etag(fixture, monkeypatch):
+    calls = []
+    def post(url, **kwargs):
+        calls.append((url, kwargs))
+        return httpx.Response(200, json={"success": True, "statusCode": 200}, request=httpx.Request("POST", url))
+    monkeypatch.setattr("app.core.bunny_stream.httpx.post", post)
+    client = PrivateChatBunnyClient()
+    title = "TYDES private chat_media_" + "a" * 32
+    client.fetch_validated_source("https://private-r2.example.invalid/chat/source?signature=temporary", title,
+                                 etag='"' + "b" * 32 + '"')
+    assert len(calls) == 1 and calls[0][0].endswith("/videos/fetch")
+    assert calls[0][1]["json"] == {"url": "https://private-r2.example.invalid/chat/source?signature=temporary",
+        "headers": {"If-Match": '"' + "b" * 32 + '"'}, "title": title}
+    assert calls[0][1]["follow_redirects"] is False
+    assert set(calls[0][1]["json"]) == {"url", "headers", "title"}
+
+
+@pytest.mark.parametrize("http_code,payload,explicit", [
+    (400, {"success": False, "statusCode": 400}, True),
+    (429, {"success": False, "statusCode": 429}, True),
+    (500, {"success": False, "statusCode": 500}, False),
+    (408, {"success": False, "statusCode": 408}, False),
+    (400, {"success": False, "statusCode": 200}, False),
+    (400, {"success": True, "statusCode": 400}, False),
+    (200, {"success": True}, False),
+])
+def test_only_explicit_matching_rejection_is_safe_to_record(fixture, monkeypatch, http_code, payload, explicit):
+    monkeypatch.setattr("app.core.bunny_stream.httpx.post", lambda url, **kwargs: httpx.Response(
+        http_code, json=payload, request=httpx.Request("POST", url)))
+    with pytest.raises(RuntimeError) as error:
+        PrivateChatBunnyClient().fetch_validated_source("https://private.invalid/source?signature=test",
+            "TYDES private chat_media_" + "a" * 32, etag='"' + "b" * 32 + '"')
+    assert isinstance(error.value, BunnyFetchRejected) is explicit
+
+
+@pytest.mark.parametrize("mutation", ["none", "duplicate", "wrong_title", "wrong_library", "wrong_id", "bad_total", "truncated"])
+def test_import_reconciliation_requires_exact_unique_provider_identity(fixture, monkeypatch, mutation):
+    monkeypatch.setenv("CHAT_BUNNY_STREAM_LIBRARY_ID", "809201")
+    title = "TYDES private chat_media_" + "a" * 32
+    identifier = "12345678-1234-1234-1234-123456789abc"
+    item = {"guid": identifier, "title": title, "videoLibraryId": 809201}
+    payload = {"totalItems": 1, "items": [item]}
+    if mutation == "none":
+        payload = {"totalItems": 0, "items": []}
+    elif mutation == "duplicate":
+        payload = {"totalItems": 2, "items": [item, item]}
+    elif mutation == "wrong_title":
+        item["title"] = title + " copy"
+    elif mutation == "wrong_library":
+        item["videoLibraryId"] = 42
+    elif mutation == "wrong_id":
+        item["guid"] = "../../another-video"
+    elif mutation == "bad_total":
+        payload["totalItems"] = True
+    elif mutation == "truncated":
+        payload["totalItems"] = 11
+    def get(url, **kwargs):
+        assert kwargs["params"] == {"search": title, "page": 1, "itemsPerPage": 10}
+        assert kwargs["follow_redirects"] is False
+        return httpx.Response(200, json=payload, request=httpx.Request("GET", url))
+    monkeypatch.setattr("app.core.bunny_stream.httpx.get", get)
+    client = PrivateChatBunnyClient()
+    if mutation == "none":
+        assert client.resolve_imported_video(title) is None
+    else:
+        with pytest.raises(RuntimeError):
+            client.resolve_imported_video(title)
+
+
+def test_exact_unique_import_is_bound_without_any_new_create_or_fetch(fixture, monkeypatch):
+    monkeypatch.setenv("CHAT_BUNNY_STREAM_LIBRARY_ID", "809201")
+    title = "TYDES private chat_media_" + "a" * 32
+    identifier = "12345678-1234-1234-1234-123456789abc"
+    monkeypatch.setattr("app.core.bunny_stream.httpx.get", lambda url, **kwargs: httpx.Response(
+        200, json={"totalItems": 1, "items": [{"guid": identifier, "title": title, "videoLibraryId": 809201}]},
+        request=httpx.Request("GET", url)))
+    assert PrivateChatBunnyClient().resolve_imported_video(title) == identifier

@@ -8,7 +8,7 @@ from typing import Callable
 
 from app.core.bunny_stream import BunnyStreamClient
 from app.core.media_storage import R2MediaStorage, configured_media_storage
-from app.core.media_uploads import UploadReservation, upload_ledger
+from app.core.media_uploads import UploadReservation, upload_ledger, chat_source_can_delete
 
 
 logger = logging.getLogger(__name__)
@@ -20,6 +20,7 @@ class MediaCleanupResult:
     expired: int = 0
     abandoned: int = 0
     failed: int = 0
+    staged_sources: int = 0
 
 
 def queue_post_media_deletion(user_id: str, media_ids: list[str]) -> None:
@@ -36,6 +37,8 @@ def run_media_cleanup(limit: int = 100) -> MediaCleanupResult:
     except Exception:
         logger.exception("Could not initialize media storage for cleanup")
         storage = None
+
+    staged_sources = _delete_staged_sources(upload_ledger.chat_sources_due(limit=limit))
 
     deleted = _delete_reservations(
         storage,
@@ -62,8 +65,27 @@ def run_media_cleanup(limit: int = 100) -> MediaCleanupResult:
         deleted=deleted[0],
         expired=expired[0],
         abandoned=abandoned[0],
-        failed=deleted[1] + expired[1] + abandoned[1],
+        failed=deleted[1] + expired[1] + abandoned[1] + staged_sources[1],
+        staged_sources=staged_sources[0],
     )
+
+
+def _delete_staged_sources(reservations: list[UploadReservation]) -> tuple[int, int]:
+    cleaned = failed = 0
+    for row in reservations:
+        try:
+            if not chat_source_can_delete(row):
+                continue
+            # The object must remain present until the signed If-None-Match
+            # write expires: deleting earlier would make that URL reusable.
+            from app.core.media_storage import PrivateChatR2Storage
+            PrivateChatR2Storage().delete_object(row.chat_source_name)
+            upload_ledger.mark_chat_source_deleted(row.id, row.user_id)
+            cleaned += 1
+        except Exception:
+            failed += 1
+            logger.exception("Could not clean staged media source %s", row.id)
+    return cleaned, failed
 
 
 def _delete_reservations(
@@ -78,6 +100,8 @@ def _delete_reservations(
     for reservation in reservations:
         try:
             if reservation.purpose == "chat":
+                if reservation.chat_source_name is not None and not chat_source_can_delete(reservation):
+                    continue
                 if not upload_ledger.claim_chat_cleanup(reservation.id, reservation.user_id, reservation.status):
                     continue
                 from app.core.chat_media import _delete

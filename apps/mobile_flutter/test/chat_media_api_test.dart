@@ -78,22 +78,24 @@ class _Fixture {
         });
       }
       if (request.path == '/messages/media/uploads') {
-        final type = (request.data as Map)['media_type'];
+        final data = request.data as Map;
+        final type = data['media_type'];
         return _json({
           'id': 'private-upload',
           'media_type': type,
           'upload': {
-            'url': type == 'video'
-                ? 'https://video.fixture.invalid/tusupload'
-                : 'https://private-r2.fixture.invalid/chat/object?signed=temporary',
-            'protocol': type == 'video' ? 'tus' : 'put',
-            'headers': type == 'video'
-                ? {'AuthorizationSignature': 'upload-only-signature'}
-                : {'Content-Type': 'image/jpeg', 'If-None-Match': '*'},
+            'url':
+                'https://private-r2.fixture.invalid/chat/object?signed=temporary',
+            'protocol': uploadProtocol,
+            'headers': {
+              'Content-Type': data['content_type'],
+              'If-None-Match': '*',
+            },
           },
         });
       }
       if (request.path.endsWith('/complete')) {
+        if (completionHandler != null) return completionHandler!(call);
         final response = _json(
           completeResponse ??
               {
@@ -124,8 +126,12 @@ class _Fixture {
     );
     api = ChatMediaApi(
       DirectMessageApi(
-        Dio(BaseOptions(baseUrl: 'https://api.fixture.invalid'))
-          ..httpClientAdapter = accountTransport,
+        Dio(
+          BaseOptions(
+            baseUrl: 'https://api.fixture.invalid',
+            receiveTimeout: const Duration(seconds: 18),
+          ),
+        )..httpClientAdapter = accountTransport,
         memory,
       ),
       uploadDio: Dio(BaseOptions(followRedirects: false))
@@ -139,8 +145,10 @@ class _Fixture {
   late final _Transport uploadTransport;
   late final ChatMediaApi api;
   String completingType = 'photo';
+  String uploadProtocol = 'put';
   Map<String, dynamic>? completeResponse;
   Map<String, dynamic>? accessResponse;
+  FutureOr<ResponseBody> Function(_Call)? completionHandler;
   FutureOr<ResponseBody> Function(_Call)? uploadHandler;
   Future<ChatMediaSession> session([String type = 'direct']) =>
       api.session('alice', type, 'conversation-a');
@@ -176,6 +184,7 @@ void main() {
       expect(external.options.method, 'PUT');
       expect(external.options.uri.host, 'private-r2.fixture.invalid');
       expect(external.options.headers['If-None-Match'], '*');
+      expect(external.options.headers['Content-Length'], bytes.length);
       expect(external.options.headers['Authorization'], isNull);
       expect(external.bytes, orderedEquals(bytes));
       final reserve = fixture.accountTransport.calls.singleWhere(
@@ -198,173 +207,224 @@ void main() {
     },
   );
 
-  test(
-    'video chunks resume at the provider offset without exposing account auth',
-    () async {
-      final fixture = _Fixture()..completingType = 'video';
-      final bytes = Uint8List.fromList(
-        List.generate(5 * 1024 * 1024 + 17, (index) => index % 251),
-      );
-      const resumedOffset = 2 * 1024 * 1024;
-      var patches = 0;
-      fixture.uploadHandler = (call) {
-        switch (call.options.method) {
-          case 'POST':
-            expect(call.options.headers['Upload-Length'], bytes.length);
-            return _empty(201, {
-              'location': ['/tusupload/resource-a'],
-            });
-          case 'PATCH':
-            patches++;
-            if (patches == 1) {
-              expect(call.options.headers['Upload-Offset'], 0);
-              expect(
-                call.bytes,
-                orderedEquals(bytes.sublist(0, 5 * 1024 * 1024)),
-              );
-              return _json({'detail': 'Simulated interrupted chunk'}, 503);
-            }
-            expect(call.options.headers['Upload-Offset'], resumedOffset);
-            expect(call.bytes, orderedEquals(bytes.sublist(resumedOffset)));
-            return _empty(204, {
-              'upload-offset': ['${bytes.length}'],
-            });
-          case 'HEAD':
-            return _empty(200, {
-              'upload-offset': ['$resumedOffset'],
-            });
-          default:
-            throw StateError('Unexpected upload method');
-        }
-      };
-      final result = await (await fixture.session()).upload(
-        XFile.fromData(bytes, name: 'clip.mp4', mimeType: 'video/mp4'),
-        'video',
-        cancellation: CancelToken(),
-        onReservation: (_) {},
-        onProgress: (_) {},
-      );
-      expect(result.mediaType, 'video');
-      expect(fixture.uploadTransport.calls.map((call) => call.options.method), [
-        'POST',
-        'PATCH',
-        'HEAD',
-        'PATCH',
-      ]);
-      for (final call in fixture.uploadTransport.calls) {
-        expect(call.options.uri.origin, 'https://video.fixture.invalid');
-        expect(call.options.headers['Authorization'], isNull);
-        expect(
-          call.options.headers['AuthorizationSignature'],
-          'upload-only-signature',
-        );
-      }
-    },
-  );
-
-  test(
-    'TUS rejects a cross-origin resume location before sending bytes',
-    () async {
-      final fixture = _Fixture()..completingType = 'video';
-      fixture.uploadHandler = (_) => _empty(201, {
-        'location': ['https://unrelated.fixture.invalid/steal-upload'],
-      });
-      final session = await fixture.session();
-      await expectLater(
-        session.upload(
-          XFile.fromData(Uint8List(12), name: 'clip.mp4'),
-          'video',
-          cancellation: CancelToken(),
-          onReservation: (_) {},
-          onProgress: (_) {},
-        ),
-        throwsStateError,
-      );
-      expect(fixture.uploadTransport.calls.single.options.method, 'POST');
-      expect(fixture.uploadTransport.calls.single.bytes, isEmpty);
-      expect(
-        fixture.accountTransport.calls.any(
-          (call) => call.options.path.endsWith('/complete'),
-        ),
-        isFalse,
-      );
-    },
-  );
-
-  for (final offset in <String?>[null, 'invalid', '0', '1', '13']) {
-    test('TUS rejects missing or inexact PATCH offset ACK $offset', () async {
-      final fixture = _Fixture()..completingType = 'video';
-      fixture.uploadHandler = (call) => call.options.method == 'POST'
-          ? _empty(201, {
-              'location': ['/tusupload/resource-a'],
-            })
-          : _empty(204, {
-              if (offset != null) 'upload-offset': [offset],
-            });
-      final session = await fixture.session();
-      await expectLater(
-        session.upload(
-          XFile.fromData(Uint8List(12), name: 'clip.mp4'),
-          'video',
-          cancellation: CancelToken(),
-          onReservation: (_) {},
-          onProgress: (_) {},
-        ),
-        throwsStateError,
-      );
-      expect(fixture.uploadTransport.calls.map((call) => call.options.method), [
-        'POST',
-        'PATCH',
-      ]);
-      expect(
-        fixture.accountTransport.calls.any(
-          (call) => call.options.path.endsWith('/complete'),
-        ),
-        isFalse,
-      );
-    });
-  }
-
-  test('TUS stops after three failed chunk recoveries', () async {
+  test('video bytes use one signed private R2 PUT before validation', () async {
     final fixture = _Fixture()..completingType = 'video';
-    fixture.uploadHandler = (call) => switch (call.options.method) {
-      'POST' => _empty(201, {
-        'location': ['/tusupload/resource-a'],
-      }),
-      'HEAD' => _empty(200, {
-        'upload-offset': ['0'],
-      }),
-      _ => _json({'detail': 'Simulated disconnected upload'}, 503),
-    };
-    await expectLater(
-      (await fixture.session()).upload(
-        XFile.fromData(Uint8List(12), name: 'clip.mp4'),
-        'video',
-        cancellation: CancelToken(),
-        onReservation: (_) {},
-        onProgress: (_) {},
-      ),
-      throwsA(isA<DioException>()),
+    final bytes = Uint8List.fromList(
+      List.generate(5 * 1024 * 1024 + 17, (index) => index % 251),
+    );
+    final result = await (await fixture.session()).upload(
+      XFile.fromData(bytes, name: 'clip.mp4', mimeType: 'video/mp4'),
+      'video',
+      cancellation: CancelToken(),
+      onReservation: (_) {},
+      onProgress: (_) {},
+    );
+    expect(result.mediaType, 'video');
+    final external = fixture.uploadTransport.calls.single;
+    expect(external.options.method, 'PUT');
+    expect(external.options.uri.host, 'private-r2.fixture.invalid');
+    expect(external.options.headers['Content-Type'], 'video/mp4');
+    expect(external.options.headers['If-None-Match'], '*');
+    expect(external.options.headers['Content-Length'], bytes.length);
+    expect(external.options.headers['Authorization'], isNull);
+    expect(external.options.headers['AuthorizationSignature'], isNull);
+    expect(external.options.headers['Tus-Resumable'], isNull);
+    expect(external.options.headers['Upload-Metadata'], isNull);
+    expect(external.bytes, orderedEquals(bytes));
+    expect(
+      fixture.accountTransport.calls.last.options.path,
+      '/messages/media/uploads/private-upload/complete',
     );
     expect(
-      fixture.uploadTransport.calls.where(
-        (call) => call.options.method == 'PATCH',
+      fixture.accountTransport.calls.every(
+        (call) => call.bytes.length < 1024 && call.options.data is! FormData,
       ),
-      hasLength(4),
-    );
-    expect(
-      fixture.uploadTransport.calls.where(
-        (call) => call.options.method == 'HEAD',
-      ),
-      hasLength(3),
-    );
-    expect(
-      fixture.accountTransport.calls.any(
-        (call) => call.options.path.endsWith('/complete'),
-      ),
-      isFalse,
+      isTrue,
     );
   });
+
+  for (final protocol in ['tus', 'post', 'PUT', '']) {
+    test(
+      'unsupported private protocol $protocol sends no provider request',
+      () async {
+        final fixture = _Fixture()
+          ..completingType = 'video'
+          ..uploadProtocol = protocol;
+        await expectLater(
+          (await fixture.session()).upload(
+            XFile.fromData(Uint8List(12), name: 'clip.mp4'),
+            'video',
+            cancellation: CancelToken(),
+            onReservation: (_) {},
+            onProgress: (_) {},
+          ),
+          throwsStateError,
+        );
+        expect(fixture.uploadTransport.calls, isEmpty);
+        expect(
+          fixture.accountTransport.calls.any(
+            (call) => call.options.path.endsWith('/complete'),
+          ),
+          isFalse,
+        );
+      },
+    );
+  }
+
+  test(
+    'failed video PUT never confirms an upload or retries blindly',
+    () async {
+      final fixture = _Fixture()..completingType = 'video';
+      fixture.uploadHandler = (_) => _json({'detail': 'Unavailable'}, 503);
+      await expectLater(
+        (await fixture.session()).upload(
+          XFile.fromData(Uint8List(12), name: 'clip.mp4'),
+          'video',
+          cancellation: CancelToken(),
+          onReservation: (_) {},
+          onProgress: (_) {},
+        ),
+        throwsA(isA<DioException>()),
+      );
+      expect(fixture.uploadTransport.calls, hasLength(1));
+      expect(
+        fixture.accountTransport.calls.any(
+          (call) => call.options.path.endsWith('/complete'),
+        ),
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'only attachment validation gets the extended receive timeout',
+    () async {
+      final fixture = _Fixture();
+      final session = await fixture.session();
+      await session.complete('private-upload', 'photo', CancelToken());
+      final completion = fixture.accountTransport.calls.last.options;
+      expect(completion.receiveTimeout, const Duration(seconds: 90));
+      await session.access('private-upload');
+      expect(
+        fixture.accountTransport.calls.last.options.receiveTimeout,
+        const Duration(seconds: 18),
+      );
+      expect(
+        session.account.dio.options.receiveTimeout,
+        const Duration(seconds: 18),
+      );
+    },
+  );
+
+  test('late validation ACK is discarded after account switch', () async {
+    final fixture = _Fixture();
+    final response = Completer<ResponseBody>();
+    final started = Completer<void>();
+    fixture.completionHandler = (_) {
+      started.complete();
+      return response.future;
+    };
+    final session = await fixture.session();
+    final result = session.complete('private-upload', 'photo', CancelToken());
+    final rejected = expectLater(result, throwsStateError);
+    await started.future;
+    fixture.memory.token = 'bob-token';
+    response.complete(
+      _json({'id': 'private-upload', 'media_type': 'photo', 'status': 'ready'}),
+    );
+    await rejected;
+    expect(
+      fixture.accountTransport.calls.last.options.receiveTimeout,
+      const Duration(seconds: 90),
+    );
+    expect(
+      fixture.accountTransport.calls.last.options.headers['Authorization'],
+      'Bearer alice-token',
+    );
+  });
+
+  test(
+    'a validation HTTP failure is surfaced without an automatic retry',
+    () async {
+      final fixture = _Fixture();
+      fixture.completionHandler = (_) => _json({'detail': 'Please retry'}, 503);
+      await expectLater(
+        (await fixture.session()).complete(
+          'private-upload',
+          'video',
+          CancelToken(),
+        ),
+        throwsA(isA<DioException>()),
+      );
+      expect(
+        fixture.accountTransport.calls.where(
+          (call) => call.options.path.endsWith('/complete'),
+        ),
+        hasLength(1),
+      );
+    },
+  );
+
+  test('canceling pending validation ignores its late ready result', () async {
+    final fixture = _Fixture();
+    final response = Completer<ResponseBody>();
+    final started = Completer<void>();
+    fixture.completionHandler = (_) {
+      started.complete();
+      return response.future;
+    };
+    final session = await fixture.session();
+    final token = CancelToken();
+    final result = session.complete('private-upload', 'video', token);
+    final canceled = expectLater(
+      result,
+      throwsA(
+        isA<DioException>().having(CancelToken.isCancel, 'canceled', isTrue),
+      ),
+    );
+    await started.future;
+    token.cancel('Canceled by user');
+    response.complete(
+      _json({'id': 'private-upload', 'media_type': 'video', 'status': 'ready'}),
+    );
+    await canceled;
+    expect(
+      fixture.accountTransport.calls.where(
+        (call) => call.options.path.endsWith('/complete'),
+      ),
+      hasLength(1),
+    );
+  });
+
+  test(
+    'canceling processing stops the wait without another completion call',
+    () async {
+      final fixture = _Fixture()
+        ..completeResponse = {
+          'id': 'private-upload',
+          'media_type': 'video',
+          'status': 'processing',
+        };
+      final session = await fixture.session();
+      final token = CancelToken();
+      final result = session.complete('private-upload', 'video', token);
+      final canceled = expectLater(
+        result,
+        throwsA(
+          isA<DioException>().having(CancelToken.isCancel, 'canceled', isTrue),
+        ),
+      );
+      await fixture.firstCompletion.future;
+      token.cancel('Canceled by user');
+      await canceled;
+      expect(
+        fixture.accountTransport.calls.where(
+          (call) => call.options.path.endsWith('/complete'),
+        ),
+        hasLength(1),
+      );
+    },
+  );
 
   test(
     'processing polls to ready and validates every completion ACK',

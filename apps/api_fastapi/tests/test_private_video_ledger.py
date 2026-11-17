@@ -67,7 +67,7 @@ class Database:
         if "INSERT INTO media_upload_reservations" in query:
             columns = query.split("(", 1)[1].split(")", 1)[0].replace("\n", "").split(",")
             columns = [value.strip() for value in columns]
-            assert len(columns) == len(params) == query.count("%s") == 27
+            assert len(columns) == len(params) == query.count("%s") == 35
             row = dict(zip(columns, params))
             self.rows[row["id"]] = row
         elif "SET status='complete',chat_video_resolutions" in normalized:

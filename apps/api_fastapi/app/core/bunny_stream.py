@@ -7,11 +7,16 @@ import hmac
 import base64
 import os
 import re
+from urllib.parse import urlsplit
 
 import httpx
 
 
 TUS_UPLOAD_URL = "https://video.bunnycdn.com/tusupload"
+
+
+class BunnyFetchRejected(RuntimeError):
+    """The provider explicitly rejected a fetch before accepting a job."""
 
 
 @dataclass(frozen=True)
@@ -145,6 +150,72 @@ class PrivateChatBunnyClient(BunnyStreamClient):
             raise RuntimeError("Invalid private video hostname")
         self.token_key = _required_env("CHAT_BUNNY_STREAM_TOKEN_KEY")
         self.timeout = httpx.Timeout(30.0, connect=15.0)
+
+    def create_upload(self, title: str, *, expires_seconds: int) -> BunnyUploadTarget:
+        raise RuntimeError("Private videos require protected R2 staging, not client TUS grants")
+
+    def fetch_validated_source(self, source_url: str, title: str, *, etag: str) -> None:
+        """Submit once, server-side only. A timeout is NOT permission to retry.
+
+        Fetch creates its own ID, so the durable reservation title is recovered
+        through List Videos. Clients receive neither this URL nor a Bunny grant.
+        """
+        parsed = urlsplit(source_url)
+        if (parsed.scheme != "https" or not parsed.hostname or parsed.username is not None
+                or parsed.password is not None or parsed.fragment or not parsed.query
+                or not re.fullmatch(r"TYDES private chat_media_[0-9a-f]{32}", title)
+                or not re.fullmatch(r'"[0-9a-fA-F]{32}(?:-[1-9][0-9]*)?"', etag)):
+            raise ValueError("Invalid validated private video source")
+        response = httpx.post(
+            f"https://video.bunnycdn.com/library/{self.library_id}/videos/fetch",
+            headers={"AccessKey": self.api_key},
+            json={"url": source_url, "headers": {"If-Match": etag}, "title": title},
+            timeout=self.timeout, follow_redirects=False,
+        )
+        try:
+            payload = response.json()
+        except ValueError:
+            raise RuntimeError("Private video import outcome is uncertain") from None
+        if not isinstance(payload, dict):
+            raise RuntimeError("Private video import outcome is uncertain")
+        # Only an explicit, matching validation/auth/rate-limit rejection can
+        # release the import intent. Other HTTP failures may have side effects.
+        if (response.status_code in {400, 401, 403, 404, 422, 429}
+                and payload.get("success") is False
+                and type(payload.get("statusCode")) is int
+                and payload["statusCode"] == response.status_code):
+            raise BunnyFetchRejected("Private video import was rejected")
+        if (response.status_code != 200 or payload.get("success") is not True
+                or type(payload.get("statusCode")) is not int or payload["statusCode"] != 200):
+            raise RuntimeError("Private video import outcome is uncertain")
+
+    def resolve_imported_video(self, title: str) -> str | None:
+        """One bounded exact-title reconciliation; never create or re-upload."""
+        if not re.fullmatch(r"TYDES private chat_media_[0-9a-f]{32}", title):
+            raise ValueError("Invalid private video import title")
+        response = httpx.get(
+            f"https://video.bunnycdn.com/library/{self.library_id}/videos",
+            headers={"AccessKey": self.api_key},
+            params={"search": title, "page": 1, "itemsPerPage": 10},
+            timeout=self.timeout, follow_redirects=False,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError("Private video import could not be reconciled")
+        total, items = payload.get("totalItems"), payload.get("items")
+        if type(total) is int and total == 0 and items == []:
+            return None
+        if type(total) is not int or total != 1 or not isinstance(items, list) or len(items) != 1:
+            raise RuntimeError("Private video import is not uniquely identifiable")
+        item = items[0]
+        if (not isinstance(item, dict) or item.get("title") != title
+                or type(item.get("videoLibraryId")) is not int
+                or str(item["videoLibraryId"]) != self.library_id
+                or not isinstance(item.get("guid"), str)
+                or not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", item["guid"])):
+            raise RuntimeError("Private video import identity could not be verified")
+        return item["guid"]
 
     def signed_url(self, video_id: str, filename: str, *, expires: int) -> str:
         if not re.fullmatch(r"[A-Za-z0-9-]+", video_id):

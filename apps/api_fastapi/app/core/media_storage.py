@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+import time
 
 from fastapi import HTTPException, UploadFile
 
@@ -20,6 +21,7 @@ class StoredMedia:
 class StoredObjectMetadata:
     size: int
     content_type: str
+    etag: str | None = None
 
 
 class MediaStorage:
@@ -133,6 +135,7 @@ class R2MediaStorage(MediaStorage):
         return StoredObjectMetadata(
             size=int(response.get("ContentLength", 0)),
             content_type=str(response.get("ContentType") or "application/octet-stream"),
+            etag=str(response["ETag"]) if response.get("ETag") else None,
         )
 
     def read_object_range(self, object_name: str, start: int, end: int) -> bytes:
@@ -211,12 +214,50 @@ class PrivateChatR2Storage(R2MediaStorage):
         )
         self.delete_object(pending_name)
 
-    def signed_read_url(self, object_name: str, *, expires_seconds: int) -> str:
+    def signed_read_url(self, object_name: str, *, expires_seconds: int,
+                        etag: str | None = None) -> str:
+        params = {"Bucket": self.bucket, "Key": self._key(object_name),
+                  "ResponseCacheControl": "private, no-store"}
+        if etag is not None:
+            params["IfMatch"] = etag
         return self.client.generate_presigned_url(
-            "get_object", Params={"Bucket": self.bucket, "Key": self._key(object_name),
-                                  "ResponseCacheControl": "private, no-store"},
+            "get_object", Params=params,
             ExpiresIn=expires_seconds, HttpMethod="GET",
         )
+
+    def download_for_validation(self, object_name: str, output,
+                                metadata: StoredObjectMetadata) -> None:
+        """Read only the reserved, immutable private object, with a hard bound.
+
+        These are R2-to-Render incoming bytes, not a Render-to-Bunny upload.
+        Bunny later fetches the same ETag directly from R2.
+        """
+        if not metadata.etag or not 0 < metadata.size <= 50 * 1024 * 1024:
+            raise ValueError("Video source metadata could not be verified.")
+        response = self.client.get_object(
+            Bucket=self.bucket, Key=self._key(object_name), IfMatch=metadata.etag,
+        )
+        body = response["Body"]
+        try:
+            if (int(response.get("ContentLength", -1)) != metadata.size
+                    or response.get("ETag") != metadata.etag):
+                raise ValueError("Video changed during verification. Choose it again.")
+            total = 0
+            deadline = time.monotonic() + 15
+            while True:
+                if time.monotonic() > deadline:
+                    raise RuntimeError("Private video verification download timed out")
+                chunk = body.read(min(1024 * 1024, metadata.size - total + 1))
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > metadata.size:
+                    raise ValueError("Video exceeds its reserved upload size.")
+                output.write(chunk)
+            if total != metadata.size:
+                raise ValueError("Video upload is incomplete. Choose it again.")
+        finally:
+            body.close()
 
 
 def configured_media_storage() -> MediaStorage:

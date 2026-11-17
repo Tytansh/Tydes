@@ -1,4 +1,8 @@
-"""Private chat media. Upload/read bytes never pass through Render."""
+"""Private chat media. Clients upload to private R2, never to a paid video API.
+
+Validated video bytes reach Bunny directly from R2. Render only receives a
+bounded validation download; it never relays those bytes to Bunny.
+"""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -9,11 +13,13 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
-from app.core.bunny_stream import PrivateChatBunnyClient
+from app.core.bunny_stream import BunnyFetchRejected, PrivateChatBunnyClient
 from app.core.media_storage import PrivateChatR2Storage
 from app.core.media_uploads import (UploadLimits, UploadQuotaExceeded, UploadReservation,
+                                   chat_import_deadline, chat_source_can_delete,
                                    upload_ledger, verified_chat_video_playback)
 from app.core.models import User
+from app.core import video_validation
 
 PHOTO_MAX_BYTES = 8 * 1024 * 1024
 VIDEO_MAX_BYTES = 50 * 1024 * 1024
@@ -34,7 +40,10 @@ def capabilities() -> dict:
         os.getenv(name, "").strip() for name in (
             "CHAT_R2_PRIVATE_BUCKET", "CHAT_R2_ACCESS_KEY_ID", "CHAT_R2_SECRET_ACCESS_KEY"))
     photo = bool(photo and os.getenv("CHAT_R2_PRIVATE_BUCKET") != os.getenv("CLOUDFLARE_R2_BUCKET"))
-    video = enabled and _true("CHAT_BUNNY_STREAM_PRIVATE_VERIFIED") and all(
+    # Video ingestion intents and quotas must survive worker/process restarts.
+    # Check the constructed ledger, not an environment variable that may have
+    # changed after the service initialized its in-memory development fallback.
+    video = bool(upload_ledger.database_url) and photo and _true("CHAT_VIDEO_STAGING_VERIFIED") and video_validation.is_available() and _true("CHAT_BUNNY_STREAM_PRIVATE_VERIFIED") and all(
         os.getenv(name, "").strip() for name in (
             "CHAT_BUNNY_STREAM_LIBRARY_ID", "CHAT_BUNNY_STREAM_API_KEY",
             "CHAT_BUNNY_STREAM_CDN_HOSTNAME", "CHAT_BUNNY_STREAM_TOKEN_KEY"))
@@ -87,7 +96,7 @@ def reserve(user: User, scope_type: str, scope_id: str, media_type: str,
     if size_bytes > maximum:
         raise HTTPException(413, "Attachment is too large.")
     now = datetime.now(timezone.utc)
-    ttl = 300 if media_type == "photo" else 30 * 60
+    ttl = 300 if media_type == "photo" else 900
     identifier = "chat_media_" + uuid4().hex
     owner = hashlib.sha256(user.id.encode()).hexdigest()[:16]
     name = f"objects/{owner}/{identifier}{_PHOTO_TYPES.get(content_type, '')}"
@@ -95,8 +104,7 @@ def reserve(user: User, scope_type: str, scope_id: str, media_type: str,
         id=identifier, user_id=user.id,
         client_ip_hash=hashlib.sha256(client_ip.encode()).hexdigest(), media_type=media_type,
         content_type=content_type, thumbnail_content_type=None,
-        # TUS is not byte-bound. Reserve the full admitted storage ceiling and
-        # reject/delete any video whose actual encoded storage exceeds it.
+        # Staging and encoded bytes are both charged by the shared ledger.
         expected_bytes=size_bytes if media_type == "photo" else VIDEO_MAX_BYTES,
         expected_thumbnail_bytes=0, pending_name=name, final_name=name,
         pending_thumbnail_name=None, final_thumbnail_name=None,
@@ -104,29 +112,20 @@ def reserve(user: User, scope_type: str, scope_id: str, media_type: str,
         expires_at=now + timedelta(seconds=ttl),
         storage_provider="chat_r2" if media_type == "photo" else "chat_bunny",
         purpose="chat", scope_type=scope_type, scope_id=scope_id,
+        chat_source_name=name if media_type == "video" else None,
+        chat_source_bytes=size_bytes if media_type == "video" else 0,
+        chat_import_state="staged" if media_type == "video" else None,
     )
     try:
         upload_ledger.reserve(row, UploadLimits.from_env(premium=user.premium))
     except UploadQuotaExceeded as error:
         raise HTTPException(429, str(error)) from error
-    target = None
     try:
-        if media_type == "photo":
-            storage = PrivateChatR2Storage()
-            url = storage.create_direct_upload_url(name, content_type=content_type,
-                content_length=size_bytes, expires_seconds=ttl)
-            upload = {"url": url, "headers": {"Content-Type": content_type, "If-None-Match": "*"}, "protocol": "put"}
-        else:
-            bunny = PrivateChatBunnyClient()
-            target = bunny.create_upload("TYDES private message", expires_seconds=ttl)
-            row = upload_ledger.set_chat_video_target(row.id, user.id, target.video_id, target.expires_at)
-            upload = {"url": target.url, "headers": target.headers, "protocol": "tus"}
+        storage = PrivateChatR2Storage()
+        url = storage.create_direct_upload_url(name, content_type=content_type,
+            content_length=size_bytes, expires_seconds=ttl)
+        upload = {"url": url, "headers": {"Content-Type": content_type, "If-None-Match": "*"}, "protocol": "put"}
     except Exception as error:
-        if target is not None:
-            try:
-                bunny.delete_video(target.video_id)
-            except Exception:
-                pass
         upload_ledger.set_status(row.id, user.id, "failed")
         raise HTTPException(503, "Private upload is temporarily unavailable.") from error
     return {"id": row.id, "media_type": media_type, "upload": upload,
@@ -134,14 +133,89 @@ def reserve(user: User, scope_type: str, scope_id: str, media_type: str,
 
 
 def _delete(row: UploadReservation) -> None:
+    # Cleanup/cancel snapshots can race a send, cancellation, or import bind.
+    row = _reservation(row.id)
+    if row.status in {"complete", "used"}:
+        raise RuntimeError("Active private media must be queued before deletion")
     if row.storage_provider == "chat_r2":
         storage = PrivateChatR2Storage()
         for name in {row.pending_name, row.final_name, row.pending_thumbnail_name, row.final_thumbnail_name} - {None}:
             storage.delete_object(name)
     elif row.storage_provider == "chat_bunny":
-        PrivateChatBunnyClient().delete_video(row.external_id)
+        bunny = PrivateChatBunnyClient()
+        if row.chat_source_name is not None:
+            row = _resolve_import(row, bunny)
+            if row.external_id is None and row.chat_import_state in {"fetch_started", "fetch_submitted"}:
+                # An ambiguous fetch may still materialize. Retain the encoded
+                # reservation and reconcile again; never claim it was deleted.
+                raise RuntimeError("Private video import still needs reconciliation")
+            if row.external_id is not None:
+                bunny.delete_video(row.external_id)
+            if row.chat_source_deleted_at is None:
+                if not chat_source_can_delete(row):
+                    raise RuntimeError("Private video source authorization is still active")
+                PrivateChatR2Storage().delete_object(row.chat_source_name)
+                upload_ledger.mark_chat_source_deleted(row.id, row.user_id)
+        else:
+            bunny.delete_video(row.external_id)
     else:
         raise RuntimeError("Invalid private storage provider")
+
+
+def _import_title(row: UploadReservation) -> str:
+    return "TYDES private " + row.id
+
+
+def _resolve_import(row: UploadReservation, bunny: PrivateChatBunnyClient) -> UploadReservation:
+    if (row.external_id is None and row.chat_source_name is not None
+            and row.chat_import_state in {"fetch_started", "fetch_submitted"}):
+        video_id = bunny.resolve_imported_video(_import_title(row))
+        if video_id is not None:
+            return upload_ledger.bind_chat_video_import(row.id, row.user_id, video_id)
+    return row
+
+
+def _prepare_video_import(row: UploadReservation, user: User,
+                          bunny: PrivateChatBunnyClient) -> UploadReservation:
+    if row.chat_source_name is None:
+        # Existing ready/used rows remain readable, but old unbounded upload
+        # grants may not be completed through the new ingestion path.
+        raise ValueError("Choose the video again to use the protected upload.")
+    if row.chat_import_state == "staged":
+        storage = PrivateChatR2Storage()
+        validated = video_validation.validate_staged_video(storage, row.chat_source_name,
+            row.chat_source_bytes, row.content_type)
+        read_ttl = 600
+        # Generate before committing intent: signing failure cannot strand a
+        # reservation. The URL is server-only and binds the validated ETag.
+        source_url = storage.signed_read_url(row.chat_source_name,
+            expires_seconds=read_ttl, etag=validated.etag)
+        # Record after signing, never an earlier timestamp that could permit
+        # cleanup while the generated source URL is still valid.
+        read_expires_at = datetime.now(timezone.utc) + timedelta(seconds=read_ttl)
+        first = upload_ledger.begin_chat_video_fetch(row.id, user.id,
+            etag=validated.etag, duration_seconds=validated.duration_seconds,
+            read_expires_at=read_expires_at)
+        if first:
+            try:
+                bunny.fetch_validated_source(source_url, _import_title(row), etag=validated.etag)
+            except BunnyFetchRejected:
+                upload_ledger.record_chat_video_fetch_outcome(row.id, user.id, accepted=False)
+            except Exception:
+                # Includes network timeout, malformed response, and a crash's
+                # durable equivalent. No caller will ever retry this POST.
+                pass
+            else:
+                upload_ledger.record_chat_video_fetch_outcome(row.id, user.id, accepted=True)
+        row = _reservation(row.id, user.id)
+    if row.status != "pending":
+        raise HTTPException(409, "This attachment upload is no longer active.")
+    if row.chat_import_state == "fetch_rejected":
+        raise ValueError("Video import was not accepted. Choose the video again.")
+    row = _resolve_import(row, bunny)
+    if row.status != "pending":
+        raise HTTPException(409, "This attachment upload is no longer active.")
+    return row
 
 
 def complete(user: User, identifier: str) -> dict:
@@ -158,7 +232,8 @@ def complete(user: User, identifier: str) -> dict:
         return result
     if row.status != "pending":
         raise HTTPException(409, "This attachment upload is no longer active.")
-    if row.expires_at < datetime.now(timezone.utc):
+    deadline = chat_import_deadline(row) if row.chat_import_state in {"fetch_started", "fetch_submitted", "imported"} else row.expires_at
+    if deadline < datetime.now(timezone.utc):
         raise HTTPException(410, "Upload link expired. Choose the attachment again.")
     try:
         if row.storage_provider == "chat_r2":
@@ -172,6 +247,9 @@ def complete(user: User, identifier: str) -> dict:
                 raise ValueError("Photo dimensions are too large. Resize to at most 8192 pixels per side and 32 megapixels.")
         else:
             bunny = PrivateChatBunnyClient()
+            row = _prepare_video_import(row, user, bunny)
+            if row.external_id is None:
+                return {**result, "status": "processing"}
             video = bunny.get_video(row.external_id)
             if video.failed:
                 raise ValueError("Video processing failed.")
@@ -199,9 +277,23 @@ def complete(user: User, identifier: str) -> dict:
                 video.available_resolutions, max_bytes=VIDEO_MAX_BYTES)
             if mp4_resolution is None:
                 return {**result, "status": "processing"}
+    except video_validation.ValidationBusy:
+        return {**result, "status": "processing"}
+    except video_validation.VideoValidationUnavailable as error:
+        raise HTTPException(503, "Video verification is temporarily unavailable.") from error
+    except HTTPException:
+        raise
     except ValueError as error:
-        _delete(row)
-        upload_ledger.set_status(row.id, user.id, "rejected")
+        try:
+            upload_ledger.reject_chat_media(row.id, user.id)
+        except ValueError:
+            raise HTTPException(409, "This attachment upload is no longer active.") from error
+        try:
+            _delete(row)
+        except Exception:
+            # Still-valid staging links and unknown imports retain their quota
+            # until durable cleanup can safely remove all provider bytes.
+            pass
         raise HTTPException(400, str(error)) from error
     except Exception as error:
         raise HTTPException(503, "Attachment verification is temporarily unavailable.") from error

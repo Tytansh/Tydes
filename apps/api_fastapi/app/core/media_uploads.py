@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
+import math
 import os
+import re
 from threading import Lock
 
 
@@ -77,10 +79,18 @@ class UploadReservation:
     client_message_id: str | None = None
     chat_video_resolutions: str | None = None
     chat_video_mp4_resolution: str | None = None
+    chat_source_name: str | None = None
+    chat_source_bytes: int = 0
+    chat_source_deleted_at: datetime | None = None
+    chat_source_read_expires_at: datetime | None = None
+    chat_source_etag: str | None = None
+    chat_source_duration_seconds: float | None = None
+    chat_import_state: str | None = None
+    chat_import_started_at: datetime | None = None
 
     @property
     def total_bytes(self) -> int:
-        return self.expected_bytes + self.expected_thumbnail_bytes
+        return self.expected_bytes + self.expected_thumbnail_bytes + self.chat_source_bytes
 
 
 class MediaUploadLedger:
@@ -179,6 +189,142 @@ class MediaUploadLedger:
     def complete_chat_media(self, identifier: str, user_id: str) -> None:
         self._transition_chat(identifier, user_id, "complete", {"pending"})
 
+    def begin_chat_video_fetch(self, identifier: str, user_id: str, *,
+                               etag: str, duration_seconds: float,
+                               read_expires_at: datetime) -> bool:
+        """Commit the sole fetch intent before external I/O; never reclaim it.
+
+        Validation is read-only/retryable. A crash after this CAS may leave an
+        uncertain import, but must never authorize a second provider POST.
+        """
+        now = datetime.now(timezone.utc)
+        if (not isinstance(etag, str) or not etag or len(etag) > 256
+                or any(ord(value) < 32 for value in etag)
+                or isinstance(duration_seconds, bool)
+                or not isinstance(duration_seconds, (int, float))
+                or not math.isfinite(duration_seconds) or not 0 < duration_seconds <= 30.5
+                or read_expires_at.tzinfo is None or read_expires_at <= now):
+            raise ValueError("Validated source metadata is incomplete.")
+        if self.database_url is not None:
+            with self._connect() as connection:
+                row = connection.execute("""UPDATE media_upload_reservations
+                    SET chat_import_state='fetch_started',chat_import_started_at=clock_timestamp(),
+                        chat_source_etag=%s,chat_source_duration_seconds=%s,
+                        chat_source_read_expires_at=%s,updated_at=NOW()
+                    WHERE id=%s AND user_id=%s AND purpose='chat' AND media_type='video'
+                      AND storage_provider='chat_bunny' AND status='pending'
+                      AND chat_import_state='staged' AND chat_source_name IS NOT NULL
+                      AND chat_source_bytes>0 AND chat_source_deleted_at IS NULL
+                      AND expires_at>clock_timestamp() AND %s>clock_timestamp()
+                      AND external_id IS NULL RETURNING id""",
+                    (etag, duration_seconds, read_expires_at, identifier, user_id, read_expires_at)).fetchone()
+                return row is not None
+        with self._lock:
+            now = datetime.now(timezone.utc)
+            row = self._memory.get(identifier)
+            if (row is None or row.user_id != user_id or not _staged_video(row)
+                    or row.status != "pending" or row.chat_import_state != "staged"
+                    or row.chat_source_deleted_at is not None or row.external_id is not None
+                    or row.expires_at <= now or read_expires_at <= now):
+                return False
+            self._memory[identifier] = replace(row, chat_import_state="fetch_started",
+                chat_import_started_at=now, chat_source_etag=etag,
+                chat_source_duration_seconds=float(duration_seconds),
+                chat_source_read_expires_at=read_expires_at)
+            return True
+
+    def record_chat_video_fetch_outcome(self, identifier: str, user_id: str, *, accepted: bool) -> None:
+        if not isinstance(accepted, bool):
+            raise ValueError("The fetch outcome must be explicit.")
+        state = "fetch_submitted" if accepted else "fetch_rejected"
+        if self.database_url is not None:
+            with self._connect() as connection:
+                connection.execute("""UPDATE media_upload_reservations
+                    SET chat_import_state=%s,updated_at=NOW()
+                    WHERE id=%s AND user_id=%s AND purpose='chat' AND media_type='video'
+                      AND storage_provider='chat_bunny' AND chat_source_name IS NOT NULL
+                      AND chat_import_state='fetch_started' AND external_id IS NULL""",
+                    (state, identifier, user_id))
+            return
+        with self._lock:
+            row = self._memory.get(identifier)
+            if (row is not None and row.user_id == user_id and _staged_video(row)
+                    and row.chat_import_state == "fetch_started" and row.external_id is None):
+                self._memory[identifier] = replace(row, chat_import_state=state)
+
+    def bind_chat_video_import(self, identifier: str, user_id: str, video_id: str) -> UploadReservation:
+        if not isinstance(video_id, str) or not re.fullmatch(r"[A-Za-z0-9-]+", video_id):
+            raise ValueError("Invalid imported video identifier.")
+        if self.database_url is not None:
+            with self._connect() as connection:
+                row = connection.execute("""UPDATE media_upload_reservations
+                    SET external_id=%s,pending_name=%s,final_name=%s,
+                        chat_import_state='imported',updated_at=NOW()
+                    WHERE id=%s AND user_id=%s AND purpose='chat' AND media_type='video'
+                      AND storage_provider='chat_bunny' AND chat_source_name IS NOT NULL
+                      AND status IN ('pending','canceled','deletion_pending','failed')
+                      AND chat_import_state IN ('fetch_started','fetch_submitted','imported')
+                      AND (external_id IS NULL OR external_id=%s) RETURNING *""",
+                    (video_id, video_id, video_id, identifier, user_id, video_id)).fetchone()
+            if row is None:
+                raise ValueError("The imported video no longer matches this upload.")
+            return _reservation_from_row(row)
+        with self._lock:
+            row = self._memory.get(identifier)
+            if (row is None or row.user_id != user_id or not _staged_video(row)
+                    or row.status not in {"pending", "canceled", "deletion_pending", "failed"}
+                    or row.chat_import_state not in {"fetch_started", "fetch_submitted", "imported"}
+                    or row.external_id not in {None, video_id}):
+                raise ValueError("The imported video no longer matches this upload.")
+            result = replace(row, external_id=video_id, pending_name=video_id,
+                final_name=video_id, chat_import_state="imported")
+            self._memory[identifier] = result
+            return result
+
+    def chat_sources_due(self, limit: int = 100) -> list[UploadReservation]:
+        now = datetime.now(timezone.utc)
+        if self.database_url is not None:
+            with self._connect() as connection:
+                rows = connection.execute("""SELECT * FROM media_upload_reservations
+                    WHERE purpose='chat' AND media_type='video' AND storage_provider='chat_bunny'
+                      AND chat_source_name IS NOT NULL AND chat_source_deleted_at IS NULL
+                      AND expires_at<=%s AND COALESCE(chat_source_read_expires_at,expires_at)<=%s
+                      AND (COALESCE(chat_import_state,'') NOT IN ('fetch_started','fetch_submitted')
+                        OR external_id IS NOT NULL
+                        OR LEAST(GREATEST(expires_at,COALESCE(chat_source_read_expires_at,expires_at)) + INTERVAL '1 hour',created_at + INTERVAL '2 hours')<=%s)
+                      AND (status IN ('complete','used','canceled','rejected','failed','deletion_pending','deleted','expired','abandoned')
+                        OR chat_import_state IN ('staged','fetch_rejected')
+                        OR LEAST(GREATEST(expires_at,COALESCE(chat_source_read_expires_at,expires_at)) + INTERVAL '1 hour',created_at + INTERVAL '2 hours')<=%s)
+                    ORDER BY expires_at ASC LIMIT %s""", (now, now, now, now, limit)).fetchall()
+            return [_reservation_from_row(row) for row in rows]
+        with self._lock:
+            return [row for row in self._memory.values() if _staged_video(row)
+                    and row.chat_source_deleted_at is None and chat_source_can_delete(row, now)
+                    and (row.chat_import_state not in {"fetch_started", "fetch_submitted"}
+                         or row.external_id is not None or chat_import_deadline(row) <= now)
+                    and (row.status in {"complete", "used", "canceled", "rejected", "failed", "deletion_pending", "deleted", "expired", "abandoned"}
+                         or row.chat_import_state in {"staged", "fetch_rejected"}
+                         or chat_import_deadline(row) <= now)][:limit]
+
+    def mark_chat_source_deleted(self, identifier: str, user_id: str) -> None:
+        now = datetime.now(timezone.utc)
+        if self.database_url is not None:
+            with self._connect() as connection:
+                row = connection.execute("""UPDATE media_upload_reservations
+                    SET chat_source_deleted_at=COALESCE(chat_source_deleted_at,%s),updated_at=NOW()
+                    WHERE id=%s AND user_id=%s AND purpose='chat' AND media_type='video'
+                      AND storage_provider='chat_bunny' AND chat_source_name IS NOT NULL
+                      AND expires_at<=%s AND COALESCE(chat_source_read_expires_at,expires_at)<=%s
+                    RETURNING id""", (now, identifier, user_id, now, now)).fetchone()
+            if row is None:
+                raise ValueError("Source upload authorization has not expired.")
+            return
+        with self._lock:
+            row = self._memory.get(identifier)
+            if row is None or row.user_id != user_id or not _staged_video(row) or not chat_source_can_delete(row, now):
+                raise ValueError("Source upload authorization has not expired.")
+            self._memory[identifier] = replace(row, chat_source_deleted_at=row.chat_source_deleted_at or now)
+
     def complete_chat_video(self, identifier: str, user_id: str,
                             resolutions: tuple[str, ...], mp4_resolution: str) -> None:
         # Persist the provider-verified playback choice and readiness together.
@@ -192,6 +338,7 @@ class MediaUploadLedger:
                         chat_video_mp4_resolution=%s,updated_at=NOW()
                     WHERE id=%s AND user_id=%s AND purpose='chat'
                     AND media_type='video' AND storage_provider='chat_bunny'
+                    AND (chat_source_name IS NULL OR chat_import_state='imported')
                     AND status='pending' AND message_id IS NULL RETURNING id""",
                     (encoded, mp4_resolution, identifier, user_id)).fetchone()
                 if row is None:
@@ -201,6 +348,7 @@ class MediaUploadLedger:
             row = self._memory.get(identifier)
             if (row is None or row.user_id != user_id or row.purpose != "chat"
                     or row.media_type != "video" or row.storage_provider != "chat_bunny"
+                    or (row.chat_source_name is not None and row.chat_import_state != "imported")
                     or row.status != "pending" or row.message_id is not None):
                 raise ValueError("Attachment upload is no longer active.")
             self._memory[identifier] = replace(row, status="complete",
@@ -227,6 +375,10 @@ class MediaUploadLedger:
 
     def cancel_chat_media(self, identifier: str, user_id: str) -> None:
         self._transition_chat(identifier, user_id, "canceled", {"pending", "complete", "canceled", "failed", "rejected"})
+
+    def reject_chat_media(self, identifier: str, user_id: str) -> None:
+        """A stale verification failure must never invalidate completed media."""
+        self._transition_chat(identifier, user_id, "rejected", {"pending"})
 
     def _transition_chat(self, identifier: str, user_id: str, status: str, allowed: set[str]) -> None:
         if self.database_url is not None:
@@ -466,7 +618,11 @@ class MediaUploadLedger:
                 rows = connection.execute(
                     """
                     SELECT * FROM media_upload_reservations
-                    WHERE (status = 'pending' OR (purpose='chat' AND status IN ('canceled','rejected','failed','deleted'))) AND expires_at < %s
+                    WHERE (status = 'pending' OR (purpose='chat' AND status IN ('canceled','rejected','failed','deleted')))
+                      AND CASE WHEN status='pending' AND chat_source_name IS NOT NULL
+                        AND chat_import_state IN ('fetch_started','fetch_submitted','imported')
+                        THEN LEAST(GREATEST(expires_at,COALESCE(chat_source_read_expires_at,expires_at)) + INTERVAL '1 hour',created_at + INTERVAL '2 hours')
+                        ELSE expires_at END < %s
                     ORDER BY expires_at ASC
                     LIMIT %s
                     """,
@@ -477,7 +633,11 @@ class MediaUploadLedger:
             return [
                 reservation
                 for reservation in self._memory.values()
-                if (reservation.status == "pending" or (reservation.purpose == "chat" and reservation.status in {"canceled", "rejected", "failed", "deleted"})) and reservation.expires_at < now
+                if (reservation.status == "pending" or (reservation.purpose == "chat" and reservation.status in {"canceled", "rejected", "failed", "deleted"}))
+                and (chat_import_deadline(reservation)
+                     if reservation.status == "pending" and _staged_video(reservation)
+                        and reservation.chat_import_state in {"fetch_started", "fetch_submitted", "imported"}
+                     else reservation.expires_at) < now
             ][:limit]
 
     def _reservations_with_status(
@@ -550,17 +710,13 @@ class MediaUploadLedger:
                     row.total_bytes for row in rows if row.created_at >= day_start
                 ),
                 retained_bytes=sum(
-                    row.total_bytes
+                    retained_upload_bytes(row, now)
                     for row in rows
-                    if row.status in {"pending", "complete", "used", "deletion_pending"}
-                    or (row.purpose == "chat" and row.status in {"canceled", "rejected", "failed", "deleted"})
                 ),
                 user_retained_bytes=sum(
-                    row.total_bytes
+                    retained_upload_bytes(row, now)
                     for row in rows
                     if row.user_id == reservation.user_id
-                    and (row.status in {"pending", "complete", "used", "deletion_pending"}
-                         or (row.purpose == "chat" and row.status in {"canceled", "rejected", "failed", "deleted"}))
                 ),
             )
             self._memory[reservation.id] = reservation
@@ -611,16 +767,26 @@ class MediaUploadLedger:
                 retained_row = connection.execute(
                     """
                     SELECT
-                        COALESCE(SUM(total_bytes), 0) AS global_bytes,
+                        COALESCE(SUM(retained_bytes), 0) AS global_bytes,
                         COALESCE(
-                            SUM(total_bytes) FILTER (WHERE user_id = %s),
+                            SUM(retained_bytes) FILTER (WHERE user_id = %s),
                             0
                         ) AS user_bytes
-                    FROM media_upload_reservations
-                    WHERE status IN ('pending', 'complete', 'used', 'deletion_pending')
-                       OR (purpose='chat' AND status IN ('canceled','rejected','failed','deleted'))
+                    FROM (
+                      SELECT user_id,
+                        CASE WHEN status IN ('pending','complete','used','deletion_pending')
+                          OR (purpose='chat' AND status IN ('canceled','rejected','failed','deleted'))
+                          OR (purpose='chat' AND media_type='video' AND chat_source_name IS NOT NULL
+                            AND chat_import_state IN ('fetch_started','fetch_submitted') AND external_id IS NULL)
+                          THEN expected_bytes+expected_thumbnail_bytes ELSE 0 END
+                        + CASE WHEN chat_source_name IS NOT NULL
+                          AND (chat_source_deleted_at IS NULL OR expires_at>%s
+                            OR COALESCE(chat_source_read_expires_at,expires_at)>%s)
+                          THEN chat_source_bytes ELSE 0 END AS retained_bytes
+                      FROM media_upload_reservations
+                    ) retained_uploads
                     """,
-                    (reservation.user_id,),
+                    (reservation.user_id, now, now),
                 ).fetchone()
                 _enforce_limits(
                     reservation,
@@ -644,11 +810,14 @@ class MediaUploadLedger:
                         public_url, thumbnail_public_url, status, created_at,
                         expires_at, storage_provider, external_id,
                         purpose, scope_type, scope_id, message_id, client_message_id,
-                        chat_video_resolutions, chat_video_mp4_resolution
+                        chat_video_resolutions, chat_video_mp4_resolution,
+                        chat_source_name,chat_source_bytes,chat_source_deleted_at,
+                        chat_source_read_expires_at,chat_source_etag,chat_source_duration_seconds,
+                        chat_import_state,chat_import_started_at
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     )
                     """,
                     (
@@ -679,6 +848,14 @@ class MediaUploadLedger:
                         reservation.client_message_id,
                         reservation.chat_video_resolutions,
                         reservation.chat_video_mp4_resolution,
+                        reservation.chat_source_name,
+                        reservation.chat_source_bytes,
+                        reservation.chat_source_deleted_at,
+                        reservation.chat_source_read_expires_at,
+                        reservation.chat_source_etag,
+                        reservation.chat_source_duration_seconds,
+                        reservation.chat_import_state,
+                        reservation.chat_import_started_at,
                     ),
                 )
         return reservation
@@ -738,7 +915,11 @@ class MediaUploadLedger:
                                      ("scope_type", "TEXT"), ("scope_id", "TEXT"),
                                      ("message_id", "TEXT"), ("client_message_id", "TEXT"),
                                      ("chat_video_resolutions", "TEXT"),
-                                     ("chat_video_mp4_resolution", "TEXT")):
+                                     ("chat_video_mp4_resolution", "TEXT"),
+                                     ("chat_source_name", "TEXT"), ("chat_source_bytes", "BIGINT NOT NULL DEFAULT 0"),
+                                     ("chat_source_deleted_at", "TIMESTAMPTZ"), ("chat_source_read_expires_at", "TIMESTAMPTZ"),
+                                     ("chat_source_etag", "TEXT"), ("chat_source_duration_seconds", "DOUBLE PRECISION"),
+                                     ("chat_import_state", "TEXT"), ("chat_import_started_at", "TIMESTAMPTZ")):
                 connection.execute(f"ALTER TABLE media_upload_reservations ADD COLUMN IF NOT EXISTS {name} {definition}")
             connection.execute(
                 """
@@ -758,6 +939,9 @@ class MediaUploadLedger:
                 ON media_upload_reservations (status, expires_at)
                 """
             )
+            connection.execute("""CREATE INDEX IF NOT EXISTS media_chat_sources_idx
+                ON media_upload_reservations (expires_at)
+                WHERE chat_source_name IS NOT NULL AND chat_source_deleted_at IS NULL""")
 
 
 def _enforce_limits(
@@ -838,7 +1022,44 @@ def _reservation_from_row(row) -> UploadReservation:
         client_message_id=row.get("client_message_id"),
         chat_video_resolutions=row.get("chat_video_resolutions"),
         chat_video_mp4_resolution=row.get("chat_video_mp4_resolution"),
+        chat_source_name=row.get("chat_source_name"),
+        chat_source_bytes=int(row.get("chat_source_bytes") or 0),
+        chat_source_deleted_at=_aware(row["chat_source_deleted_at"]) if row.get("chat_source_deleted_at") else None,
+        chat_source_read_expires_at=_aware(row["chat_source_read_expires_at"]) if row.get("chat_source_read_expires_at") else None,
+        chat_source_etag=row.get("chat_source_etag"),
+        chat_source_duration_seconds=row.get("chat_source_duration_seconds"),
+        chat_import_state=row.get("chat_import_state"),
+        chat_import_started_at=_aware(row["chat_import_started_at"]) if row.get("chat_import_started_at") else None,
     )
+
+
+def _staged_video(row: UploadReservation) -> bool:
+    return (row.purpose == "chat" and row.media_type == "video"
+            and row.storage_provider == "chat_bunny"
+            and row.chat_source_name is not None and row.chat_source_bytes > 0)
+
+
+def chat_source_can_delete(row: UploadReservation, now: datetime | None = None) -> bool:
+    now = now or datetime.now(timezone.utc)
+    return (_staged_video(row) and row.expires_at <= now
+            and (row.chat_source_read_expires_at is None or row.chat_source_read_expires_at <= now))
+
+
+def chat_import_deadline(row: UploadReservation) -> datetime:
+    grants_end = max(row.expires_at, row.chat_source_read_expires_at or row.expires_at)
+    return min(grants_end + timedelta(hours=1), row.created_at + timedelta(hours=2))
+
+
+def retained_upload_bytes(row: UploadReservation, now: datetime | None = None) -> int:
+    now = now or datetime.now(timezone.utc)
+    retained = row.status in {"pending", "complete", "used", "deletion_pending"} or (
+        row.purpose == "chat" and row.status in {"canceled", "rejected", "failed", "deleted"})
+    unknown_fetch = (_staged_video(row) and row.chat_import_state in {"fetch_started", "fetch_submitted"}
+                     and row.external_id is None)
+    base = row.expected_bytes + row.expected_thumbnail_bytes if retained or unknown_fetch else 0
+    source = (row.chat_source_bytes if row.chat_source_name is not None and (
+        row.chat_source_deleted_at is None or not chat_source_can_delete(row, now)) else 0)
+    return base + source
 
 
 def _validate_video_playback(encoded, mp4_resolution) -> tuple[tuple[str, ...], str]:

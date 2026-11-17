@@ -67,6 +67,9 @@ services:
         sync: false
       - key: CHAT_BUNNY_STREAM_PRIVATE_VERIFIED
         sync: false
+      - key: CHAT_VIDEO_STAGING_VERIFIED
+        # Enable only after live exact-size private R2 staging verification.
+        sync: false
       - key: CLOUDFLARE_R2_ACCOUNT_ID
         sync: false
       - key: CLOUDFLARE_R2_BUCKET

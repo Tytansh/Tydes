@@ -71,6 +71,7 @@ class DirectMessageSession {
     String path, {
     Map<String, dynamic>? data,
     CancelToken? cancelToken,
+    Duration? receiveTimeout,
   }) async {
     await _checkSession();
     final response = await dio.request<Map<String, dynamic>>(
@@ -80,6 +81,7 @@ class DirectMessageSession {
       options: Options(
         method: method,
         headers: {'Authorization': 'Bearer $_token'},
+        receiveTimeout: receiveTimeout,
       ),
     );
     await _checkSession();
@@ -118,7 +120,14 @@ class DirectMessageSession {
     String path,
     Map<String, dynamic> data, {
     CancelToken? cancelToken,
-  }) => _request('POST', path, data: data, cancelToken: cancelToken);
+    Duration? receiveTimeout,
+  }) => _request(
+    'POST',
+    path,
+    data: data,
+    cancelToken: cancelToken,
+    receiveTimeout: receiveTimeout,
+  );
 
   Future<void> delete(String path) async {
     await _checkSession();

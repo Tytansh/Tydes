@@ -1,7 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:math' as math;
-import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -141,93 +138,26 @@ class ChatMediaSession {
     if (!Uri.parse(targetUrl).isScheme('https')) {
       throw StateError('Invalid private upload target.');
     }
-    if (target['protocol'] == 'tus') {
-      final created = await uploads.post<void>(
-        targetUrl,
-        cancelToken: cancellation,
-        options: Options(
-          headers: {
-            ...headers,
-            'Tus-Resumable': '1.0.0',
-            'Upload-Length': size,
-            'Upload-Metadata':
-                'filename ${base64Encode(utf8.encode(file.name))},filetype ${base64Encode(utf8.encode(contentType))}',
-          },
-          validateStatus: (s) => s == 201,
-        ),
-      );
-      final location = created.headers.value('location');
-      if (location == null) throw StateError('Video upload could not start.');
-      final url = Uri.parse(targetUrl).resolve(location);
-      if (url.origin != Uri.parse(targetUrl).origin) {
-        throw StateError('Unexpected video upload location.');
-      }
-      var offset = 0;
-      var retries = 0;
-      while (offset < size) {
-        await account.ensureCurrent();
-        cancellation.throwIfCancellationRequested();
-        final end = math.min(offset + 5 * 1024 * 1024, size);
-        final chunk = await file
-            .openRead(offset, end)
-            .fold<BytesBuilder>(BytesBuilder(), (b, v) => b..add(v));
-        try {
-          final response = await uploads.patch<void>(
-            url.toString(),
-            data: chunk.takeBytes(),
-            cancelToken: cancellation,
-            options: Options(
-              headers: {
-                ...headers,
-                'Tus-Resumable': '1.0.0',
-                'Upload-Offset': offset,
-                'Content-Type': 'application/offset+octet-stream',
-                if (!kIsWeb) 'Content-Length': end - offset,
-              },
-              validateStatus: (s) => s == 204,
-            ),
-            onSendProgress: (sent, _) =>
-                onProgress(((offset + sent) / size).clamp(0, 1)),
-          );
-          final next = int.tryParse(
-            response.headers.value('upload-offset') ?? '',
-          );
-          if (next != end) {
-            throw StateError('Video upload did not advance.');
-          }
-          offset = end;
-        } on DioException catch (error) {
-          if (CancelToken.isCancel(error) || ++retries > 3) rethrow;
-          final head = await uploads.head<void>(
-            url.toString(),
-            cancelToken: cancellation,
-            options: Options(
-              headers: {...headers, 'Tus-Resumable': '1.0.0'},
-              validateStatus: (s) => s == 200 || s == 204,
-            ),
-          );
-          final resumed = int.tryParse(
-            head.headers.value('upload-offset') ?? '',
-          );
-          if (resumed == null || resumed < 0 || resumed > size) rethrow;
-          offset = resumed;
-        }
-      }
-    } else if (target['protocol'] == 'put') {
-      await uploads.put<void>(
-        targetUrl,
-        data: kIsWeb ? await file.readAsBytes() : file.openRead(),
-        cancelToken: cancellation,
-        options: Options(
-          headers: {...headers, if (!kIsWeb) 'Content-Length': size},
-          validateStatus: (s) => s != null && s >= 200 && s < 300,
-        ),
-        onSendProgress: (sent, total) =>
-            onProgress(total > 0 ? sent / total : null),
-      );
-    } else {
+    if (target['protocol'] != 'put') {
       throw StateError('This private upload method is not supported.');
     }
+    final bytes = kIsWeb ? await file.readAsBytes() : null;
+    if (bytes != null && bytes.length != size) {
+      throw StateError('This file changed. Please select it again.');
+    }
+    await account.ensureCurrent();
+    cancellation.throwIfCancellationRequested();
+    await uploads.put<void>(
+      targetUrl,
+      data: bytes ?? file.openRead(),
+      cancelToken: cancellation,
+      options: Options(
+        headers: {...headers, if (!kIsWeb) 'Content-Length': size},
+        validateStatus: (s) => s != null && s >= 200 && s < 300,
+      ),
+      onSendProgress: (sent, total) =>
+          onProgress(total > 0 ? sent / total : null),
+    );
     await account.ensureCurrent();
     onProgress(null);
     return complete(id, mediaType, cancellation);
@@ -244,6 +174,7 @@ class ChatMediaSession {
         '/messages/media/uploads/${Uri.encodeComponent(id)}/complete',
         {},
         cancelToken: cancellation,
+        receiveTimeout: const Duration(seconds: 90),
       );
       if (result['id'] != id || result['media_type'] != mediaType) {
         throw StateError('Attachment was not confirmed.');
