@@ -258,21 +258,27 @@ def complete(user: User, identifier: str) -> dict:
             if video.length_seconds is not None and (not math.isfinite(video.length_seconds)
                     or video.length_seconds > VIDEO_MAX_SECONDS):
                 raise ValueError("Videos must be no longer than 30 seconds.")
-            if not video.fully_encoded:
-                return {**result, "status": "processing"}
-            if (video.length_seconds is None or not math.isfinite(video.length_seconds)
-                    or not 0 < video.length_seconds <= VIDEO_MAX_SECONDS):
-                raise ValueError("Videos must be no longer than 30 seconds.")
-            if video.storage_size is None or video.storage_size <= 0:
-                raise RuntimeError("Actual video storage metadata is not available yet")
-            if video.available_resolutions is None or video.has_mp4_fallback is None:
-                raise RuntimeError("Actual video playback metadata is not available yet")
-            if not video.available_resolutions or any(
+            if video.available_resolutions and any(
                     value not in {"240p", "360p", "480p", "720p"}
                     for value in video.available_resolutions):
                 raise ValueError("Private videos must be encoded at 720p or lower.")
-            if not video.has_mp4_fallback:
-                raise ValueError("This video has no supported private playback file. Choose it again.")
+            # Get Video may report status=3 before its final progress update.
+            # Private attachments must not be published while encoding can
+            # still add rendition/storage bytes. Do not infer completion from
+            # caption/title event-like statuses or the shared early-play flag.
+            if video.status not in {3, 4} or video.encode_progress != 100:
+                return {**result, "status": "processing"}
+            if video.length_seconds is not None and video.length_seconds < 0:
+                raise ValueError("Videos must be no longer than 30 seconds.")
+            # Provider status/progress, storage totals and MP4 generation are
+            # separate updates. Finished transcoding alone cannot make an
+            # attachment ready or prove that missing metadata is terminal.
+            # Keep the same import deadline; never re-submit the Fetch job.
+            if (video.length_seconds is None or video.length_seconds == 0
+                    or video.storage_size is None or video.storage_size <= 0
+                    or not video.available_resolutions
+                    or video.has_mp4_fallback is not True):
+                return {**result, "status": "processing"}
             mp4_resolution = bunny.verified_mp4_resolution(row.external_id,
                 video.available_resolutions, max_bytes=VIDEO_MAX_BYTES)
             if mp4_resolution is None:

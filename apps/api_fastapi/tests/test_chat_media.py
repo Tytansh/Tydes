@@ -46,7 +46,7 @@ class PhotoStorage:
 
 class VideoStorage:
     deleted = []
-    video = BunnyVideo("video-guid", 3, 18, 100_000,
+    video = BunnyVideo("video-guid", 3, 18, 100_000, encode_progress=100,
                        available_resolutions=("240p", "360p", "480p"), has_mp4_fallback=True)
     reads = 0
     probes = 0
@@ -235,7 +235,7 @@ def test_video_processing_and_actual_encoded_storage_guard(fixture):
     assert ledger.get(identifier, user.id).total_bytes == chat_media.VIDEO_MAX_BYTES + 16
     video.video = BunnyVideo("video-guid", 2, None, 100)
     assert chat_media.complete(user, identifier)["status"] == "processing"
-    video.video = BunnyVideo("video-guid", 3, 18, chat_media.VIDEO_MAX_BYTES + 1)
+    video.video = BunnyVideo("video-guid", 3, 18, chat_media.VIDEO_MAX_BYTES + 1, encode_progress=100)
     with pytest.raises(HTTPException) as error:
         chat_media.complete(user, identifier)
     assert error.value.status_code == 400
@@ -243,11 +243,11 @@ def test_video_processing_and_actual_encoded_storage_guard(fixture):
     assert ledger.get(identifier, user.id).status == "rejected"
 
 
-@pytest.mark.parametrize("duration,size", [(31, 100), (float("nan"), 100), (18, None)])
+@pytest.mark.parametrize("duration,size", [(31, 100), (float("nan"), 100), (-1, 100)])
 def test_unverifiable_video_never_becomes_ready(fixture, duration, size):
     user, ledger, _, video = fixture
     identifier = upload(fixture, "video")["id"]
-    video.video = BunnyVideo("video-guid", 3, duration, size)
+    video.video = BunnyVideo("video-guid", 3, duration, size, encode_progress=100)
     with pytest.raises(HTTPException):
         chat_media.complete(user, identifier)
     assert ledger.get(identifier, user.id).status != "complete"
@@ -276,6 +276,29 @@ def test_partially_encoded_video_stays_processing_until_all_storage_is_known(fix
     assert chat_media.complete(user, identifier)["status"] == "ready"
 
 
+@pytest.mark.parametrize("status,progress", [
+    (3, 5), (3, None), (3, 0), (3, 99), (4, 99),
+    (9, 100), (10, 100),
+])
+def test_private_video_needs_final_get_video_progress_and_supported_status(fixture, status, progress):
+    user, ledger, _, video = fixture
+    identifier = upload(fixture, "video")["id"]
+    valid = video.video
+    # Every other proof is present, but private completion must still wait.
+    video.video = replace(valid, status=status, encode_progress=progress)
+    assert video.video.storage_size > 0 and video.video.has_mp4_fallback
+    for _ in range(2):
+        assert chat_media.complete(user, identifier)["status"] == "processing"
+    row = ledger.get(identifier, user.id)
+    assert row.status == "pending" and row.chat_video_mp4_resolution is None
+    assert len(video.fetches) == 1 and video.probes == 0 and video.deleted == []
+    with pytest.raises(ValueError):
+        ledger.validate_chat_media(user.id, "direct", "thread-a", [identifier])
+    video.video = replace(valid, status=4, encode_progress=100)
+    assert chat_media.complete(user, identifier)["status"] == "ready"
+    assert len(video.fetches) == 1 and video.probes == 1
+
+
 def test_low_resolution_video_persists_verified_mp4_and_access_never_rechecks_provider(fixture):
     user, ledger, _, video = fixture
     identifier = upload(fixture, "video")["id"]
@@ -296,9 +319,7 @@ def test_low_resolution_video_persists_verified_mp4_and_access_never_rechecks_pr
 
 
 @pytest.mark.parametrize("resolutions,fallback,code", [
-    (None, True, 503), (("480p",), None, 503),
     (("720p", "1080p"), True, 400), (("2160p",), True, 400),
-    (("480p",), False, 400),
 ])
 def test_unverified_or_high_private_video_metadata_never_becomes_ready(fixture, resolutions, fallback, code):
     user, ledger, _, video = fixture
@@ -310,6 +331,65 @@ def test_unverified_or_high_private_video_metadata_never_becomes_ready(fixture, 
     row = ledger.get(identifier, user.id)
     assert row.status != "complete" and row.chat_video_mp4_resolution is None
     assert video.probes == 0
+
+
+@pytest.mark.parametrize("field,value", [
+    ("length_seconds", None), ("length_seconds", 0),
+    ("storage_size", None), ("storage_size", 0),
+    ("available_resolutions", None), ("available_resolutions", ()),
+    ("has_mp4_fallback", None), ("has_mp4_fallback", False),
+])
+def test_finished_encoding_with_lagging_metadata_stays_pending_then_ready(fixture, field, value):
+    user, ledger, _, video = fixture
+    identifier = upload(fixture, "video")["id"]
+    valid = video.video
+    video.video = replace(valid, **{field: value})
+    assert video.video.fully_encoded
+    for _ in range(2):
+        assert chat_media.complete(user, identifier)["status"] == "processing"
+    row = ledger.get(identifier, user.id)
+    assert row.status == "pending" and row.chat_import_state == "imported"
+    assert row.chat_video_mp4_resolution is None
+    assert video.probes == 0 and video.deleted == [] and len(video.fetches) == 1
+    with pytest.raises(ValueError):
+        ledger.validate_chat_media(user.id, "direct", "thread-a", [identifier])
+    video.video = valid
+    assert chat_media.complete(user, identifier)["status"] == "ready"
+    assert ledger.get(identifier, user.id).chat_video_mp4_resolution == "480p"
+    assert len(video.fetches) == 1 and video.probes == 1
+
+
+def test_lagging_finished_metadata_does_not_extend_the_import_deadline(fixture):
+    user, ledger, _, video = fixture
+    identifier = upload(fixture, "video")["id"]
+    video.video = replace(video.video, storage_size=0, has_mp4_fallback=False)
+    assert chat_media.complete(user, identifier)["status"] == "processing"
+    row = ledger.get(identifier, user.id)
+    original_read_expiry = row.chat_source_read_expires_at
+    ledger._memory[identifier] = replace(row, created_at=datetime.now(timezone.utc) - timedelta(hours=3))
+    with pytest.raises(HTTPException) as error:
+        chat_media.complete(user, identifier)
+    assert error.value.status_code == 410
+    assert ledger.get(identifier, user.id).chat_source_read_expires_at == original_read_expiry
+    assert len(video.fetches) == 1 and video.probes == 0
+
+
+@pytest.mark.parametrize("change", [
+    {"storage_size": chat_media.VIDEO_MAX_BYTES + 1},
+    {"length_seconds": float("nan")},
+    {"length_seconds": 31},
+    {"available_resolutions": ("480p", "1080p")},
+    {"status": 5}, {"status": 8},
+])
+def test_known_video_violations_reject_even_when_other_metadata_is_lagging(fixture, change):
+    user, ledger, _, video = fixture
+    identifier = upload(fixture, "video")["id"]
+    video.video = replace(video.video, **{"storage_size": 0, "has_mp4_fallback": False, **change})
+    with pytest.raises(HTTPException) as error:
+        chat_media.complete(user, identifier)
+    assert error.value.status_code == 400
+    assert ledger.get(identifier, user.id).status == "rejected"
+    assert video.deleted == ["video-guid"] and video.probes == 0
 
 
 def test_mp4_not_distributed_yet_stays_processing_without_claimable_metadata(fixture):
