@@ -340,6 +340,13 @@ void _expectLetterbox(
 ) {
   expect(tester.getSize(image), frame);
   expect(tester.widget<Image>(image).fit, BoxFit.contain);
+  final decoded = tester
+      .renderObject<RenderImage>(
+        find.descendant(of: image, matching: find.byType(RawImage)),
+      )
+      .image;
+  expect(decoded, isNotNull);
+  expect(decoded!.width / decoded.height, closeTo(source.aspectRatio, .00001));
   final fitted = applyBoxFit(BoxFit.contain, source, frame);
   expect(
     fitted.source,
@@ -368,6 +375,24 @@ void _expectLetterbox(
   }
 }
 
+double _chatWidth(double width) => (width * .78 - 28).clamp(0.0, 280.0);
+
+Size _portraitFrame(double width) {
+  final stageWidth = _chatWidth(width).clamp(0.0, 180.0);
+  return Size(stageWidth, stageWidth * 16 / 9);
+}
+
+void _expectCompactPortrait(WidgetTester tester, Finder media, double width) {
+  final frame = tester.getRect(media);
+  final bubble = tester.getRect(find.byType(ChatMediaBubble));
+  expect(frame.size, _portraitFrame(width));
+  expect(frame.width / frame.height, closeTo(9 / 16, .00001));
+  expect(frame.width, lessThanOrEqualTo(180));
+  expect(frame.height, lessThanOrEqualTo(320));
+  expect(frame.center.dx, closeTo(bubble.center.dx, .001));
+  expect(bubble.width, lessThanOrEqualTo(_chatWidth(width)));
+}
+
 Future<ProviderContainer> _showBubble(
   WidgetTester tester,
   _MediaSession session, {
@@ -387,16 +412,21 @@ Future<ProviderContainer> _showBubble(
   );
   addTearDown(container.dispose);
   await container.read(meProvider.future);
-  final bubble = Align(
-    alignment: Alignment.topLeft,
-    child: SizedBox(
-      width: (width * .78 - 28).clamp(0, 280),
-      child: ChatMediaBubble(
-        key: const ValueKey('stable-attachment'),
-        attachment: ChatMediaAttachment(id: 'private-layout', mediaType: type),
-        ownerId: 'alice',
-        conversationType: 'direct',
-        conversationId: 'thread',
+  final bubble = LayoutBuilder(
+    builder: (_, constraints) => Align(
+      alignment: Alignment.topLeft,
+      child: SizedBox(
+        width: _chatWidth(constraints.maxWidth),
+        child: ChatMediaBubble(
+          key: const ValueKey('stable-attachment'),
+          attachment: ChatMediaAttachment(
+            id: 'private-layout',
+            mediaType: type,
+          ),
+          ownerId: 'alice',
+          conversationType: 'direct',
+          conversationId: 'thread',
+        ),
       ),
     ),
   );
@@ -422,19 +452,20 @@ Future<ProviderContainer> _showBubble(
 
 void main() {
   for (final shape in [
-    (80, 40, 'landscape'),
-    (40, 80, 'portrait'),
+    (80, 45, 'landscape'),
+    (45, 80, 'portrait'),
     (40, 40, 'square'),
+    (45, 105, 'extra-tall'),
   ]) {
-    for (final width in [320.0, 600.0]) {
+    for (final width in [200.0, 320.0, 600.0]) {
       _mediaWidgetTest(
         '${shape.$3} private photo letterboxes within current chat bounds at $width',
         (tester) async {
           _stubImages(_rasterPhoto(shape.$1, shape.$2));
           await _showBubble(tester, _MediaSession(), width: width);
           await _decodedImage(tester);
-          final frame = Size((width * .78 - 28).clamp(0, 280), 190);
-          expect(tester.getSize(find.byType(ChatMediaBubble)), frame);
+          final frame = _portraitFrame(width);
+          _expectCompactPortrait(tester, find.byType(Image), width);
           _expectLetterbox(
             tester,
             find.byType(Image),
@@ -468,28 +499,33 @@ void main() {
         expect(tester.takeException(), isNull);
       },
     );
-    _mediaWidgetTest(
-      '${shape.$3} private video thumbnail is contained, not cropped',
-      (tester) async {
-        _stubImages(_rasterPhoto(shape.$1, shape.$2));
-        await _showBubble(
-          tester,
-          _MediaSession()
-            ..videoAccess = true
-            ..videoThumbnail = true,
-          type: 'video',
-        );
-        await _decodedImage(tester);
-        _expectLetterbox(
-          tester,
-          find.byType(Image),
-          Size(shape.$1.toDouble(), shape.$2.toDouble()),
-          const Size(280, 190),
-        );
-        expect(find.byIcon(Icons.play_circle_fill), findsOneWidget);
-        expect(tester.takeException(), isNull);
-      },
-    );
+    for (final width in [200.0, 320.0, 600.0]) {
+      _mediaWidgetTest(
+        '${shape.$3} private video thumbnail is contained at $width',
+        (tester) async {
+          _stubImages(_rasterPhoto(shape.$1, shape.$2));
+          await _showBubble(
+            tester,
+            _MediaSession()
+              ..videoAccess = true
+              ..videoThumbnail = true,
+            type: 'video',
+            width: width,
+          );
+          await _decodedImage(tester);
+          _expectCompactPortrait(tester, find.byType(Image), width);
+          _expectLetterbox(
+            tester,
+            find.byType(Image),
+            Size(shape.$1.toDouble(), shape.$2.toDouble()),
+            _portraitFrame(width),
+          );
+          expect(find.byIcon(Icons.play_circle_fill), findsOneWidget);
+          expect(find.byType(ChatVideoViewer), findsNothing);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
   }
 
   _mediaWidgetTest(
@@ -546,6 +582,44 @@ void main() {
 
   for (final video in [false, true]) {
     _mediaWidgetTest(
+      '${video ? 'video thumbnail' : 'photo'} resize retains source, state and signed lease',
+      (tester) async {
+        final client = _stubImages(_rasterPhoto(80, 45));
+        final session = _MediaSession()
+          ..videoAccess = video
+          ..videoThumbnail = video;
+        await _showBubble(tester, session, type: video ? 'video' : 'photo');
+        await _decodedImage(tester);
+        final state = tester.state(find.byType(ChatMediaBubble));
+        final image = tester.element(find.byType(Image));
+        final decoded = tester
+            .renderObject<RenderImage>(find.byType(RawImage))
+            .image;
+        for (final width in [600.0, 200.0, 320.0, 600.0]) {
+          tester.view.physicalSize = Size(width, 844);
+          await tester.pumpAndSettle();
+          _expectCompactPortrait(tester, find.byType(Image), width);
+          _expectLetterbox(
+            tester,
+            find.byType(Image),
+            const Size(80, 45),
+            _portraitFrame(width),
+          );
+          expect(tester.state(find.byType(ChatMediaBubble)), same(state));
+          expect(tester.element(find.byType(Image)), same(image));
+          expect(
+            tester.renderObject<RenderImage>(find.byType(RawImage)).image,
+            same(decoded),
+          );
+          expect(session.accessReads, 1);
+          expect(client.reads, 1);
+          expect(find.byType(ChatVideoViewer), findsNothing);
+          expect(tester.takeException(), isNull);
+        }
+      },
+    );
+
+    _mediaWidgetTest(
       video
           ? 'native private video thumbnail sends the public-site Referer'
           : 'native private photo request has no video-only Referer',
@@ -569,27 +643,56 @@ void main() {
   _mediaWidgetTest('private access loading retains the compact black frame', (
     tester,
   ) async {
+    _stubImages(_rasterPhoto(80, 45));
     final session = _MediaSession()
       ..pendingAccess = Completer<Map<String, dynamic>>();
     await _showBubble(tester, session);
-    expect(tester.getSize(find.byType(ChatMediaBubble)), const Size(280, 190));
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.byType(ChatMediaBubble),
-        matching: find.byWidgetPredicate(
-          (widget) => widget is ColoredBox && widget.color == Colors.black,
-        ),
+    final blackFrame = find.descendant(
+      of: find.byType(ChatMediaBubble),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is ColoredBox && widget.color == Colors.black,
       ),
-      findsOneWidget,
     );
+    _expectCompactPortrait(tester, blackFrame, 600);
+    final loadingSize = tester.getSize(blackFrame);
+    expect(blackFrame, findsOneWidget);
     session.pendingAccess!.complete({
       'id': 'private-layout',
       'media_type': 'photo',
       'url': 'https://private.example.invalid/layout.png',
     });
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump();
+    await _decodedImage(tester);
+    _expectCompactPortrait(tester, find.byType(Image), 600);
+    expect(tester.getSize(find.byType(Image)), loadingSize);
   });
+
+  _mediaWidgetTest(
+    'video without a poster keeps a compact black portrait placeholder',
+    (tester) async {
+      await _showBubble(
+        tester,
+        _MediaSession()..videoAccess = true,
+        type: 'video',
+        width: 320,
+      );
+      expect(find.byType(Image), findsNothing);
+      final placeholder = find
+          .descendant(
+            of: find.byType(ChatMediaBubble),
+            matching: find.byWidgetPredicate(
+              (widget) => widget is ColoredBox && widget.color == Colors.black,
+            ),
+          )
+          .first;
+      _expectCompactPortrait(tester, placeholder, 320);
+      expect(find.byIcon(Icons.play_circle_fill), findsOneWidget);
+      expect(find.byType(ChatVideoViewer), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   _mediaWidgetTest(
     'immediately failed viewer renewal renders retry without an uncaught error',

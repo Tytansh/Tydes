@@ -669,19 +669,32 @@ class _ChatMediaBubbleState extends ConsumerState<ChatMediaBubble> {
   }
 }
 
-/// Preserve the existing chat footprint while letterboxing every aspect ratio.
+/// Keep chat attachments compact in a portrait stage without cropping media.
 /// This owns no URLs/cache: access remains scoped to the enclosing bubble.
 class _CompactPrivateMediaFrame extends StatelessWidget {
   const _CompactPrivateMediaFrame({required this.child});
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => ClipRRect(
-    borderRadius: BorderRadius.circular(14),
-    child: ColoredBox(
-      color: Colors.black,
-      child: SizedBox(width: 280, height: 190, child: child),
-    ),
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      const ratio = 9 / 16;
+      final heightLimit = constraints.hasBoundedHeight
+          ? constraints.maxHeight.clamp(0.0, 320.0)
+          : 320.0;
+      final width = constraints.maxWidth.clamp(0.0, heightLimit * ratio);
+      return Align(
+        widthFactor: 1,
+        heightFactor: 1,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: ColoredBox(
+            color: Colors.black,
+            child: SizedBox(width: width, height: width / ratio, child: child),
+          ),
+        ),
+      );
+    },
   );
 }
 

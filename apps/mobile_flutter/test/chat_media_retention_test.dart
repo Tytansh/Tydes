@@ -351,6 +351,8 @@ void main() {
       final second = tester.state(_bubble('second-photo'));
       final scope = harness.media.scope('alice', 'thread', 'received-photo');
       harness.media.failures.add(scope);
+      await tester.ensureVisible(_bubble('received-photo'));
+      await _pump(tester);
       await tester.tap(_bubble('received-photo'));
       await _pump(tester);
       expect(
