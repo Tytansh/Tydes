@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 import json
 import os
@@ -834,6 +835,8 @@ def test_alert_changes_are_limited_to_the_owning_account(monkeypatch):
     other_token = _signup_access_token(monkeypatch, "alert-other@example.com")
     owner_headers = {"Authorization": f"Bearer {owner_token}"}
     other_headers = {"Authorization": f"Bearer {other_token}"}
+    assert client.post("/api/v1/users/free-live-spot", headers=owner_headers,
+                       json={"spot_id": "spot_balangan"}).status_code == 200
 
     created = client.post(
         "/api/v1/alerts",
@@ -908,6 +911,13 @@ def test_planning_uses_persistent_repository_when_configured(monkeypatch):
         def save_alert(self, alert):
             self.alerts[alert.id] = alert.model_copy(deep=True)
 
+        @contextmanager
+        def alert_transaction(self, user_id):
+            alerts = [item.model_copy(deep=True) for item in self.list_alerts(user_id)]
+            yield alerts
+            self.alerts = {key: value for key, value in self.alerts.items() if value.user_id != user_id}
+            self.alerts.update({item.id: item for item in alerts})
+
         def delete_alert(self, alert_id, user_id):
             alert = self.alerts.get(alert_id)
             if alert is None or alert.user_id != user_id:
@@ -918,6 +928,8 @@ def test_planning_uses_persistent_repository_when_configured(monkeypatch):
     repository = FakePlanningRepository()
     monkeypatch.setattr(store, "postgres_planning", repository)
     monkeypatch.setattr(store, "_evaluate_alert", lambda _alert: None)
+    monkeypatch.setattr(store, "_alert_owner", lambda owner, fallback=None:
+        store.user.model_copy(update={"id": owner, "premium": True}))
     user_id = "usr_persistent_planning"
     trip = Trip(
         id="trip_persistent",
@@ -1554,6 +1566,8 @@ def test_free_live_spot_can_change_after_cooldown(monkeypatch):
 def test_can_toggle_and_delete_alert(monkeypatch):
     access_token = _signup_access_token(monkeypatch, "alerts@example.com")
     auth_headers = {"Authorization": f"Bearer {access_token}"}
+    assert client.post("/api/v1/users/free-live-spot", headers=auth_headers,
+                       json={"spot_id": "spot_balangan"}).status_code == 200
     create_response = client.post(
         "/api/v1/alerts",
         json={

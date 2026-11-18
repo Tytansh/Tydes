@@ -292,6 +292,7 @@ class Alert(BaseModel):
     tide_type: Literal["high", "low"] | None = None
     tide_offset_hours: int | None = None
     enabled: bool = True
+    pause_reason: Literal["spot_access", "active_limit"] | None = None
     status: Literal["watching", "triggered", "waiting"] = "watching"
     status_reason: str | None = None
     last_evaluated_at: datetime | None = None

@@ -28,6 +28,7 @@ const _favoriteAccent = Color(0xFF2AA7A1);
 const _allCountriesLabel = 'All surf regions';
 const _allRegionsLabel = 'All regions';
 const _allAreasLabel = 'All areas';
+const _spotFocusZoom = 9.2;
 
 // Each map owns a provider instance; widget tests use in-memory tiles.
 final spotsMapTileProviderFactory = Provider<TileProvider Function()>(
@@ -124,12 +125,14 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
               }
             }
             if (initialSpot != null) {
-              final targetSpot = initialSpot;
               _didApplyInitialSpot = true;
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!mounted) return;
-                _focusSpot(targetSpot);
-              });
+              // Establish the requested view before FlutterMap creates its
+              // controller/tiles. A post-frame move races its initial size
+              // event and overview fit, which can load/prune the wrong view.
+              _selectedSpotId = initialSpot.id;
+              _selectedCountry = initialSpot.country;
+              _selectedRegion = initialSpot.region;
+              _selectedArea = _locationAreaForSpot(initialSpot);
             }
           }
 
@@ -413,11 +416,17 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                       mapController: _mapController,
                       spots: displayedVisibleSpots,
                       showSpots: _showSpotPins,
-                      initialCenter: _centerOf(locationSpots),
-                      initialZoom:
-                          _selectedCountry == _allCountriesLabel &&
-                              _selectedRegion == _allRegionsLabel &&
-                              _selectedArea == _allAreasLabel
+                      initialCenter: selectedSpot != null
+                          ? LatLng(
+                              selectedSpot.latitude,
+                              selectedSpot.longitude,
+                            )
+                          : _centerOf(locationSpots),
+                      initialZoom: selectedSpot != null
+                          ? _spotFocusZoom
+                          : _selectedCountry == _allCountriesLabel &&
+                                _selectedRegion == _allRegionsLabel &&
+                                _selectedArea == _allAreasLabel
                           ? 3.2
                           : 8.0,
                       selectedSpotId: _selectedSpotId,
@@ -573,7 +582,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
     return 'Back to full map';
   }
 
-  void _focusSpot(SpotModel spot, {double zoom = 9.2}) {
+  void _focusSpot(SpotModel spot, {double zoom = _spotFocusZoom}) {
     _mapController.move(LatLng(spot.latitude, spot.longitude), zoom);
     setState(() {
       _selectedSpotId = spot.id;
@@ -1186,6 +1195,11 @@ class _MapCanvas extends StatefulWidget {
 
 class _MapCanvasState extends State<_MapCanvas> {
   late final TileProvider _tiles = widget.tileProviderFactory();
+  // Initial camera setup is fixed for this map instance. A focused route must
+  // not acquire an overview fit later when a filter/selection changes.
+  late final CameraFit? _initialFit = widget.selectedSpotId == null
+      ? _fit
+      : null;
 
   CameraFit? get _fit {
     final points = [
@@ -1212,7 +1226,7 @@ class _MapCanvasState extends State<_MapCanvas> {
             options: MapOptions(
               initialCenter: widget.initialCenter,
               initialZoom: widget.initialZoom,
-              initialCameraFit: _fit,
+              initialCameraFit: _initialFit,
               minZoom: 2,
               maxZoom: 14,
               interactionOptions: surfMapInteractionOptions,

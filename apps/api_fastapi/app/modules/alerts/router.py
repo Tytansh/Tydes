@@ -4,10 +4,11 @@ from typing import Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.auth import require_authenticated_user
 from app.core.models import Alert
+from app.core.alert_policy import AlertPolicyError
 from app.core.rate_limit import RateLimitRule, api_rate_limiter
 from app.core.store import store
 
@@ -37,6 +38,14 @@ class AlertUpdateRequest(BaseModel):
     tide_offset_hours: int | None = Field(default=None, ge=-12, le=12)
     enabled: bool | None = None
 
+    @field_validator("spot_id", "wave_enabled", "wind_enabled", "tide_enabled", "enabled", mode="before")
+    @classmethod
+    def reject_explicit_null(cls, value):
+        # Omitted PATCH fields are unchanged, not nullable stored values.
+        if value is None:
+            raise ValueError("This alert setting cannot be null.")
+        return value
+
 
 @router.get("")
 def list_alerts(user=Depends(require_authenticated_user)):
@@ -50,12 +59,6 @@ def create_alert(
 ):
     if store.get_spot(payload.spot_id) is None:
         raise HTTPException(status_code=404, detail="Spot not found")
-    retained_limit = _positive_env("ALERTS_MAX_PER_USER", 25)
-    if len(list(store.list_alerts(user.id))) >= retained_limit:
-        raise HTTPException(
-            status_code=409,
-            detail=f"You can keep up to {retained_limit} surf alerts.",
-        )
     api_rate_limiter.enforce(
         RateLimitRule(
             scope="planning:create-alert:user",
@@ -78,7 +81,10 @@ def create_alert(
         enabled=payload.enabled,
         next_check_at=datetime.now(timezone.utc) + timedelta(hours=4),
     )
-    return store.add_alert(alert)
+    try:
+        return store.add_alert(alert)
+    except AlertPolicyError as error:
+        raise HTTPException(error.status_code, str(error)) from error
 
 
 @router.patch("/{alert_id}")
@@ -87,11 +93,14 @@ def update_alert(
     payload: AlertUpdateRequest,
     user=Depends(require_authenticated_user),
 ):
-    alert = store.update_alert(
-        alert_id,
-        payload.model_dump(exclude_unset=True),
-        user_id=user.id,
-    )
+    try:
+        alert = store.update_alert(
+            alert_id,
+            payload.model_dump(exclude_unset=True),
+            user_id=user.id,
+        )
+    except AlertPolicyError as error:
+        raise HTTPException(error.status_code, str(error)) from error
     if alert is None:
         raise HTTPException(status_code=404, detail="Alert not found")
     return alert

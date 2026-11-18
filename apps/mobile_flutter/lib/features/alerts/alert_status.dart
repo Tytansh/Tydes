@@ -208,7 +208,15 @@ class _AlertStatusBannerState extends State<AlertStatusBanner> {
       ),
       SurfAlertState.off => (
         'Alert paused',
-        'Turn this alert on to watch for your conditions.',
+        switch (alert.pauseReason) {
+          'spot_access' =>
+            'This alert needs live data at its spot. Select it as '
+                'your free spot or use Premium, then turn the alert back on.',
+          'active_limit' =>
+            'Your active alert limit was reached. Pause another '
+                'alert before turning this one back on.',
+          _ => 'Turn this alert on to watch for your conditions.',
+        },
         Icons.notifications_paused_outlined,
       ),
       SurfAlertState.updateDue => (

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
+import '../home/home_page.dart' show meProvider;
 
 final alertsProvider =
     AsyncNotifierProvider<AlertsController, List<AlertModel>>(
@@ -19,6 +20,22 @@ class AlertsController extends AsyncNotifier<List<AlertModel>> {
     _disposed = false;
     ref.onDispose(() => _disposed = true);
     ref.watch(alertsRefreshKeyProvider);
+    // Refresh server-confirmed pauses after a free-spot switch or a plan change.
+    // Select confirmed identity/access only: ordinary profile refreshes must not
+    // replace the alert list or invalidate in-flight changes unnecessarily.
+    ref.watch(
+      meProvider.select((account) {
+        final profile = account.valueOrNull;
+        return profile == null
+            ? null
+            : (
+                profile.id,
+                profile.premium,
+                profile.freeLiveSpotId,
+                profile.emailVerified,
+              );
+      }),
+    );
     return ref.watch(surfRepositoryProvider).fetchAlerts();
   }
 

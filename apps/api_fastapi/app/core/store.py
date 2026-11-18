@@ -17,7 +17,10 @@ from threading import RLock
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
+from pydantic import ValidationError
+
 from app.core.email_sender import send_password_reset_email, send_verification_email
+from app.core import alert_policy
 from app.core.feed_pagination import (
     FEED_PAGE_MAX_SIZE, FeedEntry, FeedPage, decode_feed_cursor,
     feed_datetime, feed_position, finish_feed_page,
@@ -256,10 +259,12 @@ class DemoStore:
             if self.user.banned:
                 raise ValueError("This account has been suspended.")
             self.user.locale = locale
-            self._apply_email_access_overrides(normalized_email)
+            access_changed = self._apply_email_access_overrides(normalized_email)
             self._save_current_account_user()
             token = self._create_session_token(normalized_email)
             self._save_state()
+            if access_changed:
+                self.reconcile_alert_policy(self.user)
             return Session(access_token=token, user=self.user)
 
         # Neither a special email domain, a premium override, nor an omitted
@@ -463,7 +468,7 @@ class DemoStore:
             self.auth_accounts[email] = account
             self.user = user
             self.user.locale = locale
-            self._apply_email_access_overrides(email)
+            access_changed = self._apply_email_access_overrides(email)
             verification_code = None
             email_result = None
             if not user.email_verified:
@@ -484,6 +489,8 @@ class DemoStore:
             self._save_current_account_user()
             token = self._create_session_token(email)
             self._save_state()
+            if access_changed:
+                self.reconcile_alert_policy(self.user)
             return {
                 "session": Session(access_token=token, user=self.user),
                 "verification_required": not self.user.email_verified,
@@ -573,10 +580,12 @@ class DemoStore:
         self._delete_password_reset_code(normalized_email)
         self._update_auth_password(normalized_email, _hash_password(new_password))
         self.user = User.model_validate(user_payload)
-        self._apply_email_access_overrides(normalized_email)
+        access_changed = self._apply_email_access_overrides(normalized_email)
         self._save_current_account_user()
         token = self._create_session_token(normalized_email)
         self._save_state()
+        if access_changed:
+            self.reconcile_alert_policy(self.user)
         return Session(access_token=token, user=self.user)
 
     def update_profile(
@@ -725,6 +734,7 @@ class DemoStore:
                     self.postgres_social.update_author_snapshots(self.user)
                     self._sync_social_from_postgres()
                 self._save_state()
+                self.reconcile_alert_policy(self.user)
             return self.user.model_copy(deep=True)
 
     def use_session_token(self, token: str) -> bool:
@@ -1168,29 +1178,123 @@ class DemoStore:
         self._save_state()
         return trip
 
+    def _alert_owner(self, owner_id: str, fallback: User | None = None) -> User:
+        # A request snapshot can predate a billing/admin change. Re-read the
+        # explicit owner while holding the planning mutation lock.
+        current = self.get_auth_user_by_id(owner_id)
+        if self.postgres_auth is not None and current is None:
+            raise alert_policy.AlertPolicyError(403, "Alert account is unavailable.")
+        current = current or fallback or (self.user if self.user.id == owner_id else None)
+        if current is None or current.id != owner_id:
+            raise alert_policy.AlertPolicyError(403, "Alert account is unavailable.")
+        user = current.model_copy(deep=True)
+        if user.subscription_active is not None:
+            paid = user.subscription_active and (
+                user.subscription_expires_at is None
+                or user.subscription_expires_at > datetime.now(timezone.utc)
+            )
+            user.premium = paid or user.admin_premium or self._email_has_premium_override(user.email)
+        return user
+
+    @contextmanager
+    def _alert_scope(self, owner_id: str, fallback: User | None = None):
+        if self.postgres_planning is not None:
+            with self.postgres_planning.alert_transaction(owner_id) as alerts:
+                user = self._alert_owner(owner_id, fallback)
+                with self.request_user_context(user):
+                    yield alerts, user
+            return
+        with self._state_lock:
+            original = self.alerts
+            alerts = [item.model_copy(deep=True) for item in original if item.user_id == owner_id]
+            user = self._alert_owner(owner_id, fallback)
+            with self.request_user_context(user):
+                yield alerts, user
+                self.alerts = [item for item in original if item.user_id != owner_id] + alerts
+                try:
+                    self._save_state()
+                except Exception:
+                    self.alerts = original
+                    raise
+
+    def reconcile_alert_policy(self, user: User | None = None) -> None:
+        owner = user or self.user
+        with self._alert_scope(owner.id, owner) as (alerts, current):
+            alert_policy.reconcile(alerts, current, {spot.id for spot in self.spots})
+
+    @staticmethod
+    def _alert_configuration(alert: Alert) -> dict[str, object]:
+        return alert.model_dump(exclude={"status", "status_reason", "last_evaluated_at",
+                                         "last_triggered_at", "next_check_at"})
+
+    def _refresh_saved_alerts(self, owner_id: str, snapshots: list[Alert], user: User) -> list[Alert]:
+        # Provider I/O must not hold the global JSON state lock or an SQL owner
+        # transaction. Evaluate detached copies, then merge only results for
+        # configurations that still exist and have not changed meanwhile.
+        evaluated = []
+        for snapshot in snapshots:
+            candidate = snapshot.model_copy(deep=True)
+            current_user = self._alert_owner(owner_id, user)
+            with self.request_user_context(current_user):
+                try:
+                    self._evaluate_alert(candidate)
+                except Exception:
+                    # The configuration was already durably saved. A provider
+                    # outage is a waiting result, not a false creation failure.
+                    candidate.status = "waiting"
+                    candidate.status_reason = "Live forecast data could not be checked right now."
+                    candidate.last_evaluated_at = datetime.now(timezone.utc)
+                    candidate.next_check_at = candidate.last_evaluated_at + timedelta(hours=4)
+            evaluated.append((snapshot, candidate))
+
+        with self._alert_scope(owner_id, user) as (alerts, current_user):
+            alert_policy.reconcile(alerts, current_user, {spot.id for spot in self.spots})
+            by_id = {item.id: item for item in alerts}
+            for snapshot, result in evaluated:
+                current = by_id.get(snapshot.id)
+                if current is None or self._alert_configuration(current) != self._alert_configuration(snapshot):
+                    continue
+                if (current.last_evaluated_at is not None and result.last_evaluated_at is not None
+                        and current.last_evaluated_at > result.last_evaluated_at):
+                    continue
+                for field in ("status", "status_reason", "last_evaluated_at", "last_triggered_at", "next_check_at"):
+                    setattr(current, field, getattr(result, field))
+            return [item.model_copy(deep=True) for item in alerts]
+
     def list_alerts(self, user_id: str | None = None) -> Iterable[Alert]:
         owner_id = user_id or self.user.id
-        alerts = (
-            self.postgres_planning.list_alerts(owner_id)
-            if self.postgres_planning is not None
-            else [alert for alert in self.alerts if alert.user_id == owner_id]
-        )
-        for alert in alerts:
-            self._evaluate_alert(alert)
-            if self.postgres_planning is not None:
-                self.postgres_planning.save_alert(alert)
-        if self.postgres_planning is None:
-            self._save_state()
-        return alerts
+        with self._alert_scope(owner_id) as (alerts, user):
+            alert_policy.reconcile(alerts, user, {spot.id for spot in self.spots})
+            snapshots = [item.model_copy(deep=True) for item in alerts]
+        return self._refresh_saved_alerts(owner_id, snapshots, user)
 
     def add_alert(self, alert: Alert) -> Alert:
-        self._evaluate_alert(alert)
-        if self.postgres_planning is not None:
-            self.postgres_planning.save_alert(alert)
-            return alert
-        self.alerts.append(alert)
-        self._save_state()
-        return alert
+        failure = None
+        with self._alert_scope(alert.user_id) as (alerts, user):
+            spots = {spot.id for spot in self.spots}
+            alert_policy.reconcile(alerts, user, spots)
+            try:
+                if len(alerts) >= alert_policy.retained_limit():
+                    raise alert_policy.AlertPolicyError(409,
+                        f"You can keep up to {alert_policy.retained_limit()} surf alerts.")
+                if any(item.id == alert.id for item in alerts):
+                    raise alert_policy.AlertPolicyError(409, "This alert already exists.")
+                # New free configurations must target the selected break even
+                # if initially disabled; legacy disabled configs are retained.
+                alert_policy.validate_active(alert, alerts, user, spots, creating=True)
+                alert.pause_reason = None
+                alert.status = "waiting" if alert.enabled else "watching"
+                alert.status_reason = "Waiting for live forecast data." if alert.enabled else "Alert is turned off."
+                alerts.append(alert)
+            except alert_policy.AlertPolicyError as error:
+                failure = error
+        if failure is not None:
+            raise failure
+        result = next((item for item in self._refresh_saved_alerts(
+            alert.user_id, [alert.model_copy(deep=True)], user) if item.id == alert.id), None)
+        if result is None:
+            raise alert_policy.AlertPolicyError(409, "This alert was removed while it was being checked.")
+        return result
 
     def update_alert_enabled(
         self,
@@ -1208,43 +1312,51 @@ class DemoStore:
         user_id: str | None = None,
     ) -> Alert | None:
         owner_id = user_id or self.user.id
-        alert = (
-            self.postgres_planning.get_alert(alert_id, owner_id)
-            if self.postgres_planning is not None
-            else next(
-                (
-                    item
-                    for item in self.alerts
-                    if item.id == alert_id and item.user_id == owner_id
-                ),
-                None,
-            )
-        )
-        if alert is None:
+        failure = None
+        result = None
+        with self._alert_scope(owner_id) as (alerts, user):
+            original = next((item for item in alerts if item.id == alert_id), None)
+            was_enabled = original.enabled if original is not None else False
+            spots = {spot.id for spot in self.spots}
+            alert_policy.reconcile(alerts, user, spots)
+            if original is not None:
+                try:
+                    candidate_values = original.model_dump()
+                    candidate_values.update({key: value for key, value in values.items()
+                                             if key in Alert.model_fields})
+                    try:
+                        candidate = Alert.model_validate(candidate_values)
+                    except ValidationError as error:
+                        raise alert_policy.AlertPolicyError(422,
+                            "Invalid alert settings. Existing settings were not changed.") from error
+                    if candidate.spot_id not in spots:
+                        raise alert_policy.AlertPolicyError(404, "Spot not found.")
+                    if candidate.enabled or (was_enabled and values.get("enabled") is not False):
+                        active_candidate = candidate.model_copy(update={"enabled": True})
+                        alert_policy.validate_active(active_candidate, alerts, user, spots)
+                    if candidate.enabled or values.get("enabled") is False:
+                        candidate.pause_reason = None
+                    candidate.status = "waiting" if candidate.enabled else "watching"
+                    candidate.status_reason = ("Waiting for live forecast data." if candidate.enabled
+                                               else candidate.status_reason if candidate.pause_reason
+                                               else "Alert is turned off.")
+                    alerts[alerts.index(original)] = candidate
+                    result = candidate
+                except alert_policy.AlertPolicyError as error:
+                    failure = error
+        if failure is not None:
+            raise failure
+        if result is None:
             return None
-        for key, value in values.items():
-            if hasattr(alert, key):
-                setattr(alert, key, value)
-        self._evaluate_alert(alert)
-        if self.postgres_planning is not None:
-            self.postgres_planning.save_alert(alert)
-        else:
-            self._save_state()
-        return alert
+        return next((item for item in self._refresh_saved_alerts(
+            owner_id, [result.model_copy(deep=True)], user) if item.id == alert_id), None)
 
     def delete_alert(self, alert_id: str, *, user_id: str | None = None) -> bool:
         owner_id = user_id or self.user.id
-        if self.postgres_planning is not None:
-            return self.postgres_planning.delete_alert(alert_id, owner_id)
-        before = len(self.alerts)
-        self.alerts = [
-            item
-            for item in self.alerts
-            if item.id != alert_id or item.user_id != owner_id
-        ]
-        if len(self.alerts) != before:
-            self._save_state()
-        return len(self.alerts) != before
+        with self._alert_scope(owner_id) as (alerts, _user):
+            before = len(alerts)
+            alerts[:] = [item for item in alerts if item.id != alert_id]
+            return len(alerts) != before
 
     def list_plans(self) -> Iterable[BillingPlan]:
         return self.plans
@@ -1267,6 +1379,7 @@ class DemoStore:
             self.postgres_social.update_author_snapshots(self.user)
             self._sync_social_from_postgres()
         self._save_state()
+        self.reconcile_alert_policy(self.user)
         return self.user
 
     def set_subscription_status(self, subscription) -> User:
@@ -1296,6 +1409,7 @@ class DemoStore:
                     account = self.auth_accounts.get(updated.email.strip().lower())
                     if account is not None:
                         account["user"] = updated.model_dump(mode="json")
+                    self.reconcile_alert_policy(updated)
                 return updated
             with self.request_user_context(user):
                 return self.set_subscription_status(subscription)
@@ -1355,6 +1469,7 @@ class DemoStore:
             self.user.free_live_spot_id = spot_id
             self.user.free_live_spot_changed_at = now
             self._save_state()
+            self.reconcile_alert_policy(self.user)
             return self.user
         if (
             self.user.free_live_spot_id is not None
@@ -1375,6 +1490,7 @@ class DemoStore:
             self.user.free_live_spot_changed_at = now
         self.user.free_live_spot_id = spot_id
         self._save_state()
+        self.reconcile_alert_policy(self.user)
         return self.user
 
     def capture_email(self, email: str) -> dict[str, str]:
@@ -1453,7 +1569,12 @@ class DemoStore:
                     self.postgres_auth.delete_sessions_for_email(email)
             if self.postgres_social is not None:
                 self.postgres_social.update_author_snapshots(user)
+            if self.user.id == user.id:
+                # _save_state also persists the request user; keep it current
+                # when an administrator changes their own entitlement.
+                self.user = user
             self._save_state()
+            self.reconcile_alert_policy(user)
             return user
         return None
 
@@ -2770,8 +2891,21 @@ class DemoStore:
 
         if not alert.enabled:
             alert.status = "watching"
-            alert.status_reason = "Alert is turned off."
+            if alert.pause_reason is None:
+                alert.status_reason = "Alert is turned off."
             alert.next_check_at = now + timedelta(hours=4)
+            return
+
+        # All public mutations/listing reconcile the active cap atomically.
+        # Keep this direct evaluation guard too: locked alerts must never make
+        # even a cache-fill request to a paid forecast/tide provider.
+        try:
+            policy_user = self.user
+        except AttributeError:
+            policy_user = None
+        if (policy_user is not None and alert.user_id == policy_user.id
+                and not alert_policy.eligible(policy_user, alert.spot_id, {spot.id for spot in self.spots})):
+            alert_policy.pause(alert, policy_user, "spot_access")
             return
 
         spot = self.get_spot(alert.spot_id)

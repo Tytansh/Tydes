@@ -106,6 +106,7 @@ class DemoPersistence {
               'enabled': alert.enabled,
               'status': alert.status,
               'status_reason': alert.statusReason,
+              'pause_reason': alert.pauseReason,
               'last_evaluated_at': alert.lastEvaluatedAt,
               'last_triggered_at': alert.lastTriggeredAt,
               'next_check_at': alert.nextCheckAt,

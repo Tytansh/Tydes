@@ -14,6 +14,7 @@ import 'package:mobile_flutter/core/notifications/notification_service.dart';
 import 'package:mobile_flutter/features/alerts/alert_monitor.dart';
 import 'package:mobile_flutter/features/alerts/alerts_page.dart';
 import 'package:mobile_flutter/features/alerts/create_alert_sheet.dart';
+import 'package:mobile_flutter/features/home/home_page.dart';
 import 'package:mobile_flutter/features/spots/spots_page.dart';
 
 Map<String, dynamic> alertJson({
@@ -125,11 +126,15 @@ Future<ProviderContainer> showAlerts(
   final container = ProviderContainer(
     overrides: [
       surfRepositoryProvider.overrideWithValue(repo),
+      meProvider.overrideWith(
+        (_) async => DemoSeed.me.copyWith(emailVerified: true, premium: true),
+      ),
       spotsProvider.overrideWith((_) async => [DemoSeed.spots.first]),
       alertMonitorProvider.overrideWithValue(_QuietMonitor(repo)),
     ],
   );
   addTearDown(container.dispose);
+  await container.read(meProvider.future);
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
@@ -215,9 +220,16 @@ void main() {
                 );
         });
         final container = ProviderContainer(
-          overrides: [surfRepositoryProvider.overrideWithValue(repo)],
+          overrides: [
+            surfRepositoryProvider.overrideWithValue(repo),
+            meProvider.overrideWith(
+              (_) async =>
+                  DemoSeed.me.copyWith(emailVerified: true, premium: true),
+            ),
+          ],
         );
         addTearDown(container.dispose);
+        await container.read(meProvider.future);
         await container.read(alertsProvider.future);
         final controller = container.read(alertsProvider.notifier);
         Future<Object?> change() async {
@@ -286,9 +298,15 @@ void main() {
           : response(alertJson(wave: 2));
     });
     final container = ProviderContainer(
-      overrides: [surfRepositoryProvider.overrideWithValue(repo)],
+      overrides: [
+        surfRepositoryProvider.overrideWithValue(repo),
+        meProvider.overrideWith(
+          (_) async => DemoSeed.me.copyWith(emailVerified: true, premium: true),
+        ),
+      ],
     );
     addTearDown(container.dispose);
+    await container.read(meProvider.future);
     await expectLater(
       container.read(alertsProvider.future),
       throwsA(isA<DioException>()),
@@ -321,9 +339,15 @@ void main() {
       return pending.future;
     });
     final container = ProviderContainer(
-      overrides: [surfRepositoryProvider.overrideWithValue(repo)],
+      overrides: [
+        surfRepositoryProvider.overrideWithValue(repo),
+        meProvider.overrideWith(
+          (_) async => DemoSeed.me.copyWith(emailVerified: true, premium: true),
+        ),
+      ],
     );
     addTearDown(container.dispose);
+    await container.read(meProvider.future);
     await container.read(alertsProvider.future);
     final change = container
         .read(alertsProvider.notifier)

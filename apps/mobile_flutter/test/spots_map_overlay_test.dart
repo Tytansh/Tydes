@@ -4,6 +4,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+// The pinned renderer exposes load state only on its internal tile widget.
+// ignore: implementation_imports
+import 'package:flutter_map/src/layer/tile_layer/tile.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -101,6 +104,16 @@ class _Tiles extends TileProvider {
       MemoryImage(TileProvider.transparentImage);
 }
 
+class _RecordingTiles extends _Tiles {
+  final requested = <TileCoordinates>[];
+
+  @override
+  ImageProvider getImage(TileCoordinates coordinates, TileLayer options) {
+    requested.add(coordinates);
+    return super.getImage(coordinates, options);
+  }
+}
+
 class _Repository extends SurfRepository {
   _Repository() : super(Dio(), DemoPersistence());
   int eventLoads = 0;
@@ -166,6 +179,9 @@ Future<ProviderContainer> _pump(
   Future<UserProfile> Function()? loadProfile,
   String? verificationRequiredToken,
   bool withRouter = false,
+  TileProvider Function()? tileProviderFactory,
+  Future<List<SpotModel>> Function()? loadSpots,
+  bool settle = true,
 }) async {
   tester.view.physicalSize = Size(width, 1100);
   tester.view.devicePixelRatio = 1;
@@ -176,7 +192,7 @@ Future<ProviderContainer> _pump(
       surfRepositoryProvider.overrideWithValue(repository),
       spotsProvider.overrideWith((_) async {
         repository.catalogLoads++;
-        return spots ?? _spots;
+        return loadSpots != null ? loadSpots() : spots ?? _spots;
       }),
       meProvider.overrideWith(
         (_) async => loadProfile != null
@@ -187,7 +203,9 @@ Future<ProviderContainer> _pump(
         (_) => verificationRequiredToken,
       ),
       blockedUserIdsProvider.overrideWith((_) => {'blocked'}),
-      spotsMapTileProviderFactory.overrideWithValue(() => _Tiles()),
+      spotsMapTileProviderFactory.overrideWithValue(
+        tileProviderFactory ?? () => _Tiles(),
+      ),
       spotCardForecastProvider.overrideWith((_, id) async {
         forecasts?.add(id);
         return null;
@@ -218,7 +236,11 @@ Future<ProviderContainer> _pump(
           : MaterialApp(theme: theme, home: page),
     ),
   );
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump();
+  }
   return container;
 }
 
@@ -261,6 +283,133 @@ Future<void> _finish(WidgetTester tester, ProviderContainer container) async {
 }
 
 void main() {
+  final entrySpots = [
+    DemoSeed.spots.firstWhere((spot) => spot.id == 'spot_uluwatu_peak'),
+    DemoSeed.spots.firstWhere((spot) => spot.id == 'spot_bondi'),
+    DemoSeed.spots.firstWhere((spot) => spot.country == 'Taiwan'),
+  ];
+  for (final width in [390.0, 1440.0]) {
+    for (final target in entrySpots) {
+      testWidgets('delayed ${target.id} entry survives resizing at $width', (
+        tester,
+      ) async {
+        final repository = _Repository()..posts = [];
+        final tiles = _RecordingTiles();
+        final pending = Completer<List<SpotModel>>();
+        final forecasts = <String>[];
+        final container = await _pump(
+          tester,
+          repository,
+          width: width,
+          initialSpotId: target.id,
+          forecasts: forecasts,
+          tileProviderFactory: () => tiles,
+          loadSpots: () => pending.future,
+          settle: false,
+        );
+        expect(find.byType(FlutterMap), findsNothing);
+        expect(tiles.requested, isEmpty);
+        pending.complete(DemoSeed.spots);
+        await tester.pumpAndSettle();
+        final map = tester.widget<FlutterMap>(find.byType(FlutterMap));
+        final controller = map.mapController!;
+        final center = LatLng(target.latitude, target.longitude);
+        expect(map.options.initialCameraFit, isNull);
+        expect(map.mapController!.camera.center, center);
+        expect(map.mapController!.camera.zoom, 9.2);
+        expect(find.byKey(ValueKey('map-spot-${target.id}')), findsOneWidget);
+        expect(tiles.requested.every((tile) => tile.z == 9), isTrue);
+        for (final nextWidth in [width == 390 ? 1440.0 : 390.0, width]) {
+          tester.view.physicalSize = Size(nextWidth, 1100);
+          await tester.pumpAndSettle();
+          final resized = tester.widget<FlutterMap>(find.byType(FlutterMap));
+          expect(resized.mapController, same(controller));
+          expect(controller.camera.center, center);
+          expect(controller.camera.zoom, 9.2);
+          final rendered = tester.widgetList<Tile>(find.byType(Tile));
+          expect(rendered, isNotEmpty);
+          expect(
+            rendered.every((tile) => tile.tileImage.loadStarted != null),
+            isTrue,
+          );
+          expect(tester.takeException(), isNull);
+        }
+        expect(forecasts, [target.id]);
+        expect(repository.catalogLoads, 1);
+        expect(repository.eventLoads, 1);
+        expect(repository.forecastLoads, 0);
+        await _finish(tester, container);
+      });
+    }
+  }
+
+  testWidgets(
+    'unknown entry spot retains the normal overview without fetching',
+    (tester) async {
+      final repository = _Repository();
+      final forecasts = <String>[];
+      final container = await _pump(
+        tester,
+        repository,
+        initialSpotId: 'removed-spot',
+        forecasts: forecasts,
+      );
+      final map = tester.widget<FlutterMap>(find.byType(FlutterMap));
+      expect(map.options.initialCameraFit, isNotNull);
+      expect(find.byType(SurfMapSpotPin), findsNWidgets(_spots.length));
+      expect(forecasts, isEmpty);
+      expect(repository.catalogLoads, 1);
+      expect(repository.eventLoads, 1);
+      expect(tester.takeException(), isNull);
+      await _finish(tester, container);
+    },
+  );
+
+  for (final width in [390.0, 1440.0]) {
+    testWidgets(
+      'spot entry initializes and loads the target camera at $width',
+      (tester) async {
+        final repository = _Repository();
+        final tiles = _RecordingTiles();
+        final forecasts = <String>[];
+        final container = await _pump(
+          tester,
+          repository,
+          width: width,
+          forecasts: forecasts,
+          initialSpotId: 'uluwatu',
+          tileProviderFactory: () => tiles,
+        );
+        final map = tester.widget<FlutterMap>(find.byType(FlutterMap));
+        final camera = map.mapController!.camera;
+        final rendered = tester.widgetList<Tile>(find.byType(Tile)).toList();
+        final unloaded = rendered.where(
+          (tile) => tile.tileImage.loadStarted == null,
+        );
+        debugPrint(
+          'Spot entry $width: center=${camera.center}, zoom=${camera.zoom}, '
+          'rendered=${rendered.length}, unloaded=${unloaded.length}, '
+          'requested zooms=${tiles.requested.map((tile) => tile.z).toSet()}',
+        );
+        expect(
+          unloaded,
+          isEmpty,
+          reason: 'Every drawn tile must start loading.',
+        );
+        expect(camera.center, const LatLng(-8.82, 115.13));
+        expect(camera.zoom, 9.2);
+        expect(map.options.initialCameraFit, isNull);
+        expect(tiles.requested, isNotEmpty);
+        expect(tiles.requested.every((tile) => tile.z == 9), isTrue);
+        expect(forecasts, ['uluwatu']);
+        expect(repository.catalogLoads, 1);
+        expect(repository.eventLoads, 1);
+        expect(tester.takeException(), isNull);
+        await _finish(tester, container);
+      },
+    );
+  }
+
   for (final width in [390.0, 1440.0]) {
     for (final dark in [false, true]) {
       testWidgets(

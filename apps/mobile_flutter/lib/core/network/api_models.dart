@@ -753,6 +753,7 @@ class AlertModel {
     required this.enabled,
     this.status = 'watching',
     this.statusReason,
+    this.pauseReason,
     this.lastEvaluatedAt,
     this.lastTriggeredAt,
     required this.nextCheckAt,
@@ -770,6 +771,7 @@ class AlertModel {
   final bool enabled;
   final String status;
   final String? statusReason;
+  final String? pauseReason;
   final String? lastEvaluatedAt;
   final String? lastTriggeredAt;
   final String nextCheckAt;
@@ -787,6 +789,7 @@ class AlertModel {
     enabled: json['enabled'] as bool? ?? true,
     status: json['status'] as String? ?? 'watching',
     statusReason: json['status_reason'] as String?,
+    pauseReason: json['pause_reason'] as String?,
     lastEvaluatedAt: json['last_evaluated_at'] as String?,
     lastTriggeredAt: json['last_triggered_at'] as String?,
     nextCheckAt: json['next_check_at'] as String,

@@ -4,7 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
+import '../home/home_page.dart' show meProvider;
 import 'alert_state.dart';
+import 'alert_policy.dart';
 import 'alert_status.dart';
 import 'create_alert_sheet.dart';
 import '../spots/spots_page.dart';
@@ -52,19 +54,28 @@ class AlertsPage extends ConsumerWidget {
               if (items.isEmpty) {
                 return _EmptyAlertsState(spots: spotItems);
               }
-              return ListView.separated(
-                itemCount: items.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 12),
-                itemBuilder: (context, index) {
-                  final alert = items[index];
-                  final spot = spotForId(spotItems, alert.spotId);
-                  return _AlertRow(
-                    key: ValueKey(alert.id),
-                    alert: alert,
-                    spot: spot,
-                    spots: spotItems,
-                  );
-                },
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _AlertAllowanceSummary(alerts: items),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: ListView.separated(
+                      itemCount: items.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final alert = items[index];
+                        final spot = spotForId(spotItems, alert.spotId);
+                        return _AlertRow(
+                          key: ValueKey(alert.id),
+                          alert: alert,
+                          spot: spot,
+                          spots: spotItems,
+                        );
+                      },
+                    ),
+                  ),
+                ],
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
@@ -184,6 +195,24 @@ class _AlertRowState extends ConsumerState<_AlertRow> {
 
   Future<void> _setEnabled(bool enabled) async {
     if (!mounted || _busy) return;
+    if (enabled) {
+      final items = ref.read(alertsProvider);
+      final account = ref.read(meProvider);
+      final block = items.hasError || !items.hasValue
+          ? 'Refresh your alerts and try again.'
+          : alertActivationBlock(
+              profile: account.hasError ? null : account.valueOrNull,
+              alerts: items.valueOrNull!,
+              spotId: widget.alert.spotId,
+              editingAlertId: widget.alert.id,
+            );
+      if (block != null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(block)));
+        return;
+      }
+    }
     setState(() => _busy = true);
     try {
       await ref
@@ -279,6 +308,24 @@ class _AlertRowState extends ConsumerState<_AlertRow> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _AlertAllowanceSummary extends ConsumerWidget {
+  const _AlertAllowanceSummary({required this.alerts});
+  final List<AlertModel> alerts;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(meProvider).valueOrNull;
+    if (profile == null) return const SizedBox.shrink();
+    final active = alerts.where((alert) => alert.enabled).length;
+    return Text(
+      '$active of ${activeAlertLimit(profile)} active alerts · '
+      '${profile.premium ? 'Premium' : 'Your selected live-data spot'}\n'
+      'Paused alerts stay saved. Only live forecast and tide data can trigger an alert.',
+      style: Theme.of(context).textTheme.bodySmall,
     );
   }
 }

@@ -2,12 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/network/api_models.dart';
 import '../../core/network/api_error_message.dart';
 import '../../core/network/surf_repository.dart';
 import 'alert_monitor.dart';
 import 'alert_state.dart';
+import 'alert_policy.dart';
+import '../home/home_page.dart' show meProvider;
 import '../spots/spot_picker.dart';
 
 const _tideOffsets = <int>[-3, -2, -1, 0, 1, 2, 3];
@@ -40,7 +43,15 @@ class _CreateAlertSheetState extends ConsumerState<CreateAlertSheet> {
   void initState() {
     super.initState();
     final alert = widget.alert;
-    _spotId = alert?.spotId ?? widget.spots.first.id;
+    final profile = ref.read(meProvider).valueOrNull;
+    final preferred = profile?.premium == false
+        ? profile?.freeLiveSpotId
+        : null;
+    _spotId =
+        alert?.spotId ??
+        (widget.spots.any((spot) => spot.id == preferred)
+            ? preferred!
+            : widget.spots.first.id);
     _waveEnabled = alert?.waveEnabled ?? true;
     _minWaveHeightM = (alert?.minWaveHeightM ?? 1.2).clamp(0.5, 3.0).toDouble();
     _windEnabled = alert?.windEnabled ?? true;
@@ -56,6 +67,30 @@ class _CreateAlertSheetState extends ConsumerState<CreateAlertSheet> {
   @override
   Widget build(BuildContext context) {
     final favoriteSpotIds = ref.watch(favoriteSpotIdsProvider);
+    final account = ref.watch(meProvider);
+    final alerts = ref.watch(alertsProvider);
+    final profile = account.hasError ? null : account.valueOrNull;
+    final availableSpots = !_editing && profile != null && !profile.premium
+        ? widget.spots
+              .where((spot) => spot.id == profile.freeLiveSpotId)
+              .toList()
+        : widget.spots;
+    if (!_editing && profile?.premium == false && availableSpots.isNotEmpty) {
+      _spotId = availableSpots.first.id;
+    }
+    final mustActivate = widget.alert?.enabled ?? true;
+    final activationBlock = !mustActivate
+        ? null
+        : alerts.hasError
+        ? 'Refresh your alerts before saving changes.'
+        : !alerts.hasValue
+        ? 'Loading your alerts…'
+        : alertActivationBlock(
+            profile: profile,
+            alerts: alerts.valueOrNull ?? const [],
+            spotId: _spotId,
+            editingAlertId: widget.alert?.id,
+          );
     final selectedSpot = spotForId(widget.spots, _spotId) ?? widget.spots.first;
 
     return PopScope(
@@ -79,16 +114,25 @@ class _CreateAlertSheetState extends ConsumerState<CreateAlertSheet> {
                   style: Theme.of(context).textTheme.headlineMedium,
                 ),
                 const SizedBox(height: 12),
-                SpotPickerField(
-                  spots: widget.spots,
-                  favoriteSpotIds: favoriteSpotIds,
-                  selectedSpotId: _spotId,
-                  labelText: 'Spot',
-                  onChanged: (value) {
-                    if (value == null) return;
-                    setState(() => _spotId = value);
-                  },
+                Text(
+                  profile?.premium == true
+                      ? 'Premium · up to 10 active alerts across your spots.'
+                      : 'Free · one active alert at your selected live-data spot, '
+                            'including high or low tide.',
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
+                const SizedBox(height: 12),
+                if (availableSpots.isNotEmpty)
+                  SpotPickerField(
+                    spots: availableSpots,
+                    favoriteSpotIds: favoriteSpotIds,
+                    selectedSpotId: _spotId,
+                    labelText: 'Spot',
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _spotId = value);
+                    },
+                  ),
                 const SizedBox(height: 18),
                 _AlertRuleCard(
                   title: 'Wave',
@@ -187,6 +231,39 @@ class _CreateAlertSheetState extends ConsumerState<CreateAlertSheet> {
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 16),
+                if (activationBlock != null) ...[
+                  Text(
+                    activationBlock,
+                    key: const ValueKey('alert-policy-message'),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          final router = GoRouter.of(context);
+                          Navigator.of(context).pop();
+                          router.go('/spots');
+                        },
+                        child: const Text('Choose free spot'),
+                      ),
+                      if (profile?.premium == false)
+                        TextButton(
+                          onPressed: () {
+                            final router = GoRouter.of(context);
+                            Navigator.of(context).pop();
+                            router.push('/paywall');
+                          },
+                          child: const Text('Explore Premium'),
+                        ),
+                    ],
+                  ),
+                ],
+                if (widget.alert != null && !widget.alert!.enabled) ...[
+                  const Text('This alert will stay paused after saving.'),
+                  const SizedBox(height: 10),
+                ],
                 if (_saveError != null) ...[
                   Semantics(
                     liveRegion: true,
@@ -202,7 +279,9 @@ class _CreateAlertSheetState extends ConsumerState<CreateAlertSheet> {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: _submitting ? null : _saveAlert,
+                    onPressed: _submitting || activationBlock != null
+                        ? null
+                        : _saveAlert,
                     child: Text(
                       _submitting
                           ? (_editing ? 'Saving...' : 'Creating...')
@@ -222,6 +301,21 @@ class _CreateAlertSheetState extends ConsumerState<CreateAlertSheet> {
 
   Future<void> _saveAlert() async {
     if (_submitting) return;
+    if (widget.alert?.enabled ?? true) {
+      final alerts = ref.read(alertsProvider);
+      final block = !alerts.hasValue || alerts.hasError
+          ? 'Refresh your alerts before saving changes.'
+          : alertActivationBlock(
+              profile: ref.read(meProvider).valueOrNull,
+              alerts: alerts.valueOrNull!,
+              spotId: _spotId,
+              editingAlertId: widget.alert?.id,
+            );
+      if (block != null) {
+        setState(() => _saveError = block);
+        return;
+      }
+    }
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     setState(() {

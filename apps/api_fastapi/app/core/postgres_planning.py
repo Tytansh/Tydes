@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 from typing import Any
 
 from app.core.models import Alert, Trip
@@ -105,6 +106,36 @@ class PostgresPlanningRepository:
                 (user_id,),
             ).fetchall()
         return [Alert.model_validate(_payload_dict(row["payload"])) for row in rows]
+
+    @contextmanager
+    def alert_transaction(self, user_id: str):
+        """Serialize all mutations, including an initially empty alert list."""
+        with self._connect() as connection:
+            with connection.transaction():
+                connection.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                                   ("tydes-alert-policy:" + user_id,))
+                records = connection.execute("""SELECT payload FROM planning_alerts
+                    WHERE user_id=%s ORDER BY created_at,id FOR UPDATE""", (user_id,)).fetchall()
+                alerts = [Alert.model_validate(_payload_dict(row["payload"])) for row in records]
+                before = {alert.id: alert.model_dump(mode="json") for alert in alerts}
+                yield alerts
+                if len({alert.id for alert in alerts}) != len(alerts) or any(
+                        alert.user_id != user_id for alert in alerts):
+                    raise ValueError("Alert transaction owner mismatch")
+                present = {alert.id for alert in alerts}
+                for removed in before.keys() - present:
+                    connection.execute("DELETE FROM planning_alerts WHERE id=%s AND user_id=%s", (removed, user_id))
+                for alert in alerts:
+                    payload = alert.model_dump(mode="json")
+                    if before.get(alert.id) == payload:
+                        continue
+                    saved = connection.execute("""INSERT INTO planning_alerts (id,user_id,payload)
+                        VALUES (%s,%s,%s) ON CONFLICT(id) DO UPDATE
+                        SET payload=EXCLUDED.payload,updated_at=NOW()
+                        WHERE planning_alerts.user_id=EXCLUDED.user_id RETURNING id""",
+                        (alert.id, user_id, self._jsonb(payload))).fetchone()
+                    if saved is None:
+                        raise ValueError("Alert belongs to another account")
 
     def get_alert(self, alert_id: str, user_id: str) -> Alert | None:
         with self._connect() as connection:

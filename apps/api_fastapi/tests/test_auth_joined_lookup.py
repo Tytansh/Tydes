@@ -80,6 +80,10 @@ class _Database:
                             return _Rows({"email": session["email"]})
                         return _Rows(deepcopy(database.accounts.get(session["email"])))
                     if normalized.startswith("select") and "from auth_accounts" in normalized:
+                        if "user_payload->>'id'" in normalized:
+                            account = next((account for account in database.accounts.values()
+                                            if account["user_payload"]["id"] == params[0]), None)
+                            return _Rows(deepcopy(account))
                         return _Rows(deepcopy(database.accounts.get(params[0])))
                     if normalized.startswith("delete from auth_session_tokens"):
                         session = database.sessions.get(params[0])
