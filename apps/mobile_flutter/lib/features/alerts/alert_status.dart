@@ -65,6 +65,56 @@ String formatAlertCheckTime(String timestamp) {
   return '${local.day}/${local.month} at $hour:$minute $period';
 }
 
+({String title, String detail}) _unavailableAlertCopy(AlertModel alert) {
+  final reason = (alert.statusReason ?? '').trim().toLowerCase();
+  if (reason.contains('spot not found')) {
+    return (
+      title: 'Spot unavailable',
+      detail: 'The spot for this alert couldn’t be found.',
+    );
+  }
+  if (reason.contains('an alert condition to be selected')) {
+    return (
+      title: 'Choose alert conditions',
+      detail: 'Add conditions to finish setting up this alert.',
+    );
+  }
+  final sources = reason.startsWith('waiting on ')
+      ? reason
+            .substring('waiting on '.length)
+            .replaceFirst(RegExp(r'\.$'), '')
+            .split(',')
+            .map((source) => source.trim())
+            .toList()
+      : const <String>[];
+  final onlyTide =
+      sources.isNotEmpty &&
+      sources.every(
+        (source) => source == 'tide data' || source == 'tide events',
+      );
+  final onlyForecast =
+      sources.isNotEmpty &&
+      sources.every((source) => source == 'wave data' || source == 'wind data');
+  if (onlyTide) {
+    return (
+      title: 'Tide check unavailable',
+      detail:
+          'Your alert is saved, but we couldn’t confirm the tide condition.',
+    );
+  }
+  if (onlyForecast) {
+    return (
+      title: 'Forecast check unavailable',
+      detail:
+          'Your alert is saved, but we couldn’t confirm the forecast conditions.',
+    );
+  }
+  return (
+    title: 'Check unavailable',
+    detail: 'Your alert is saved, but its conditions couldn’t be checked.',
+  );
+}
+
 /// Shared between the alerts list and the relevant spot's forecast page.
 class AlertStatusBanner extends StatefulWidget {
   const AlertStatusBanner({
@@ -127,20 +177,18 @@ class _AlertStatusBannerState extends State<AlertStatusBanner> {
     final status = surfAlertState(alert, now: widget.now);
     final matched = status == SurfAlertState.matched;
     final waiting = status == SurfAlertState.waiting;
+    final unavailableCopy = _unavailableAlertCopy(alert);
     final background = matched
         ? (dark ? const Color(0xFF123F37) : const Color(0xFFDFF7ED))
         : waiting
-        ? (dark ? const Color(0xFF3B3425) : const Color(0xFFFFF3DB))
+        ? theme.colorScheme.surfaceContainerLow
         : theme.colorScheme.surfaceContainer;
     final foreground = matched
         ? (dark ? const Color(0xFFB4F6D6) : const Color(0xFF124B37))
-        : waiting
-        ? (dark ? const Color(0xFFFFDB94) : const Color(0xFF694A12))
         : theme.colorScheme.onSurface;
+    final secondary = waiting ? theme.colorScheme.onSurfaceVariant : foreground;
     final border = matched
         ? (dark ? const Color(0xFF4CB58D) : const Color(0xFF7DC8A5))
-        : waiting
-        ? (dark ? const Color(0xFF817047) : const Color(0xFFE8CE98))
         : theme.colorScheme.outlineVariant;
     final (title, detail, icon) = switch (status) {
       SurfAlertState.matched => (
@@ -154,9 +202,9 @@ class _AlertStatusBannerState extends State<AlertStatusBanner> {
         Icons.radar_rounded,
       ),
       SurfAlertState.waiting => (
-        'Waiting for data',
-        alert.statusReason ?? 'Live data is unavailable for this check.',
-        Icons.cloud_off_outlined,
+        unavailableCopy.title,
+        unavailableCopy.detail,
+        Icons.info_outline_rounded,
       ),
       SurfAlertState.off => (
         'Alert paused',
@@ -173,7 +221,7 @@ class _AlertStatusBannerState extends State<AlertStatusBanner> {
     return Container(
       key: ValueKey('alert-status-${status.name}'),
       width: double.infinity,
-      padding: EdgeInsets.all(widget.compact ? 16 : 20),
+      padding: EdgeInsets.all(waiting ? 12 : (widget.compact ? 16 : 20)),
       decoration: BoxDecoration(
         color: background,
         borderRadius: BorderRadius.circular(18),
@@ -186,14 +234,20 @@ class _AlertStatusBannerState extends State<AlertStatusBanner> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                padding: const EdgeInsets.all(9),
+                padding: EdgeInsets.all(waiting ? 6 : 9),
                 decoration: BoxDecoration(
-                  color: foreground.withValues(alpha: 0.1),
+                  color: waiting
+                      ? theme.colorScheme.primary.withValues(alpha: 0.08)
+                      : foreground.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(icon, size: 25, color: foreground),
+                child: Icon(
+                  icon,
+                  size: waiting ? 18 : 25,
+                  color: waiting ? secondary : foreground,
+                ),
               ),
-              const SizedBox(width: 13),
+              SizedBox(width: waiting ? 10 : 13),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -201,8 +255,8 @@ class _AlertStatusBannerState extends State<AlertStatusBanner> {
                     Text(
                       title,
                       style: theme.textTheme.titleLarge?.copyWith(
-                        fontSize: widget.compact ? 20 : 23,
-                        fontWeight: FontWeight.w800,
+                        fontSize: waiting ? 16 : (widget.compact ? 20 : 23),
+                        fontWeight: waiting ? FontWeight.w700 : FontWeight.w800,
                         color: foreground,
                       ),
                     ),
@@ -210,7 +264,8 @@ class _AlertStatusBannerState extends State<AlertStatusBanner> {
                     Text(
                       detail,
                       style: theme.textTheme.bodyMedium?.copyWith(
-                        color: foreground,
+                        color: secondary,
+                        fontSize: waiting ? 13 : null,
                         height: 1.4,
                       ),
                     ),
@@ -219,16 +274,17 @@ class _AlertStatusBannerState extends State<AlertStatusBanner> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: waiting ? 10 : 16),
           Text(
             alertConditionsSummary(alert),
             style: theme.textTheme.bodyMedium?.copyWith(
-              color: foreground,
+              color: secondary,
               height: 1.5,
-              fontWeight: FontWeight.w700,
+              fontSize: waiting ? 13 : null,
+              fontWeight: waiting ? FontWeight.w500 : FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: waiting ? 8 : 10),
           Wrap(
             spacing: 16,
             runSpacing: 5,
@@ -236,12 +292,12 @@ class _AlertStatusBannerState extends State<AlertStatusBanner> {
               if (alert.lastEvaluatedAt != null)
                 Text(
                   'Checked ${formatAlertCheckTime(alert.lastEvaluatedAt!)}',
-                  style: theme.textTheme.bodySmall?.copyWith(color: foreground),
+                  style: theme.textTheme.bodySmall?.copyWith(color: secondary),
                 ),
               if (alert.enabled)
                 Text(
                   'Next check ${formatAlertCheckTime(alert.nextCheckAt)}',
-                  style: theme.textTheme.bodySmall?.copyWith(color: foreground),
+                  style: theme.textTheme.bodySmall?.copyWith(color: secondary),
                 ),
             ],
           ),

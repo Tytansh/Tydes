@@ -16,6 +16,7 @@ AlertModel _alert({
   bool enabled = true,
   String? evaluated = '2026-11-12T03:00:00Z',
   String next = '2026-11-12T07:00:00Z',
+  String? reason = 'Waiting on tide data.',
 }) => AlertModel(
   id: 'test-alert',
   spotId: DemoSeed.spots.first.id,
@@ -28,7 +29,7 @@ AlertModel _alert({
   tideOffsetHours: -1,
   enabled: enabled,
   status: status,
-  statusReason: status == 'waiting' ? 'Waiting on tide data.' : null,
+  statusReason: status == 'waiting' ? reason : null,
   lastEvaluatedAt: evaluated,
   nextCheckAt: next,
 );
@@ -39,6 +40,43 @@ class _SnapshotAlerts extends AlertsController {
 
   @override
   Future<List<AlertModel>> build() async => load();
+}
+
+Future<void> _showBanner(
+  WidgetTester tester, {
+  required AlertModel alert,
+  bool dark = false,
+  bool compact = false,
+  double width = 390,
+  double textScale = 1,
+}) async {
+  tester.view.physicalSize = Size(width, 2000);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: dark ? AppTheme.dark() : AppTheme.light(),
+      home: Scaffold(
+        body: MediaQuery(
+          data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: AlertStatusBanner(
+                  alert: alert,
+                  now: _now,
+                  compact: compact,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 void main() {
@@ -114,7 +152,14 @@ void main() {
             state == SurfAlertState.matched ? findsOneWidget : findsNothing,
           );
           if (state == SurfAlertState.waiting) {
-            expect(find.text('Waiting on tide data.'), findsOneWidget);
+            expect(find.text('Tide check unavailable'), findsOneWidget);
+            expect(
+              find.text(
+                'Your alert is saved, but we couldn’t confirm the tide condition.',
+              ),
+              findsOneWidget,
+            );
+            expect(find.text('Waiting on tide data.'), findsNothing);
           }
           expect(tester.takeException(), isNull);
         });
@@ -152,8 +197,187 @@ void main() {
       await tester.tap(find.byTooltip('Refresh alerts'));
       await tester.pumpAndSettle();
       expect(reads, 2);
-      expect(find.text('Waiting for data'), findsOneWidget);
+      expect(find.text('Tide check unavailable'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
+
+  const tideDetail =
+      'Your alert is saved, but we couldn’t confirm the tide condition.';
+  const forecastDetail =
+      'Your alert is saved, but we couldn’t confirm the forecast conditions.';
+  const genericDetail =
+      'Your alert is saved, but its conditions couldn’t be checked.';
+  for (final (reason, title, detail) in <(String?, String, String)>[
+    ('Waiting on tide data.', 'Tide check unavailable', tideDetail),
+    ('Waiting on tide events.', 'Tide check unavailable', tideDetail),
+    ('Waiting on wave data.', 'Forecast check unavailable', forecastDetail),
+    ('Waiting on wind data.', 'Forecast check unavailable', forecastDetail),
+    (
+      'Waiting on wave data, wind data.',
+      'Forecast check unavailable',
+      forecastDetail,
+    ),
+    ('Waiting on tide data, wave data.', 'Check unavailable', genericDetail),
+    ('Waiting on wind data, tide events.', 'Check unavailable', genericDetail),
+    (
+      'Waiting on tide data, another source.',
+      'Check unavailable',
+      genericDetail,
+    ),
+    (null, 'Check unavailable', genericDetail),
+    ('', 'Check unavailable', genericDetail),
+    ('Unknown tide provider result.', 'Check unavailable', genericDetail),
+    (
+      'Spot not found.',
+      'Spot unavailable',
+      'The spot for this alert couldn’t be found.',
+    ),
+    (
+      'Waiting on an alert condition to be selected.',
+      'Choose alert conditions',
+      'Add conditions to finish setting up this alert.',
+    ),
+  ]) {
+    testWidgets('unavailable reason $reason is presented as $title', (
+      tester,
+    ) async {
+      await _showBanner(
+        tester,
+        alert: _alert(status: 'waiting', reason: reason),
+      );
+      expect(find.text(title), findsOneWidget);
+      expect(find.text(detail), findsOneWidget);
+      expect(find.text('Waiting for data'), findsNothing);
+      expect(find.textContaining('Checked '), findsOneWidget);
+      expect(find.textContaining('Next check '), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final dark in [false, true]) {
+    for (final compact in [false, true]) {
+      testWidgets(
+        'unavailable styling is compact and neutral ${dark ? 'dark' : 'light'} compact=$compact',
+        (tester) async {
+          await _showBanner(
+            tester,
+            alert: _alert(status: 'waiting'),
+            dark: dark,
+            compact: compact,
+          );
+          final panel = tester.widget<Container>(
+            find.byKey(const ValueKey('alert-status-waiting')),
+          );
+          final context = tester.element(find.byType(AlertStatusBanner));
+          final theme = Theme.of(context);
+          final decoration = panel.decoration! as BoxDecoration;
+          expect(panel.padding, const EdgeInsets.all(12));
+          expect(decoration.color, theme.colorScheme.surfaceContainerLow);
+          expect(
+            decoration.color,
+            isNot(dark ? const Color(0xFF3B3425) : const Color(0xFFFFF3DB)),
+          );
+          expect(
+            (decoration.border! as Border).top.color,
+            theme.colorScheme.outlineVariant,
+          );
+          final title = tester.widget<Text>(
+            find.text('Tide check unavailable'),
+          );
+          expect(title.style!.fontSize, 16);
+          final icon = tester.widget<Icon>(
+            find.byIcon(Icons.info_outline_rounded),
+          );
+          expect(icon.size, 18);
+          expect(title.style!.color, isNot(const Color(0xFF694A12)));
+          expect(title.style!.color, isNot(const Color(0xFFFFDB94)));
+          final waitingHeight = tester
+              .getSize(find.byKey(const ValueKey('alert-status-waiting')))
+              .height;
+          await _showBanner(
+            tester,
+            alert: _alert(),
+            dark: dark,
+            compact: compact,
+          );
+          final matched = tester.widget<Container>(
+            find.byKey(const ValueKey('alert-status-matched')),
+          );
+          expect(
+            tester
+                .widget<Text>(find.text('Surf alert matched'))
+                .style!
+                .fontSize,
+            greaterThan(16),
+          );
+          expect(
+            (matched.decoration! as BoxDecoration).color,
+            dark ? const Color(0xFF123F37) : const Color(0xFFDFF7ED),
+          );
+          expect(
+            tester
+                .getSize(find.byKey(const ValueKey('alert-status-matched')))
+                .height,
+            greaterThan(waitingHeight),
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+    testWidgets(
+      'unavailable at 320px and 2x text in ${dark ? 'dark' : 'light'}',
+      (tester) async {
+        await _showBanner(
+          tester,
+          alert: _alert(status: 'waiting', reason: 'Waiting on wave data.'),
+          width: 320,
+          textScale: 2,
+          dark: dark,
+        );
+        expect(find.text('Forecast check unavailable'), findsOneWidget);
+        expect(find.text(forecastDetail), findsOneWidget);
+        final panel = tester.getRect(
+          find.byKey(const ValueKey('alert-status-waiting')),
+        );
+        expect(panel.width, 280);
+        expect(panel.left, greaterThanOrEqualTo(0));
+        expect(panel.right, lessThanOrEqualTo(320));
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets('matched watching paused and expired copy stays distinct', (
+    tester,
+  ) async {
+    for (final (alert, title, detail) in [
+      (
+        _alert(),
+        'Surf alert matched',
+        'Your conditions match the latest forecast check.',
+      ),
+      (
+        _alert(status: 'watching'),
+        'Watching conditions',
+        'We’re watching for your chosen conditions.',
+      ),
+      (
+        _alert(enabled: false),
+        'Alert paused',
+        'Turn this alert on to watch for your conditions.',
+      ),
+      (
+        _alert(next: _now.toIso8601String()),
+        'Update due',
+        'Previously matched. Refresh alerts for the latest check.',
+      ),
+    ]) {
+      await _showBanner(tester, alert: alert);
+      expect(find.text(title), findsOneWidget);
+      expect(find.text(detail), findsOneWidget);
+      expect(find.textContaining('unavailable'), findsNothing);
+      expect(tester.takeException(), isNull);
+    }
+  });
 }
