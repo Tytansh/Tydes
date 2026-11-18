@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/router.dart';
+import '../../app/main_map_navigation.dart';
 import '../../core/l10n/app_strings.dart';
 import '../../core/network/api_models.dart';
 import '../../core/widgets/retained_tab_stack.dart';
@@ -77,6 +78,15 @@ class _AppScaffoldState extends ConsumerState<AppScaffold>
     final tab = ref.watch(currentTabProvider);
     final unreadInboxCount = watchInboxCounts(ref, profile.id).total;
     final pages = ref.watch(shellPagesProvider);
+    final requestedMap = ref.watch(mainMapFocusProvider);
+    final mapFocus = requestedMap?.accountId == profile.id
+        ? requestedMap
+        : null;
+    final mainMap = MapFeaturePage(
+      initialSpotId: mapFocus?.spotId,
+      focusRevision: mapFocus?.revision ?? 0,
+      embedded: true,
+    );
     ref.watch(socialRelationshipHydrationProvider);
     final strings = AppStrings.of(context);
 
@@ -84,12 +94,12 @@ class _AppScaffoldState extends ConsumerState<AppScaffold>
       builder: (context, constraints) {
         final desktopWeb = kIsWeb && constraints.maxWidth >= 980;
         if (desktopWeb) {
-          const desktopPages = <Widget>[
-            HomePage(),
-            MapFeaturePage(),
-            TripsPage(),
-            AlertsPage(),
-            SettingsPage(),
+          final desktopPages = <Widget>[
+            const HomePage(),
+            mainMap,
+            const TripsPage(),
+            const AlertsPage(),
+            const SettingsPage(),
           ];
           return Scaffold(
             body: Row(
@@ -122,7 +132,10 @@ class _AppScaffoldState extends ConsumerState<AppScaffold>
             child: RetainedTabStack(
               key: ValueKey(profile.id),
               index: tab,
-              children: pages,
+              children: [
+                for (var index = 0; index < pages.length; index++)
+                  if (index == 1 && mapFocus != null) mainMap else pages[index],
+              ],
             ),
           ),
           bottomNavigationBar: NavigationBar(

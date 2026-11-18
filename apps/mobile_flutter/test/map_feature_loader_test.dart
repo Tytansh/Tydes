@@ -112,6 +112,70 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'explicit page identity updates preserve map state and code download',
+    (tester) async {
+      var loads = 0;
+      var builds = 0;
+      Widget shell(String target, int revision) => MaterialApp(
+        home: MapFeatureLoadGate(
+          pageIdentity: (target, revision, true),
+          loadLibrary: () async => loads++,
+          buildPage: (_) {
+            builds++;
+            return _FocusMap(target: target);
+          },
+        ),
+      );
+      await tester.pumpWidget(shell('uluwatu', 1));
+      await tester.pump();
+      final state = tester.state(find.byType(_FocusMap));
+      await tester.tap(find.text('uluwatu: 0'));
+      await tester.pump();
+      await tester.pumpWidget(shell('bondi', 2));
+      expect(tester.state(find.byType(_FocusMap)), same(state));
+      expect(find.text('bondi: 1'), findsOneWidget);
+      await tester.pumpWidget(shell('bondi', 3));
+      expect(tester.state(find.byType(_FocusMap)), same(state));
+      expect(find.text('bondi: 1'), findsOneWidget);
+      expect(builds, 3);
+      await tester.pumpWidget(shell('bondi', 3));
+      expect(builds, 3);
+      expect(loads, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('pending library opens only the latest requested map config', (
+    tester,
+  ) async {
+    final pending = Completer<void>();
+    var loads = 0;
+    final built = <String>[];
+    Widget shell(String target, int revision) => MaterialApp(
+      home: MapFeatureLoadGate(
+        pageIdentity: (target, revision, true),
+        loadLibrary: () {
+          loads++;
+          return pending.future;
+        },
+        buildPage: (_) {
+          built.add(target);
+          return _FocusMap(target: target);
+        },
+      ),
+    );
+    await tester.pumpWidget(shell('uluwatu', 1));
+    await tester.pumpWidget(shell('bondi', 2));
+    expect(built, isEmpty);
+    expect(loads, 1);
+    pending.complete();
+    await tester.pump();
+    expect(built, ['bondi']);
+    expect(find.text('bondi: 0'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('cached map code renders without a loading frame', (
     tester,
   ) async {
@@ -159,6 +223,24 @@ class _RetainedMap extends StatefulWidget {
 
   @override
   State<_RetainedMap> createState() => _RetainedMapState();
+}
+
+class _FocusMap extends StatefulWidget {
+  const _FocusMap({required this.target});
+  final String target;
+
+  @override
+  State<_FocusMap> createState() => _FocusMapState();
+}
+
+class _FocusMapState extends State<_FocusMap> {
+  var visits = 0;
+
+  @override
+  Widget build(BuildContext context) => TextButton(
+    onPressed: () => setState(() => visits++),
+    child: Text('${widget.target}: $visits'),
+  );
 }
 
 class _RetainedMapState extends State<_RetainedMap> {

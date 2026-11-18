@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/main_map_navigation.dart';
 import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/spot_catalog_provider.dart';
@@ -80,7 +81,7 @@ class _SpotsPageState extends ConsumerState<SpotsPage> {
         title: const Text('Surf spots'),
         actions: [
           IconButton(
-            onPressed: () => context.push('/spots-map'),
+            onPressed: () => openMainSpotsMap(context, ref),
             icon: const Icon(Icons.map_outlined),
             tooltip: 'Map view',
           ),
@@ -158,7 +159,7 @@ class _SpotsPageState extends ConsumerState<SpotsPage> {
                       ),
                     ),
                     FilledButton.tonalIcon(
-                      onPressed: () => context.push('/spots-map'),
+                      onPressed: () => openMainSpotsMap(context, ref),
                       icon: const Icon(Icons.public),
                       label: const Text('Map'),
                     ),
@@ -365,11 +366,11 @@ class _SpotsSearchBar extends StatelessWidget {
   }
 }
 
-class _SpotsHero extends StatelessWidget {
+class _SpotsHero extends ConsumerWidget {
   const _SpotsHero();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
@@ -398,7 +399,7 @@ class _SpotsHero extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           FilledButton.tonalIcon(
-            onPressed: () => context.push('/spots-map'),
+            onPressed: () => openMainSpotsMap(context, ref),
             icon: const Icon(Icons.map_outlined),
             label: const Text('Open map'),
           ),

@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/main_map_navigation.dart';
 import '../../core/network/surf_repository.dart';
 import '../../core/network/spot_catalog_provider.dart';
 import '../alerts/alert_state.dart';
@@ -13,6 +14,7 @@ import '../spots/spots_page.dart';
 
 /// Account-scoped caches must not survive sign-in, sign-out, or verification.
 void refreshAuthenticatedAccount(WidgetRef ref) {
+  ref.invalidate(mainMapFocusProvider);
   ref.read(inboxForegroundAccountProvider.notifier).state = null;
   ref.invalidate(inboxUnreadCountsProvider);
   ref.invalidate(directMessageThreadsProvider);

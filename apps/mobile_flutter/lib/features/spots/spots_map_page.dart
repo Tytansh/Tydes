@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -37,9 +38,16 @@ final spotsMapTileProviderFactory = Provider<TileProvider Function()>(
 );
 
 class SpotsMapPage extends ConsumerStatefulWidget {
-  const SpotsMapPage({super.key, this.initialSpotId});
+  const SpotsMapPage({
+    super.key,
+    this.initialSpotId,
+    this.focusRevision = 0,
+    this.embedded = false,
+  });
 
   final String? initialSpotId;
+  final int focusRevision;
+  final bool embedded;
 
   @override
   ConsumerState<SpotsMapPage> createState() => _SpotsMapPageState();
@@ -48,13 +56,18 @@ class SpotsMapPage extends ConsumerStatefulWidget {
 class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
   final MapController _mapController = MapController();
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
 
   String _selectedCountry = _allCountriesLabel;
   String _selectedRegion = _allRegionsLabel;
   String _selectedArea = _allAreasLabel;
   String? _selectedSpotId;
   bool _savedOnly = false;
-  bool _didApplyInitialSpot = false;
+  (String?, int)? _appliedFocus;
+  int _focusGeneration = 0;
+  int? _focusTaskGeneration;
+  ({int generation, SpotModel? spot, List<SpotModel> catalogue})? _pendingFocus;
+  bool _mapReady = false;
   bool _showSpotPins = true;
   bool _showEvents = true;
 
@@ -63,6 +76,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     _mapController.dispose();
     super.dispose();
   }
@@ -83,6 +97,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Surf map'),
+        automaticallyImplyLeading: !widget.embedded,
         actions: [
           if (_showEvents)
             IconButton(
@@ -94,6 +109,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
       ),
       body: spots.when(
         data: (items) {
+          _syncFocusRequest(items);
           // Resolve from the complete catalogue, not the current map filters.
           // Do not fetch forecasts just to render this account shortcut.
           SpotModel? freePremiumSpot;
@@ -115,26 +131,6 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                     .where((spot) => favoriteSpotIds.contains(spot.id))
                     .toList()
               : items;
-
-          if (!_didApplyInitialSpot && widget.initialSpotId != null) {
-            SpotModel? initialSpot;
-            for (final spot in sourceItems) {
-              if (spot.id == widget.initialSpotId) {
-                initialSpot = spot;
-                break;
-              }
-            }
-            if (initialSpot != null) {
-              _didApplyInitialSpot = true;
-              // Establish the requested view before FlutterMap creates its
-              // controller/tiles. A post-frame move races its initial size
-              // event and overview fit, which can load/prune the wrong view.
-              _selectedSpotId = initialSpot.id;
-              _selectedCountry = initialSpot.country;
-              _selectedRegion = initialSpot.region;
-              _selectedArea = _locationAreaForSpot(initialSpot);
-            }
-          }
 
           const profileForecastBySpotId = <String, ForecastModel?>{};
           // Saved-only filters beach pins, not event discovery or the location
@@ -189,6 +185,7 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                     .valueOrNull;
 
           return ListView(
+            controller: _scrollController,
             padding: const EdgeInsets.only(bottom: 16),
             children: [
               Padding(
@@ -414,6 +411,11 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
                   child: _ResponsiveMapFrame(
                     child: _MapCanvas(
                       mapController: _mapController,
+                      onReady: () {
+                        _mapReady = true;
+                        _schedulePendingFocus();
+                      },
+                      onDetached: () => _mapReady = false,
                       spots: displayedVisibleSpots,
                       showSpots: _showSpotPins,
                       initialCenter: selectedSpot != null
@@ -574,6 +576,72 @@ class _SpotsMapPageState extends ConsumerState<SpotsMapPage> {
       _selectedArea != _allAreasLabel ||
       _selectedRegion != _allRegionsLabel ||
       _selectedCountry != _allCountriesLabel;
+
+  void _syncFocusRequest(List<SpotModel> items) {
+    final identity = (widget.initialSpotId, widget.focusRevision);
+    if (_appliedFocus == identity) return;
+    final initial = _appliedFocus == null;
+    _appliedFocus = identity;
+    SpotModel? target;
+    for (final spot in items) {
+      if (spot.id == widget.initialSpotId) {
+        target = spot;
+        break;
+      }
+    }
+    _searchController.clear();
+    _savedOnly = false;
+    _selectedSpotId = target?.id;
+    _selectedCountry = target?.country ?? _allCountriesLabel;
+    _selectedRegion = target?.region ?? _allRegionsLabel;
+    _selectedArea = target == null
+        ? _allAreasLabel
+        : _locationAreaForSpot(target);
+    final generation = ++_focusGeneration;
+    // The first map uses its declarative camera, never a competing startup
+    // move. Subsequent explicit requests retain the map and its layer switches.
+    if (initial) return;
+    _pendingFocus = (generation: generation, spot: target, catalogue: items);
+    _schedulePendingFocus();
+  }
+
+  void _schedulePendingFocus() {
+    final request = _pendingFocus;
+    if (request == null || _focusTaskGeneration == request.generation) return;
+    _focusTaskGeneration = request.generation;
+    unawaited(_applyPendingFocus(request));
+  }
+
+  Future<void> _applyPendingFocus(
+    ({int generation, SpotModel? spot, List<SpotModel> catalogue}) request,
+  ) async {
+    try {
+      // FlutterMap emits its initial/resize camera events at frame end. Moving
+      // before those callbacks can load/prune tiles using an obsolete camera.
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted || request.generation != _focusGeneration) return;
+      if (_scrollController.hasClients && _scrollController.offset != 0) {
+        _scrollController.jumpTo(0);
+        await WidgetsBinding.instance.endOfFrame;
+        if (!mounted || request.generation != _focusGeneration) return;
+      }
+      if (!_mapReady) return; // The canvas will retry when it is attached.
+      _pendingFocus = null;
+      final target = request.spot;
+      if (target == null) {
+        _showSpots(request.catalogue);
+      } else {
+        _mapController.move(
+          LatLng(target.latitude, target.longitude),
+          _spotFocusZoom,
+        );
+      }
+    } finally {
+      if (_focusTaskGeneration == request.generation) {
+        _focusTaskGeneration = null;
+      }
+    }
+  }
 
   String get _mapBackLabel {
     if (_selectedSpotId != null) return 'Back to $_selectedArea';
@@ -1163,6 +1231,8 @@ class _DifficultyBadge extends StatelessWidget {
 class _MapCanvas extends StatefulWidget {
   const _MapCanvas({
     required this.mapController,
+    required this.onReady,
+    required this.onDetached,
     required this.spots,
     required this.showSpots,
     required this.initialCenter,
@@ -1177,6 +1247,8 @@ class _MapCanvas extends StatefulWidget {
   });
 
   final MapController mapController;
+  final VoidCallback onReady;
+  final VoidCallback onDetached;
   final List<SpotModel> spots;
   final bool showSpots;
   final LatLng initialCenter;
@@ -1200,6 +1272,12 @@ class _MapCanvasState extends State<_MapCanvas> {
   late final CameraFit? _initialFit = widget.selectedSpotId == null
       ? _fit
       : null;
+
+  @override
+  void dispose() {
+    widget.onDetached();
+    super.dispose();
+  }
 
   CameraFit? get _fit {
     final points = [
@@ -1227,6 +1305,9 @@ class _MapCanvasState extends State<_MapCanvas> {
               initialCenter: widget.initialCenter,
               initialZoom: widget.initialZoom,
               initialCameraFit: _initialFit,
+              onMapReady: () {
+                if (mounted) widget.onReady();
+              },
               minZoom: 2,
               maxZoom: 14,
               interactionOptions: surfMapInteractionOptions,

@@ -182,6 +182,8 @@ Future<ProviderContainer> _pump(
   TileProvider Function()? tileProviderFactory,
   Future<List<SpotModel>> Function()? loadSpots,
   bool settle = true,
+  ValueNotifier<(String?, int)>? focusRequests,
+  bool embedded = false,
 }) async {
   tester.view.physicalSize = Size(width, 1100);
   tester.view.devicePixelRatio = 1;
@@ -213,7 +215,16 @@ Future<ProviderContainer> _pump(
     ],
   );
   addTearDown(container.dispose);
-  final page = SpotsMapPage(initialSpotId: initialSpotId);
+  final Widget page = focusRequests == null
+      ? SpotsMapPage(initialSpotId: initialSpotId, embedded: embedded)
+      : ValueListenableBuilder<(String?, int)>(
+          valueListenable: focusRequests,
+          builder: (_, request, _) => SpotsMapPage(
+            initialSpotId: request.$1,
+            focusRevision: request.$2,
+            embedded: embedded,
+          ),
+        );
   final router = withRouter
       ? GoRouter(
           routes: [
@@ -283,6 +294,126 @@ Future<void> _finish(WidgetTester tester, ProviderContainer container) async {
 }
 
 void main() {
+  for (final width in [390.0, 1440.0]) {
+    testWidgets(
+      'retained explicit focus preserves layers and clears conflicts at $width',
+      (tester) async {
+        final repository = _Repository();
+        final requests = ValueNotifier<(String?, int)>(('uluwatu', 1));
+        addTearDown(requests.dispose);
+        final forecasts = <String>[];
+        final container = await _pump(
+          tester,
+          repository,
+          width: width,
+          focusRequests: requests,
+          forecasts: forecasts,
+          embedded: true,
+        );
+        final controller = tester
+            .widget<FlutterMap>(find.byType(FlutterMap))
+            .mapController!;
+        expect(
+          tester.widget<AppBar>(find.byType(AppBar)).automaticallyImplyLeading,
+          isFalse,
+        );
+        await tester.tap(find.byKey(const ValueKey('main-map-show-events')));
+        await tester.tap(find.byKey(const ValueKey('main-map-show-spots')));
+        await tester.tap(find.byKey(const ValueKey('main-map-saved-only')));
+        await tester.enterText(find.byType(TextField), 'no matching beach');
+        await tester.pumpAndSettle();
+        requests.value = ('batu', 2);
+        await tester.pumpAndSettle();
+        final updated = tester.widget<FlutterMap>(find.byType(FlutterMap));
+        expect(updated.mapController, same(controller));
+        expect(controller.camera.center, const LatLng(-8.65, 115.13));
+        expect(controller.camera.zoom, 9.2);
+        expect(
+          tester
+              .widget<Switch>(
+                find.byKey(const ValueKey('main-map-show-events')),
+              )
+              .value,
+          isFalse,
+        );
+        expect(
+          tester
+              .widget<Switch>(find.byKey(const ValueKey('main-map-show-spots')))
+              .value,
+          isFalse,
+        );
+        expect(
+          tester
+              .widget<Switch>(find.byKey(const ValueKey('main-map-saved-only')))
+              .value,
+          isFalse,
+        );
+        expect(
+          tester.widget<TextField>(find.byType(TextField)).controller!.text,
+          isEmpty,
+        );
+        expect(find.byType(MapEventMarker), findsNothing);
+        expect(find.byType(SurfMapSpotPin), findsNothing);
+        controller.move(const LatLng(-7, 116), 8.1);
+        await tester.pumpAndSettle();
+        requests.value = ('batu', 3);
+        await tester.pumpAndSettle();
+        expect(controller.camera.center, const LatLng(-8.65, 115.13));
+        expect(controller.camera.zoom, 9.2);
+        requests.value = ('echo', 3);
+        await tester.pumpAndSettle();
+        expect(controller.camera.center, const LatLng(-8.64, 115.13));
+        expect(forecasts, ['uluwatu', 'batu', 'echo']);
+        expect(repository.catalogLoads, 1);
+        expect(repository.eventLoads, 1);
+        expect(tester.takeException(), isNull);
+        await _finish(tester, container);
+      },
+    );
+
+    testWidgets(
+      'explicit full map and latest request survive retained scroll at $width',
+      (tester) async {
+        final repository = _Repository();
+        final requests = ValueNotifier<(String?, int)>(('uluwatu', 1));
+        addTearDown(requests.dispose);
+        final container = await _pump(
+          tester,
+          repository,
+          width: width,
+          focusRequests: requests,
+        );
+        final controller = tester
+            .widget<FlutterMap>(find.byType(FlutterMap))
+            .mapController!;
+        final scroll = tester
+            .state<ScrollableState>(find.byType(Scrollable).first)
+            .position;
+        scroll.jumpTo(scroll.maxScrollExtent);
+        await tester.pumpAndSettle();
+        requests.value = ('batu', 2);
+        requests.value = ('echo', 3);
+        await tester.pumpAndSettle();
+        expect(scroll.pixels, 0);
+        expect(controller.camera.center, const LatLng(-8.64, 115.13));
+        expect(controller.camera.zoom, 9.2);
+        requests.value = (null, 4);
+        await tester.pumpAndSettle();
+        expect(find.byType(SurfMapSpotPin), findsNWidgets(_spots.length));
+        expect(find.byType(MapEventMarker), findsNWidgets(2));
+        expect(find.byKey(const ValueKey('main-map-full-view')), findsNothing);
+        expect(controller.camera.center.latitude, closeTo(-8.73, .001));
+        requests.value = ('no-longer-exists', 5);
+        await tester.pumpAndSettle();
+        expect(find.byType(SurfMapSpotPin), findsNWidgets(_spots.length));
+        expect(repository.catalogLoads, 1);
+        expect(repository.eventLoads, 1);
+        expect(tester.takeException(), isNull);
+        await _finish(tester, container);
+      },
+    );
+  }
+
   final entrySpots = [
     DemoSeed.spots.firstWhere((spot) => spot.id == 'spot_uluwatu_peak'),
     DemoSeed.spots.firstWhere((spot) => spot.id == 'spot_bondi'),

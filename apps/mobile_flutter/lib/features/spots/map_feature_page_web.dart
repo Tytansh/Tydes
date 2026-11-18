@@ -6,18 +6,31 @@ import 'map_feature_module.dart' deferred as maps;
 final _mapLibrary = MapFeatureLibraryLoader(maps.loadLibrary);
 
 class MapFeaturePage extends StatelessWidget {
-  const MapFeaturePage({super.key, this.guest = false, this.initialSpotId});
+  const MapFeaturePage({
+    super.key,
+    this.guest = false,
+    this.initialSpotId,
+    this.focusRevision = 0,
+    this.embedded = false,
+  });
 
   final bool guest;
   final String? initialSpotId;
+  final int focusRevision;
+  final bool embedded;
 
   @override
   Widget build(BuildContext context) => MapFeatureLoadGate(
-    key: ValueKey((guest, initialSpotId)),
+    key: ValueKey((guest, embedded)),
+    pageIdentity: (initialSpotId, focusRevision, embedded),
     loadLibrary: _mapLibrary.load,
     libraryLoaded: _mapLibrary.isLoaded,
-    buildPage: (_) =>
-        maps.buildMapFeature(guest: guest, initialSpotId: initialSpotId),
+    buildPage: (_) => maps.buildMapFeature(
+      guest: guest,
+      initialSpotId: initialSpotId,
+      focusRevision: focusRevision,
+      embedded: embedded,
+    ),
   );
 }
 
@@ -29,11 +42,13 @@ class MapFeatureLoadGate extends StatefulWidget {
     required this.loadLibrary,
     required this.buildPage,
     this.libraryLoaded = false,
+    this.pageIdentity,
   });
 
   final Future<void> Function() loadLibrary;
   final WidgetBuilder buildPage;
   final bool libraryLoaded;
+  final Object? pageIdentity;
 
   @override
   State<MapFeatureLoadGate> createState() => _MapFeatureLoadGateState();
@@ -47,6 +62,16 @@ class _MapFeatureLoadGateState extends State<MapFeatureLoadGate> {
   void initState() {
     super.initState();
     if (!widget.libraryLoaded) _loading = widget.loadLibrary();
+  }
+
+  @override
+  void didUpdateWidget(covariant MapFeatureLoadGate oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.pageIdentity != oldWidget.pageIdentity) {
+      // Update only the requested page configuration. The code-download future
+      // and parent tree remain stable so the actual map retains its state.
+      _page = null;
+    }
   }
 
   @override

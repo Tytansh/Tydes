@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/router.dart' show currentTabProvider;
+import '../../app/main_map_navigation.dart';
 import '../../core/network/api_error_message.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/basic_forecast_models.dart';
@@ -453,7 +454,7 @@ class SpotDetailPage extends ConsumerWidget {
           CopyPublicLinkButton(url: publicSpotLink(spotId)),
           IconButton(
             tooltip: 'Open on map',
-            onPressed: () => context.push('/spots-map?spotId=$spotId'),
+            onPressed: () => openMainSpotsMap(context, ref, spotId: spotId),
             icon: const Icon(Icons.map_outlined),
           ),
           IconButton(
