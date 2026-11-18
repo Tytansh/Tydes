@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:image/image.dart' as img;
 
@@ -9,15 +8,14 @@ final _teal = img.ColorRgb8(42, 167, 161);
 
 void main(List<String> arguments) {
   final root = Directory.current;
-  // Web clips must use the approved full-bleed blue-wave artwork, not the
-  // historical black-on-white native generator below. This mode deliberately
-  // leaves native app icons and launch images untouched.
+  // Every platform derives its artwork from the same approved blue-wave PNG.
+  // Targeted modes leave unrelated asset families untouched.
   if (arguments.length == 1 && arguments.single == '--web-only') {
     _writeWebIcons(root);
     return;
   }
   if (arguments.length == 1 && arguments.single == '--launch-only') {
-    _writeLaunchImages(root, _buildLaunchMaster(root));
+    _writeLaunchAssets(root, _buildLaunchMaster(root));
     return;
   }
   if (arguments.isNotEmpty) {
@@ -25,32 +23,13 @@ void main(List<String> arguments) {
       'Usage: dart run tool/generate_brand_assets.dart [--web-only|--launch-only]',
     );
   }
-  final icon = _buildIconMaster();
+  final icon = _approvedBlueWave(root);
   final launch = _buildLaunchMaster(root);
 
   _writeIosIcons(root, icon);
   _writeAndroidIcons(root, icon);
   _writeWebIcons(root);
-  _writeLaunchImages(root, launch);
-}
-
-img.Image _buildIconMaster() {
-  const size = 4096;
-  final canvas = img.Image(width: size, height: size);
-  img.fill(canvas, color: _offWhite);
-
-  _drawTydesMark(
-    canvas,
-    offsetX: 260,
-    offsetY: 730,
-    width: 3000,
-    height: 2100,
-    strokeWidth: 148,
-    dotRadius: 104,
-    color: _ink,
-  );
-
-  return canvas;
+  _writeLaunchAssets(root, launch);
 }
 
 img.Image _buildLaunchMaster(Directory root) {
@@ -69,77 +48,6 @@ img.Image _buildLaunchMaster(Directory root) {
   img.compositeImage(canvas, logo, dstX: 60, dstY: 32);
   _drawWordmark(canvas, 'TYDES', centerX: 252, baselineY: 484);
   return canvas;
-}
-
-void _drawTydesMark(
-  img.Image canvas, {
-  required int offsetX,
-  required int offsetY,
-  required int width,
-  required int height,
-  required num strokeWidth,
-  required int dotRadius,
-  required img.Color color,
-}) {
-  int x(num value) => (offsetX + value * width).round();
-  int y(num value) => (offsetY + value * height).round();
-
-  img.fillCircle(
-    canvas,
-    x: x(0.12),
-    y: y(0.48),
-    radius: dotRadius,
-    color: color,
-    antialias: true,
-  );
-
-  final crestPoints = <_Point>[
-    ..._cubic(
-      _Point(x(0.23), y(0.54)),
-      _Point(x(0.36), y(0.51)),
-      _Point(x(0.43), y(0.38)),
-      _Point(x(0.56), y(0.31)),
-    ),
-    ..._cubic(
-      _Point(x(0.56), y(0.31)),
-      _Point(x(0.68), y(0.24)),
-      _Point(x(0.86), y(0.28)),
-      _Point(x(0.91), y(0.45)),
-    ).skip(1),
-  ];
-  final swellPoints = _cubic(
-    _Point(x(0.63), y(0.60)),
-    _Point(x(0.74), y(0.54)),
-    _Point(x(0.90), y(0.52)),
-    _Point(x(1.04), y(0.61)),
-  );
-
-  _drawStrokePath(canvas, crestPoints, strokeWidth: strokeWidth, color: color);
-  _drawStrokePath(
-    canvas,
-    swellPoints,
-    strokeWidth: strokeWidth * 0.82,
-    color: color,
-  );
-}
-
-void _drawStrokePath(
-  img.Image canvas,
-  List<_Point> points, {
-  required num strokeWidth,
-  required img.Color color,
-}) {
-  final capRadius = (strokeWidth / 2).round();
-  for (final point in points) {
-    img.fillCircle(
-      canvas,
-      x: point.x,
-      y: point.y,
-      radius: capRadius,
-      color: color,
-      antialias: true,
-    );
-  }
 }
 
 void _drawWordmark(
@@ -165,32 +73,6 @@ void _drawWordmark(
     radius: 4,
     color: _teal,
   );
-}
-
-List<_Point> _cubic(
-  _Point p0,
-  _Point p1,
-  _Point p2,
-  _Point p3, {
-  int steps = 96,
-}) {
-  final points = <_Point>[];
-  for (var i = 0; i <= steps; i++) {
-    final t = i / steps;
-    final u = 1 - t;
-    final x =
-        u * u * u * p0.x +
-        3 * u * u * t * p1.x +
-        3 * u * t * t * p2.x +
-        t * t * t * p3.x;
-    final y =
-        u * u * u * p0.y +
-        3 * u * u * t * p1.y +
-        3 * u * t * t * p2.y +
-        t * t * t * p3.y;
-    points.add(_Point(x.round(), y.round()));
-  }
-  return points;
 }
 
 void _writeIosIcons(Directory root, img.Image master) {
@@ -268,11 +150,12 @@ void _writeWebIcons(Directory root) {
   }
 }
 
-void _writeLaunchImages(Directory root, img.Image master) {
-  final dir = '${root.path}/ios/Runner/Assets.xcassets/LaunchImage.imageset';
-  _writePng('$dir/LaunchImage.png', _resizeExact(master, 168, 185));
-  _writePng('$dir/LaunchImage@2x.png', _resizeExact(master, 336, 370));
-  _writePng('$dir/LaunchImage@3x.png', _resizeExact(master, 504, 555));
+void _writeLaunchAssets(Directory root, img.Image master) {
+  final dir =
+      '${root.path}/ios/Runner/Assets.xcassets/TydesLaunchBlueV2.imageset';
+  _writePng('$dir/TydesLaunchBlueV2.png', _resizeExact(master, 168, 185));
+  _writePng('$dir/TydesLaunchBlueV2@2x.png', _resizeExact(master, 336, 370));
+  _writePng('$dir/TydesLaunchBlueV2@3x.png', _resizeExact(master, 504, 555));
 }
 
 img.Image _resize(img.Image image, int size) {
@@ -294,18 +177,7 @@ img.Image _resizeExact(img.Image image, int width, int height) {
 }
 
 void _writePng(String path, img.Image image) {
-  File(path).writeAsBytesSync(img.encodePng(image));
-}
-
-class _Point {
-  const _Point(this.x, this.y);
-
-  final int x;
-  final int y;
-
-  double distanceTo(_Point other) {
-    final dx = x - other.x;
-    final dy = y - other.y;
-    return math.sqrt(dx * dx + dy * dy);
-  }
+  final file = File(path);
+  file.parent.createSync(recursive: true);
+  file.writeAsBytesSync(img.encodePng(image));
 }

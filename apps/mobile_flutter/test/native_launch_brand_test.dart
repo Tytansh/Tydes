@@ -6,11 +6,12 @@ import 'package:image/image.dart' as img;
 
 import '../tool/generate_brand_assets.dart' as generator;
 
-const _launchDirectory = 'ios/Runner/Assets.xcassets/LaunchImage.imageset';
+const _launchDirectory =
+    'ios/Runner/Assets.xcassets/TydesLaunchBlueV2.imageset';
 const _launchFiles = {
-  'LaunchImage.png': (168, 185),
-  'LaunchImage@2x.png': (336, 370),
-  'LaunchImage@3x.png': (504, 555),
+  'TydesLaunchBlueV2.png': (168, 185),
+  'TydesLaunchBlueV2@2x.png': (336, 370),
+  'TydesLaunchBlueV2@3x.png': (504, 555),
 };
 
 img.Image _decode(File file) {
@@ -81,7 +82,7 @@ void main() {
     'all native scale variants keep their dimensions and match one master',
     () {
       final master = _decode(
-        File('${fixture.path}/$_launchDirectory/LaunchImage@3x.png'),
+        File('${fixture.path}/$_launchDirectory/TydesLaunchBlueV2@3x.png'),
       );
       for (final entry in _launchFiles.entries) {
         final (width, height) = entry.value;
@@ -104,7 +105,7 @@ void main() {
     'launch master contains the approved white curl and blue/aqua artwork without stretching',
     () {
       final master = _decode(
-        File('${fixture.path}/$_launchDirectory/LaunchImage@3x.png'),
+        File('${fixture.path}/$_launchDirectory/TydesLaunchBlueV2@3x.png'),
       );
       final expectedArt = img.copyResize(
         artwork.convert(numChannels: 3),
@@ -173,38 +174,41 @@ void main() {
     }
   });
 
-  test('iOS launch storyboard centers LaunchImage on both axes', () {
-    final storyboard = File(
-      '${project.path}/ios/Runner/Base.lproj/LaunchScreen.storyboard',
-    ).readAsStringSync();
-    final imageView = RegExp(
-      r'<imageView\b[^>]*\bimage="LaunchImage"[^>]*>',
-    ).firstMatch(storyboard);
-    expect(imageView, isNotNull);
-    final id = RegExp(
-      r'\bid="([^"]+)"',
-    ).firstMatch(imageView!.group(0)!)!.group(1)!;
-    for (final axis in ['centerX', 'centerY']) {
+  test(
+    'versioned iOS launch storyboard centers the approved blue image on both axes',
+    () {
+      final storyboard = File(
+        '${project.path}/ios/Runner/Base.lproj/TydesLaunchScreenV2.storyboard',
+      ).readAsStringSync();
+      final imageView = RegExp(
+        r'<imageView\b[^>]*\bimage="TydesLaunchBlueV2"[^>]*>',
+      ).firstMatch(storyboard);
+      expect(imageView, isNotNull);
+      final id = RegExp(
+        r'\bid="([^"]+)"',
+      ).firstMatch(imageView!.group(0)!)!.group(1)!;
+      for (final axis in ['centerX', 'centerY']) {
+        expect(
+          RegExp(
+            '<constraint[^>]*firstItem="$id"[^>]*firstAttribute="$axis"[^>]*secondAttribute="$axis"',
+          ).hasMatch(storyboard),
+          isTrue,
+          reason: 'TydesLaunchBlueV2 must be centered on $axis',
+        );
+      }
+      expect(
+        storyboard,
+        contains('<image name="TydesLaunchBlueV2" width="168" height="185"'),
+      );
+      final plist = File(
+        '${project.path}/ios/Runner/Info.plist',
+      ).readAsStringSync();
       expect(
         RegExp(
-          '<constraint[^>]*firstItem="$id"[^>]*firstAttribute="$axis"[^>]*secondAttribute="$axis"',
-        ).hasMatch(storyboard),
+          r'<key>UILaunchStoryboardName</key>\s*<string>TydesLaunchScreenV2</string>',
+        ).hasMatch(plist),
         isTrue,
-        reason: 'LaunchImage must be centered on $axis',
       );
-    }
-    expect(
-      storyboard,
-      contains('<image name="LaunchImage" width="168" height="185"'),
-    );
-    final plist = File(
-      '${project.path}/ios/Runner/Info.plist',
-    ).readAsStringSync();
-    expect(
-      RegExp(
-        r'<key>UILaunchStoryboardName</key>\s*<string>LaunchScreen</string>',
-      ).hasMatch(plist),
-      isTrue,
-    );
-  });
+    },
+  );
 }
