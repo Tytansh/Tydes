@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/router.dart' show currentTabProvider;
 import '../../core/network/api_models.dart';
 import '../../core/network/api_error_message.dart';
 import '../../core/network/surf_repository.dart';
@@ -243,10 +244,18 @@ class _CreateAlertSheetState extends ConsumerState<CreateAlertSheet> {
                       TextButton(
                         onPressed: () {
                           final router = GoRouter.of(context);
+                          ref.read(currentTabProvider.notifier).state =
+                              profile?.canAccessLiveForecast(_spotId) == true
+                              ? 3
+                              : 1;
                           Navigator.of(context).pop();
-                          router.go('/spots');
+                          router.go('/');
                         },
-                        child: const Text('Choose free spot'),
+                        child: Text(
+                          profile?.canAccessLiveForecast(_spotId) == true
+                              ? 'Manage alerts'
+                              : 'Choose free spot',
+                        ),
                       ),
                       if (profile?.premium == false)
                         TextButton(
@@ -306,7 +315,9 @@ class _CreateAlertSheetState extends ConsumerState<CreateAlertSheet> {
       final block = !alerts.hasValue || alerts.hasError
           ? 'Refresh your alerts before saving changes.'
           : alertActivationBlock(
-              profile: ref.read(meProvider).valueOrNull,
+              profile: ref.read(meProvider).hasError
+                  ? null
+                  : ref.read(meProvider).valueOrNull,
               alerts: alerts.valueOrNull!,
               spotId: _spotId,
               editingAlertId: widget.alert?.id,
