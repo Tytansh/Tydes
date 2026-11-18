@@ -16,13 +16,17 @@ void main(List<String> arguments) {
     _writeWebIcons(root);
     return;
   }
+  if (arguments.length == 1 && arguments.single == '--launch-only') {
+    _writeLaunchImages(root, _buildLaunchMaster(root));
+    return;
+  }
   if (arguments.isNotEmpty) {
     throw ArgumentError(
-      'Usage: dart run tool/generate_brand_assets.dart [--web-only]',
+      'Usage: dart run tool/generate_brand_assets.dart [--web-only|--launch-only]',
     );
   }
   final icon = _buildIconMaster();
-  final launch = _buildLaunchMaster();
+  final launch = _buildLaunchMaster(root);
 
   _writeIosIcons(root, icon);
   _writeAndroidIcons(root, icon);
@@ -49,24 +53,21 @@ img.Image _buildIconMaster() {
   return canvas;
 }
 
-img.Image _buildLaunchMaster() {
-  const scale = 4;
-  final markCanvas = img.Image(width: 504 * scale, height: 555 * scale);
-  img.fill(markCanvas, color: _offWhite);
-
-  _drawTydesMark(
-    markCanvas,
-    offsetX: 34 * scale,
-    offsetY: 78 * scale,
-    width: 436 * scale,
-    height: 252 * scale,
-    strokeWidth: 16 * scale,
-    dotRadius: 11 * scale,
-    color: _ink,
+img.Image _buildLaunchMaster(Directory root) {
+  // The launch screen uses the same approved artwork as the app and web clip,
+  // never a separately redrawn wave. Keep the native asset dimensions stable.
+  final canvas = img.Image(width: 504, height: 555);
+  img.fill(canvas, color: _offWhite);
+  final logo = img.copyCrop(
+    _resize(_approvedBlueWave(root), 384).convert(numChannels: 4),
+    x: 0,
+    y: 0,
+    width: 384,
+    height: 384,
+    radius: 78,
   );
-
-  final canvas = _resizeExact(markCanvas, 504, 555);
-  _drawWordmark(canvas, 'TYDES', centerX: 252, baselineY: 414);
+  img.compositeImage(canvas, logo, dstX: 60, dstY: 32);
+  _drawWordmark(canvas, 'TYDES', centerX: 252, baselineY: 484);
   return canvas;
 }
 
@@ -232,7 +233,7 @@ void _writeAndroidIcons(Directory root, img.Image master) {
   }
 }
 
-void _writeWebIcons(Directory root) {
+img.Image _approvedBlueWave(Directory root) {
   final source = File('${root.path}/assets/branding/tydes-wave-blue.png');
   final decoded = img.decodePng(source.readAsBytesSync());
   if (decoded == null || decoded.width != 1024 || decoded.height != 1024) {
@@ -240,7 +241,11 @@ void _writeWebIcons(Directory root) {
   }
   // Opaque RGB artwork fills every pixel. iOS applies its own rounded mask;
   // baking transparent or rounded corners into this asset creates a border.
-  final master = decoded.convert(numChannels: 3);
+  return decoded.convert(numChannels: 3);
+}
+
+void _writeWebIcons(Directory root) {
+  final master = _approvedBlueWave(root);
   final dir = '${root.path}/web';
   const sizes = {
     'favicon.png': 32,
