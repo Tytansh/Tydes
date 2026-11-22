@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_flutter/features/social/social_feed.dart';
 import 'package:mobile_flutter/features/social/post_media_zoom.dart';
+import 'package:mobile_flutter/core/media/video_playback_sources.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
 
@@ -361,6 +362,47 @@ void main() {
     expect(platform.volumesAtPlay, everyElement(0));
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'iOS source policy permits one bounded MP4 failover',
+    (tester) async {
+      final sources = videoPlaybackSources(
+        url: hls,
+        fallbackUrl: fallback,
+        isWeb: false,
+        supportsNativeHls: false,
+      );
+      platform.initializeImmediately = false;
+      final scrollController = ScrollController();
+      await _mountFeed(
+        tester,
+        platform,
+        scrollController: scrollController,
+        url: sources.primary,
+        fallbackUrl: sources.fallback,
+      );
+      expect(platform.sources, [hls]);
+      platform.failSource(0);
+      await _flushPlayback(tester);
+      expect(platform.sources, [hls, fallback]);
+      platform.initialize(1);
+      await _flushPlayback(tester);
+      expect(platform.playing, {1});
+      expect(platform.volumesAtPlay, everyElement(0));
+
+      platform.failSource(1);
+      await _flushPlayback(tester);
+      scrollController.jumpTo(520);
+      await _flushPlayback(tester);
+      scrollController.jumpTo(0);
+      await _flushPlayback(tester);
+      expect(platform.sources, [hls, fallback]);
+      expect(platform.playing, isEmpty);
+      expect(find.byIcon(Icons.videocam_off_outlined), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
 
   testWidgets('runtime media failure falls back but never cycles to HLS', (
     tester,

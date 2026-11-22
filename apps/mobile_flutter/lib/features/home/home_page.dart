@@ -154,10 +154,15 @@ class HomePage extends ConsumerWidget {
         child: FeedPaginationScrollListener(
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            slivers: const [
+            slivers: [
               SliverPadding(
-                padding: EdgeInsets.all(20),
-                sliver: TravelFeedSection(showHeader: false, asSliver: true),
+                padding: socialPostUsesPhoneLayout(context)
+                    ? const EdgeInsets.symmetric(vertical: 20)
+                    : const EdgeInsets.all(20),
+                sliver: const TravelFeedSection(
+                  showHeader: false,
+                  asSliver: true,
+                ),
               ),
             ],
           ),

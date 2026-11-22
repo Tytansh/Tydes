@@ -29,7 +29,7 @@ void main() {
     expect(sources.fallback, isNull);
   });
 
-  test('native Flutter keeps its original stream selection', () {
+  test('native Flutter retains HLS and its exact supplied MP4 alternative', () {
     final sources = videoPlaybackSources(
       url: hls,
       fallbackUrl: mp4,
@@ -37,7 +37,7 @@ void main() {
       supportsNativeHls: false,
     );
     expect(sources.primary, hls);
-    expect(sources.fallback, isNull);
+    expect(sources.fallback, mp4);
   });
 
   test('legacy direct files without alternatives are unchanged', () {
@@ -68,15 +68,50 @@ void main() {
   });
 
   test('empty and duplicate alternatives never create a retry loop', () {
-    for (final fallback in [null, '', '   ', hls]) {
-      final sources = videoPlaybackSources(
-        url: hls,
-        fallbackUrl: fallback,
-        isWeb: true,
-        supportsNativeHls: true,
-      );
-      expect(sources.primary, hls);
-      expect(sources.fallback, isNull);
+    for (final isWeb in [false, true]) {
+      for (final fallback in [null, '', '   ', hls]) {
+        final sources = videoPlaybackSources(
+          url: hls,
+          fallbackUrl: fallback,
+          isWeb: isWeb,
+          supportsNativeHls: true,
+        );
+        expect(sources.primary, hls);
+        expect(sources.fallback, isNull);
+      }
+    }
+  });
+
+  test('native Bunny HTTPS sources carry the website hotlink Referer', () {
+    for (final url in [
+      'https://vz-example.b-cdn.net/clip/playlist.m3u8',
+      'https://vz-example.b-cdn.net/clip/play_720p.mp4?token=A%2FB',
+      'https://nested.vz-example.b-cdn.net/clip/play_720p.mp4',
+      'https://VZ-EXAMPLE.B-CDN.NET/clip/playlist.m3u8',
+    ]) {
+      expect(videoPlaybackHeaders(url: url, isWeb: false), const {
+        'Referer': 'https://tydes.io/',
+      });
+      expect(videoPlaybackHeaders(url: url, isWeb: true), isEmpty);
+    }
+  });
+
+  test('video Referer is never added to unrelated or spoofed hosts', () {
+    for (final url in [
+      'http://vz-example.b-cdn.net/clip/play_720p.mp4',
+      'https://b-cdn.net/clip/play_720p.mp4',
+      'https://not-b-cdn.net/clip/play_720p.mp4',
+      'https://vz-example.b-cdn.net.evil.invalid/clip/play_720p.mp4',
+      'https://vz-example.b-cdn.net@evil.invalid/clip/play_720p.mp4',
+      'https://credentials@vz-example.b-cdn.net/clip/play_720p.mp4',
+      'https://media.tydes.io/clip/play_720p.mp4',
+      '//vz-example.b-cdn.net/clip/play_720p.mp4',
+      '/clip/play_720p.mp4',
+      'not a URL',
+      '',
+    ]) {
+      expect(videoPlaybackHeaders(url: url, isWeb: false), isEmpty);
+      expect(videoPlaybackHeaders(url: url, isWeb: true), isEmpty);
     }
   });
 }

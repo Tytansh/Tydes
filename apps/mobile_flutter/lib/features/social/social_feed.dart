@@ -513,6 +513,12 @@ class TydesDesktopPostWidth extends StatelessWidget {
   }
 }
 
+/// Phone feeds use the whole screen for media, on native and mobile web alike.
+/// This is intentionally viewport-based: a narrow desktop post still keeps the
+/// desktop presentation, while an iPhone browser matches the phone app.
+bool socialPostUsesPhoneLayout(BuildContext context) =>
+    MediaQuery.sizeOf(context).width < 600;
+
 /// A full-frame portrait stage, capped so desktop posts never become oversized.
 class SocialPostMediaFrame extends StatelessWidget {
   const SocialPostMediaFrame({super.key, required this.child});
@@ -525,11 +531,13 @@ class SocialPostMediaFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final phone = socialPostUsesPhoneLayout(context);
     return LayoutBuilder(
       builder: (context, constraints) {
+        final maxMediaHeight = phone ? double.infinity : maxHeight;
         final heightLimit = constraints.hasBoundedHeight
-            ? constraints.maxHeight.clamp(0.0, maxHeight)
-            : maxHeight;
+            ? constraints.maxHeight.clamp(0.0, maxMediaHeight)
+            : maxMediaHeight;
         final width = constraints.maxWidth.clamp(
           0.0,
           heightLimit * aspectRatio,
@@ -654,123 +662,151 @@ class _PostCard extends ConsumerWidget {
       location: isOwnPost ? currentViewer.homeRegion : null,
       surfSkill: isOwnPost ? currentViewer.surfSkill : 'beginner',
     );
+    final phone = socialPostUsesPhoneLayout(context);
     return Card(
+      margin: phone ? EdgeInsets.zero : null,
+      shape: phone ? const RoundedRectangleBorder() : null,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: repostHeader == null
             ? null
             : () => context.push('/post/${post.id}'),
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (repostHeader != null) ...[
-                _RepostHeader(label: repostHeader!),
-                const SizedBox(height: 10),
-              ],
-              Row(
-                children: [
-                  InkWell(
-                    customBorder: const CircleBorder(),
+        child: SocialPostCardContent(
+          children: [
+            if (repostHeader != null) ...[
+              _RepostHeader(label: repostHeader!),
+              const SizedBox(height: 10),
+            ],
+            Row(
+              children: [
+                InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () => _openProfileTarget(
+                    context: context,
+                    ref: ref,
+                    profile: authorProfile,
+                    isMe: isOwnPost,
+                  ),
+                  child: TydesProfileAvatar(
+                    size: 40,
+                    displayName: authorName,
+                    imageUrl: authorAvatarUrl,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
                     onTap: () => _openProfileTarget(
                       context: context,
                       ref: ref,
                       profile: authorProfile,
                       isMe: isOwnPost,
                     ),
-                    child: TydesProfileAvatar(
-                      size: 40,
-                      displayName: authorName,
-                      imageUrl: authorAvatarUrl,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () => _openProfileTarget(
-                        context: context,
-                        ref: ref,
-                        profile: authorProfile,
-                        isMe: isOwnPost,
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    authorName,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  authorName,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
                                   ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                if (authorPremium) ...[
-                                  const SizedBox(width: 6),
-                                  const Icon(
-                                    Icons.verified_rounded,
-                                    size: 16,
-                                    color: Color(0xFF2AA7A1),
-                                  ),
-                                ],
+                              ),
+                              if (authorPremium) ...[
+                                const SizedBox(width: 6),
+                                const Icon(
+                                  Icons.verified_rounded,
+                                  size: 16,
+                                  color: Color(0xFF2AA7A1),
+                                ),
                               ],
-                            ),
-                            Text(
-                              authorHandle == null || authorHandle.isEmpty
-                                  ? '${_labelForVisibility(post.visibility)} ${_postKindLabel(post)}'
-                                  : '@$authorHandle • ${_labelForVisibility(post.visibility)} ${_postKindLabel(post)}',
-                            ),
-                          ],
-                        ),
+                            ],
+                          ),
+                          Text(
+                            authorHandle == null || authorHandle.isEmpty
+                                ? '${_labelForVisibility(post.visibility)} ${_postKindLabel(post)}'
+                                : '@$authorHandle • ${_labelForVisibility(post.visibility)} ${_postKindLabel(post)}',
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                  if (isOwnPost) ...[
-                    SharePostButton(post: post, spot: spot),
-                    const SizedBox(width: 4),
-                    OwnPostMenu(post: post),
-                  ] else ...[
-                    FollowButton(userId: post.userId, compact: true),
-                    const SizedBox(width: 4),
-                    _PostSafetyMenu(post: post),
-                  ],
+                ),
+                if (isOwnPost) ...[
+                  SharePostButton(post: post, spot: spot),
+                  const SizedBox(width: 4),
+                  OwnPostMenu(post: post),
+                ] else ...[
+                  FollowButton(userId: post.userId, compact: true),
+                  const SizedBox(width: 4),
+                  _PostSafetyMenu(post: post),
+                ],
+              ],
+            ),
+            if (spot != null) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  ActionChip(
+                    avatar: const Icon(Icons.place_outlined, size: 16),
+                    label: Text(spot.name),
+                    onPressed: () => context.push('/spot/${spot.id}'),
+                  ),
+                  const Spacer(),
+                  if (!isOwnPost) SharePostButton(post: post, spot: spot),
                 ],
               ),
-              if (spot != null) ...[
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    ActionChip(
-                      avatar: const Icon(Icons.place_outlined, size: 16),
-                      label: Text(spot.name),
-                      onPressed: () => context.push('/spot/${spot.id}'),
-                    ),
-                    const Spacer(),
-                    if (!isOwnPost) SharePostButton(post: post, spot: spot),
-                  ],
-                ),
-              ],
-              const SizedBox(height: 12),
-              if (post.media.isNotEmpty) ...[
-                SocialPostMediaCarousel(media: post.media),
-                const SizedBox(height: 12),
-              ],
-              if (post.body.isNotEmpty) SocialPostBodyPreview(body: post.body),
-              if (isSurfInvite) ...[
-                if (post.body.isNotEmpty) const SizedBox(height: 14),
-                SurfInviteActions(post: post, spot: spot),
-              ],
-              const SizedBox(height: 12),
-              PostEngagementBar(post: post),
             ],
-          ),
+            const SizedBox(height: 12),
+            if (post.media.isNotEmpty) ...[
+              SocialPostMediaCarousel(media: post.media),
+              const SizedBox(height: 12),
+            ],
+            if (post.body.isNotEmpty) SocialPostBodyPreview(body: post.body),
+            if (isSurfInvite) ...[
+              if (post.body.isNotEmpty) const SizedBox(height: 14),
+              SurfInviteActions(post: post, spot: spot),
+            ],
+            const SizedBox(height: 12),
+            PostEngagementBar(post: post),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+/// Keeps names, captions and actions inset without adding gutters around phone
+/// media. Padding lives around each section rather than painting/hit-testing
+/// media outside its parent, so pinch gestures also work at the screen edges.
+class SocialPostCardContent extends StatelessWidget {
+  const SocialPostCardContent({super.key, required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final phone = socialPostUsesPhoneLayout(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final child in children)
+            Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: phone && child is SocialPostMediaCarousel ? 0 : 18,
+              ),
+              child: child,
+            ),
+        ],
       ),
     );
   }
@@ -2653,7 +2689,9 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
 
     return SocialPostMediaFrame(
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(widget.borderRadius),
+        borderRadius: BorderRadius.circular(
+          socialPostUsesPhoneLayout(context) ? 0 : widget.borderRadius,
+        ),
         child: ColoredBox(
           color: Colors.black,
           child: Stack(
@@ -3287,8 +3325,10 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
       _videoFailed = false;
     });
 
+    final sourceUrl = _usingFallback ? widget.fallbackUrl! : widget.url;
     final controller = VideoPlayerController.networkUrl(
-      Uri.parse(_usingFallback ? widget.fallbackUrl! : widget.url),
+      Uri.parse(sourceUrl),
+      httpHeaders: videoPlaybackHeaders(url: sourceUrl, isWeb: kIsWeb),
       videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
     );
     _controller = controller;
@@ -3560,6 +3600,7 @@ class _VideoPosterFrame extends StatelessWidget {
     if (thumbnailUrl == null) return fallback;
     return Image.network(
       thumbnailUrl!,
+      headers: videoPlaybackHeaders(url: thumbnailUrl!, isWeb: kIsWeb),
       fit: BoxFit.contain,
       gaplessPlayback: true,
       webHtmlElementStrategy: mediaImageStrategy(thumbnailUrl!),

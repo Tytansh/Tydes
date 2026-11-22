@@ -9,6 +9,7 @@ import 'package:video_player_platform_interface/video_player_platform_interface.
 class _VideoPlatform extends VideoPlayerPlatform {
   final streams = <int, StreamController<VideoEvent>>{};
   final calls = <String>[];
+  final requestHeaders = <Map<String, String>>[];
   bool initializeImmediately = true;
   @override
   Future<void> init() async {}
@@ -18,6 +19,7 @@ class _VideoPlatform extends VideoPlayerPlatform {
     final stream = StreamController<VideoEvent>();
     streams[id] = stream;
     calls.add('create:$id');
+    requestHeaders.add(options.dataSource.httpHeaders);
     if (initializeImmediately) {
       stream.add(
         VideoEvent(
@@ -106,6 +108,30 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('native Bunny playback supplies its allowed site referrer', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(url: 'https://vz-fixture.b-cdn.net/video/playlist.m3u8'),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump();
+    expect(platform.requestHeaders, [
+      {'Referer': 'https://tydes.io/'},
+    ]);
+    expect(platform.calls, contains('play:0'));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('non-Bunny video sources receive no extra headers', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_host());
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(platform.requestHeaders, [<String, String>{}]);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('loaded poster removes the covered repeating loader', (
     tester,
   ) async {
@@ -119,7 +145,7 @@ void main() {
               child: AutoplayVideoPlayer(
                 active: false,
                 url: 'https://video.example.invalid/clip.mp4',
-                thumbnailUrl: 'https://image.example.invalid/poster.jpg',
+                thumbnailUrl: 'https://vz-fixture.b-cdn.net/clip/thumbnail.jpg',
                 expand: true,
               ),
             ),
@@ -131,6 +157,9 @@ void main() {
       (widget) => widget is Image && widget.image is NetworkImage,
     );
     final image = tester.widget<Image>(poster);
+    expect((image.image as NetworkImage).headers, {
+      'Referer': 'https://tydes.io/',
+    });
     const loaded = ColoredBox(color: Colors.blue);
     expect(image.frameBuilder, isNotNull);
     expect(

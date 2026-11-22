@@ -52,14 +52,18 @@ void main() {
       final post = tester.getRect(find.byKey(const ValueKey('post')));
       final media = tester.getRect(find.byKey(const ValueKey('media')));
       final expectedWidth = viewport.clamp(0, 680).toDouble();
-      final expectedStageWidth = (expectedWidth - 44).clamp(0.0, 636 * 9 / 16);
+      final expectedStageWidth = viewport < 600
+          ? expectedWidth - 44
+          : (expectedWidth - 44).clamp(0.0, 636 * 9 / 16);
       expect(post.width, expectedWidth);
       expect(post.left, closeTo((viewport - expectedWidth) / 2, 0.01));
-      expect(media.height, lessThanOrEqualTo(636));
+      if (viewport >= 600) {
+        expect(media.height, lessThanOrEqualTo(636));
+      }
       expect(media.width, closeTo(expectedStageWidth, 0.01));
       expect(media.width / media.height, closeTo(9 / 16, 0.00001));
       expect(media.center.dx, closeTo(viewport / 2, 0.01));
-      if (viewport >= 430) {
+      if (viewport >= 600) {
         expect(media.height, 636);
       }
       expect(tester.takeException(), isNull);
@@ -97,12 +101,14 @@ void main() {
       tester.view.physicalSize = Size(viewport, 1200);
       await tester.pumpAndSettle();
       final rect = tester.getRect(find.byKey(const ValueKey('resize-media')));
-      final expectedWidth = (viewport.clamp(0.0, 680.0) - 44).clamp(
-        0.0,
-        636 * 9 / 16,
-      );
+      final contentWidth = viewport.clamp(0.0, 680.0) - 44;
+      final expectedWidth = viewport < 600
+          ? contentWidth
+          : contentWidth.clamp(0.0, 636 * 9 / 16);
       expect(rect.width, closeTo(expectedWidth, 0.01));
-      expect(rect.height, lessThanOrEqualTo(636));
+      if (viewport >= 600) {
+        expect(rect.height, lessThanOrEqualTo(636));
+      }
       expect(rect.width / rect.height, closeTo(9 / 16, 0.00001));
       expect(rect.center.dx, closeTo(viewport / 2, 0.01));
       expect(
