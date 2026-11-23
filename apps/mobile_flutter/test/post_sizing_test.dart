@@ -61,7 +61,10 @@ void main() {
         expect(media.height, lessThanOrEqualTo(636));
       }
       expect(media.width, closeTo(expectedStageWidth, 0.01));
-      expect(media.width / media.height, closeTo(9 / 16, 0.00001));
+      expect(
+        media.width / media.height,
+        closeTo(viewport < 600 ? 1 : 9 / 16, 0.00001),
+      );
       expect(media.center.dx, closeTo(viewport / 2, 0.01));
       if (viewport >= 600) {
         expect(media.height, 636);
@@ -109,7 +112,10 @@ void main() {
       if (viewport >= 600) {
         expect(rect.height, lessThanOrEqualTo(636));
       }
-      expect(rect.width / rect.height, closeTo(9 / 16, 0.00001));
+      expect(
+        rect.width / rect.height,
+        closeTo(viewport < 600 ? 1 : 9 / 16, 0.00001),
+      );
       expect(rect.center.dx, closeTo(viewport / 2, 0.01));
       expect(
         tester.element(find.byKey(const ValueKey('resize-media'))),

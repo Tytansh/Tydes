@@ -20,6 +20,8 @@ final _post = SocialPostModel.fromJson({
       'media_type': 'photo',
       'url': 'https://media.example.invalid/photo.png',
       'thumbnail_url': '',
+      'width': 1600,
+      'height': 900,
     },
   ],
 });
@@ -55,13 +57,16 @@ void main() {
         matching: find.byType(ClipRRect),
       );
       final radius = tester.widget<ClipRRect>(carouselClip.first).borderRadius;
-      expect(media.width / media.height, closeTo(9 / 16, .00001));
+      expect(
+        media.width / media.height,
+        closeTo(width < 600 ? 16 / 9 : 9 / 16, .00001),
+      );
       if (width < 600) {
         expect(card.left, 0);
         expect(card.right, width);
         expect(media.left, 0);
         expect(media.right, width);
-        expect(media.height, closeTo(width * 16 / 9, .00001));
+        expect(media.height, closeTo(width * 9 / 16, .00001));
         expect(radius, BorderRadius.zero);
       } else {
         expect(media.width, closeTo(636 * 9 / 16, .00001));

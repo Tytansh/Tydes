@@ -17,9 +17,11 @@ import '../../core/network/api_models.dart';
 import '../../core/network/spot_catalog_provider.dart';
 import '../../core/network/surf_repository.dart';
 import '../../core/widgets/media_image_strategy.dart';
+import '../../core/widgets/phone_frosted_chrome.dart';
 import 'direct_messages_page.dart';
 import 'event_chat_page.dart';
 import 'post_media_zoom.dart';
+import 'post_media_viewer.dart';
 import 'post_composer_feature_page.dart';
 import 'post_composer_shared.dart';
 export 'post_composer_shared.dart'
@@ -519,37 +521,58 @@ class TydesDesktopPostWidth extends StatelessWidget {
 bool socialPostUsesPhoneLayout(BuildContext context) =>
     MediaQuery.sizeOf(context).width < 600;
 
-/// A full-frame portrait stage, capped so desktop posts never become oversized.
+/// Phones follow the selected attachment's proportions; desktop keeps its
+/// existing portrait presentation. Tall phone media is contained, never cropped.
 class SocialPostMediaFrame extends StatelessWidget {
-  const SocialPostMediaFrame({super.key, required this.child});
+  const SocialPostMediaFrame({
+    super.key,
+    required this.child,
+    this.naturalAspectRatio,
+  });
 
   // A 680px post has 4px card margins and 18px content padding on each side.
   static const maxHeight = TydesDesktopPostWidth.maxWidth - 44;
   static const aspectRatio = 9 / 16;
 
   final Widget child;
+  final double? naturalAspectRatio;
 
   @override
   Widget build(BuildContext context) {
     final phone = socialPostUsesPhoneLayout(context);
     return LayoutBuilder(
       builder: (context, constraints) {
-        final maxMediaHeight = phone ? double.infinity : maxHeight;
-        final heightLimit = constraints.hasBoundedHeight
-            ? constraints.maxHeight.clamp(0.0, maxMediaHeight)
-            : maxMediaHeight;
-        final width = constraints.maxWidth.clamp(
-          0.0,
-          heightLimit * aspectRatio,
-        );
+        late double width;
+        late double height;
+        if (phone) {
+          final ratio = naturalAspectRatio;
+          final mediaRatio = ratio != null && ratio.isFinite && ratio > 0
+              ? ratio
+              : 1.0;
+          final mediaQuery = MediaQuery.of(context);
+          final chrome = FeedChromeInsets.maybeOf(context);
+          final usableHeight = chrome == null
+              ? mediaQuery.size.height - mediaQuery.viewPadding.vertical - 100
+              : chrome.viewportHeight - chrome.insets.vertical;
+          // Leave room for navigation and the post's author/actions. Portrait
+          // or unusually tall originals still display whole inside this cap.
+          final phoneHeightLimit = (usableHeight - 96).clamp(120.0, 900.0);
+          final boundedHeight = constraints.hasBoundedHeight
+              ? constraints.maxHeight.clamp(0.0, phoneHeightLimit)
+              : phoneHeightLimit;
+          width = constraints.maxWidth;
+          height = (width / mediaRatio).clamp(0.0, boundedHeight);
+        } else {
+          final heightLimit = constraints.hasBoundedHeight
+              ? constraints.maxHeight.clamp(0.0, maxHeight)
+              : maxHeight;
+          width = constraints.maxWidth.clamp(0.0, heightLimit * aspectRatio);
+          height = width / aspectRatio;
+        }
         return Align(
           alignment: Alignment.topCenter,
           heightFactor: 1,
-          child: SizedBox(
-            width: width,
-            height: width / aspectRatio,
-            child: child,
-          ),
+          child: SizedBox(width: width, height: height, child: child),
         );
       },
     );
@@ -2630,6 +2653,48 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
   bool _restoredPage = false;
   int _pageIndex = 0;
   bool _zooming = false;
+  final Map<String, Size> _naturalSizes = {};
+  final Map<String, Size> _pendingSizes = {};
+  bool _sizeUpdateQueued = false;
+
+  String _sourceKey(SocialMediaAttachmentModel item) =>
+      '${item.id}\u0000${item.url}';
+
+  Size? _naturalSize(SocialMediaAttachmentModel item) {
+    final decoded = _naturalSizes[_sourceKey(item)];
+    if (decoded != null) return decoded;
+    final width = item.width;
+    final height = item.height;
+    if (width == null || height == null || width <= 0 || height <= 0) {
+      return null;
+    }
+    return Size(width.toDouble(), height.toDouble());
+  }
+
+  void _reportNaturalSize(SocialMediaAttachmentModel item, Size size) {
+    if (!mounted || !size.isFinite || size.width <= 0 || size.height <= 0) {
+      return;
+    }
+    final key = _sourceKey(item);
+    if (_naturalSizes[key] == size || _pendingSizes[key] == size) return;
+    _pendingSizes[key] = size;
+    if (_sizeUpdateQueued) return;
+    _sizeUpdateQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _sizeUpdateQueued = false;
+      if (!mounted) return;
+      final sources = widget.media.map(_sourceKey).toSet();
+      final updates = Map<String, Size>.fromEntries(
+        _pendingSizes.entries.where((entry) => sources.contains(entry.key)),
+      );
+      _pendingSizes.clear();
+      if (updates.isEmpty) return;
+      setState(() {
+        _naturalSizes.removeWhere((key, _) => !sources.contains(key));
+        _naturalSizes.addAll(updates);
+      });
+    });
+  }
 
   String get _storageId =>
       'post-media:${widget.media.map((item) => item.id).join(',')}';
@@ -2677,6 +2742,48 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
     }
   }
 
+  Future<void> _openViewer(int initialIndex) async {
+    if (_zooming || !mounted) return;
+    final media = List<SocialMediaAttachmentModel>.unmodifiable(widget.media);
+    await showPostMediaViewer(
+      context,
+      initialIndex: initialIndex,
+      itemCount: media.length,
+      onPageChanged: (index) {
+        if (mounted) unawaited(_showPage(index));
+      },
+      itemBuilder: (viewerContext, index, active) {
+        final item = media[index];
+        if (item.mediaType == 'video') {
+          final sources = videoPlaybackSources(
+            url: item.url,
+            fallbackUrl: item.fallbackUrl,
+            isWeb: kIsWeb,
+            supportsNativeHls: kIsWeb && nativeHlsPlaybackSupported(),
+          );
+          return AutoplayVideoPlayer(
+            key: ValueKey('viewer:${_sourceKey(item)}'),
+            url: sources.primary,
+            fallbackUrl: sources.fallback,
+            thumbnailUrl: item.thumbnailUrl,
+            borderRadius: 0,
+            expand: true,
+            active: active,
+            enableZoom: true,
+            onZoomChanged: (zooming) =>
+                notifyPostMediaViewerZoom(viewerContext, zooming),
+          );
+        }
+        return PostMediaZoom(
+          key: ValueKey('viewer:${_sourceKey(item)}'),
+          onZoomChanged: (zooming) =>
+              notifyPostMediaViewerZoom(viewerContext, zooming),
+          child: _PostPhoto(url: item.url),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final media = widget.media;
@@ -2688,6 +2795,7 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
     );
 
     return SocialPostMediaFrame(
+      naturalAspectRatio: _naturalSize(media[_pageIndex])?.aspectRatio,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(
           socialPostUsesPhoneLayout(context) ? 0 : widget.borderRadius,
@@ -2722,12 +2830,28 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
                       active: index == _pageIndex,
                       enableZoom: true,
                       onZoomChanged: _zoomChanged,
+                      onNaturalSize: socialPostUsesPhoneLayout(context)
+                          ? (size) => _reportNaturalSize(item, size)
+                          : null,
+                      onOpenViewer: socialPostUsesPhoneLayout(context)
+                          ? () => _openViewer(index)
+                          : null,
                     );
                   }
                   return PostMediaZoom(
                     key: ValueKey(item.id),
                     onZoomChanged: _zoomChanged,
-                    child: _PostPhoto(url: item.url),
+                    child: GestureDetector(
+                      onTap: socialPostUsesPhoneLayout(context)
+                          ? () => _openViewer(index)
+                          : null,
+                      child: _PostPhoto(
+                        url: item.url,
+                        onNaturalSize: socialPostUsesPhoneLayout(context)
+                            ? (size) => _reportNaturalSize(item, size)
+                            : null,
+                      ),
+                    ),
                   );
                 },
               ),
@@ -2803,9 +2927,10 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
 }
 
 class _PostPhoto extends StatefulWidget {
-  const _PostPhoto({required this.url});
+  const _PostPhoto({required this.url, this.onNaturalSize});
 
   final String url;
+  final ValueChanged<Size>? onNaturalSize;
 
   @override
   State<_PostPhoto> createState() => _PostPhotoState();
@@ -2815,6 +2940,45 @@ class _PostPhotoState extends State<_PostPhoto> {
   Timer? _retryTimer;
   int _attempt = 0;
   bool _retryScheduled = false;
+  ImageStream? _sizeStream;
+  ImageStreamListener? _sizeListener;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _listenForSize();
+  }
+
+  void _stopSizeListener() {
+    final listener = _sizeListener;
+    if (listener != null) _sizeStream?.removeListener(listener);
+    _sizeStream = null;
+    _sizeListener = null;
+  }
+
+  void _listenForSize() {
+    if (widget.onNaturalSize == null) {
+      _stopSizeListener();
+      return;
+    }
+    final stream = NetworkImage(
+      _requestUrl,
+      webHtmlElementStrategy: mediaImageStrategy(_requestUrl),
+    ).resolve(createLocalImageConfiguration(context));
+    if (stream.key == _sizeStream?.key) return;
+    _stopSizeListener();
+    _sizeStream = stream;
+    _sizeListener = ImageStreamListener((info, _) {
+      try {
+        widget.onNaturalSize?.call(
+          Size(info.image.width.toDouble(), info.image.height.toDouble()),
+        );
+      } finally {
+        info.dispose();
+      }
+    }, onError: (Object _, StackTrace? _) {});
+    stream.addListener(_sizeListener!);
+  }
 
   @override
   void didUpdateWidget(covariant _PostPhoto oldWidget) {
@@ -2824,11 +2988,13 @@ class _PostPhotoState extends State<_PostPhoto> {
       _attempt = 0;
       _retryScheduled = false;
     }
+    _listenForSize();
   }
 
   @override
   void dispose() {
     _retryTimer?.cancel();
+    _stopSizeListener();
     super.dispose();
   }
 
@@ -2855,6 +3021,7 @@ class _PostPhotoState extends State<_PostPhoto> {
           _attempt += 1;
           _retryScheduled = false;
         });
+        _listenForSize();
       },
     );
   }
@@ -2901,6 +3068,8 @@ class AutoplayVideoPlayer extends ConsumerStatefulWidget {
     this.active = true,
     this.enableZoom = false,
     this.onZoomChanged,
+    this.onNaturalSize,
+    this.onOpenViewer,
   });
 
   final String url;
@@ -2911,6 +3080,8 @@ class AutoplayVideoPlayer extends ConsumerStatefulWidget {
   final bool active;
   final bool enableZoom;
   final ValueChanged<bool>? onZoomChanged;
+  final ValueChanged<Size>? onNaturalSize;
+  final VoidCallback? onOpenViewer;
 
   @override
   ConsumerState<AutoplayVideoPlayer> createState() =>
@@ -2921,6 +3092,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
     with WidgetsBindingObserver {
   VideoPlayerController? _controller;
   final Set<ScrollPosition> _scrollPositions = {};
+  final List<ScrollableState> _verticalScrollables = [];
   bool _loadRequested = false;
   bool _initializing = false;
   bool _userPaused = false;
@@ -2943,6 +3115,21 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
   Duration _lastVideoPosition = Duration.zero;
   bool _loopLimitReached = false;
   int _loadGeneration = 0;
+  Size _lastReportedSize = Size.zero;
+
+  void _reportNaturalSize() {
+    if (widget.onNaturalSize == null) return;
+    final size = _controller?.value.size;
+    if (size == null ||
+        !size.isFinite ||
+        size.width <= 0 ||
+        size.height <= 0 ||
+        size == _lastReportedSize) {
+      return;
+    }
+    _lastReportedSize = size;
+    widget.onNaturalSize?.call(size);
+  }
 
   @override
   void initState() {
@@ -2971,6 +3158,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
       _policyRetryAttempted = false;
       _hasStartedPlayback = false;
       _usingFallback = false;
+      _lastReportedSize = Size.zero;
       _playbackRevision++;
       previous?.removeListener(_handleVideoProgress);
       _silence(previous);
@@ -2987,6 +3175,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
       _lastVideoPosition = Duration.zero;
       _loopLimitReached = false;
     }
+    _reportNaturalSize();
     _scheduleVisibilityCheck();
   }
 
@@ -2999,9 +3188,15 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
     // The nearest Scrollable is the horizontal media carousel. Listen to the
     // outer vertical feed too, including nested/retained scroll viewports.
     final nextPositions = <ScrollPosition>{};
+    final nextVerticalScrollables = <ScrollableState>[];
     context.visitAncestorElements((element) {
       if (element is StatefulElement && element.state is ScrollableState) {
-        nextPositions.add((element.state as ScrollableState).position);
+        final scrollable = element.state as ScrollableState;
+        nextPositions.add(scrollable.position);
+        if (axisDirectionToAxis(scrollable.widget.axisDirection) ==
+            Axis.vertical) {
+          nextVerticalScrollables.add(scrollable);
+        }
       }
       return true;
     });
@@ -3014,6 +3209,9 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
     _scrollPositions
       ..clear()
       ..addAll(nextPositions);
+    _verticalScrollables
+      ..clear()
+      ..addAll(nextVerticalScrollables);
     if (!_active) {
       _playbackRevision++;
       _silence(_controller);
@@ -3076,6 +3274,16 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
     final media = object.localToGlobal(Offset.zero) & object.size;
     var viewport = Offset.zero & MediaQuery.sizeOf(context);
     var preloadViewport = viewport;
+    final chrome = FeedChromeInsets.maybeOf(context);
+    for (final scrollable in _verticalScrollables) {
+      final box = scrollable.context.findRenderObject();
+      if (box is! RenderBox || !box.attached || !box.hasSize) continue;
+      final scrollRect = box.localToGlobal(Offset.zero) & box.size;
+      preloadViewport = preloadViewport.intersect(scrollRect);
+      if (chrome != null) {
+        viewport = viewport.intersect(chrome.insets.deflateRect(scrollRect));
+      }
+    }
     RenderObject child = object;
     while (child.parent != null) {
       final parent = child.parent!;
@@ -3339,6 +3547,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
       if (!_isCurrent(controller, generation)) return;
       await controller.initialize();
       if (!_isCurrent(controller, generation)) return;
+      _reportNaturalSize();
       controller.addListener(_handleVideoProgress);
       setState(() => _initializing = false);
       _syncPlaybackToVisibility();
@@ -3363,6 +3572,7 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
       return;
     }
     final value = controller.value;
+    _reportNaturalSize();
     if (_lastPlaying != value.isPlaying ||
         _lastBuffering != value.isBuffering) {
       final unexpectedlyPaused = _lastPlaying && !value.isPlaying;
@@ -3411,6 +3621,10 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
         soundEnabled && (!_soundNeedsGesture || _soundGestureAuthorized);
     final videoBody = GestureDetector(
       onTap: () {
+        if (widget.onOpenViewer != null) {
+          widget.onOpenViewer!();
+          return;
+        }
         if (readyController == null) {
           if (!_active || !_isMostlyVisible()) return;
           _policyRetryAttempted = false;

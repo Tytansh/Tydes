@@ -8,6 +8,7 @@ import '../../app/router.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import '../../core/widgets/feed_refresh_indicator.dart';
+import '../../core/widgets/phone_frosted_chrome.dart';
 import '../social/social_feed.dart';
 import '../social/social_profile.dart';
 import '../social/inbox_badges.dart';
@@ -103,12 +104,25 @@ class HomePage extends ConsumerWidget {
     }
 
     return Scaffold(
+      extendBodyBehindAppBar: phone,
       appBar: AppBar(
         toolbarHeight: phone ? 44 : null,
         titleSpacing: 12,
         title: _FeedSearchPill(onTap: () => context.push('/people-search')),
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        surfaceTintColor: Theme.of(context).colorScheme.surface,
+        backgroundColor: phone
+            ? Colors.transparent
+            : Theme.of(context).colorScheme.surface,
+        surfaceTintColor: phone
+            ? Colors.transparent
+            : Theme.of(context).colorScheme.surface,
+        elevation: phone ? 0 : null,
+        scrolledUnderElevation: phone ? 0 : null,
+        flexibleSpace: phone
+            ? const PhoneFrostedChrome(
+                bottomBorder: true,
+                child: SizedBox.expand(),
+              )
+            : null,
         actions: [
           InboxUnreadBadge(
             count: inboxCounts.messages,
@@ -142,7 +156,25 @@ class HomePage extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: FilledButton(
-              style: tydesPostButtonStyle(),
+              style: phone
+                  ? tydesPostButtonStyle().copyWith(
+                      backgroundColor: WidgetStatePropertyAll(
+                        Theme.of(
+                          context,
+                        ).colorScheme.primary.withValues(alpha: 0.18),
+                      ),
+                      foregroundColor: WidgetStatePropertyAll(
+                        Theme.of(context).colorScheme.onSurface,
+                      ),
+                      side: WidgetStatePropertyAll(
+                        BorderSide(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.primary.withValues(alpha: 0.32),
+                        ),
+                      ),
+                    )
+                  : tydesPostButtonStyle(),
               onPressed: () => sessionExpired
                   ? context.go('/login')
                   : showCreatePostSheet(context, spotItems),
@@ -151,24 +183,44 @@ class HomePage extends ConsumerWidget {
           ),
         ],
       ),
-      body: FeedRefreshIndicator(
-        onRefresh: () => _refreshFeed(ref),
-        child: FeedPaginationScrollListener(
-          child: CustomScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
-              SliverPadding(
-                padding: socialPostUsesPhoneLayout(context)
-                    ? const EdgeInsets.symmetric(vertical: 20)
-                    : const EdgeInsets.all(20),
-                sliver: const TravelFeedSection(
-                  showHeader: false,
-                  asSliver: true,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final overlays = phone
+              ? EdgeInsets.only(
+                  top: 44,
+                  bottom: MediaQuery.paddingOf(context).bottom,
+                )
+              : EdgeInsets.zero;
+          return FeedChromeInsets(
+            insets: overlays,
+            viewportHeight: constraints.maxHeight,
+            child: FeedRefreshIndicator(
+              topInset: overlays.top,
+              onRefresh: () => _refreshFeed(ref),
+              child: FeedPaginationScrollListener(
+                child: CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    SliverPadding(
+                      padding: phone
+                          ? EdgeInsets.fromLTRB(
+                              0,
+                              20 + overlays.top,
+                              0,
+                              20 + overlays.bottom,
+                            )
+                          : const EdgeInsets.all(20),
+                      sliver: const TravelFeedSection(
+                        showHeader: false,
+                        asSliver: true,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -319,18 +371,22 @@ class _FeedSearchPill extends StatelessWidget {
                   height: phone ? 34 : 42,
                   padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 14),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).cardColor,
+                    color: phone
+                        ? scheme.surfaceContainerLow.withValues(alpha: 0.64)
+                        : Theme.of(context).cardColor,
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(
                       color: scheme.outline.withValues(alpha: 0.18),
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.04),
-                        blurRadius: 14,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
+                    boxShadow: phone
+                        ? const []
+                        : [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.04),
+                              blurRadius: 14,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
                   ),
                   child: Row(
                     children: [

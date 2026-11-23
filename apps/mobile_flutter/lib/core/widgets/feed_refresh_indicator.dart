@@ -10,10 +10,12 @@ class FeedRefreshIndicator extends StatefulWidget {
     super.key,
     required this.onRefresh,
     required this.child,
+    this.topInset = 0,
   });
 
   final Future<void> Function() onRefresh;
   final Widget child;
+  final double topInset;
 
   @override
   State<FeedRefreshIndicator> createState() => _FeedRefreshIndicatorState();
@@ -141,6 +143,8 @@ class _FeedRefreshIndicatorState extends State<FeedRefreshIndicator> {
           ),
           child: Column(
             children: [
+              if (_showSpinner && widget.topInset > 0)
+                SizedBox(height: widget.topInset),
               SizedBox(
                 height: _showSpinner ? 44 : 0,
                 child: ClipRect(

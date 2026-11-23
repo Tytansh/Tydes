@@ -8,6 +8,7 @@ import '../../app/main_map_navigation.dart';
 import '../../core/l10n/app_strings.dart';
 import '../../core/network/api_models.dart';
 import '../../core/widgets/retained_tab_stack.dart';
+import '../../core/widgets/phone_frosted_chrome.dart';
 import '../home/home_page.dart';
 import '../social/social_profile.dart';
 import '../social/inbox_badges.dart';
@@ -127,8 +128,53 @@ class _AppScaffoldState extends ConsumerState<AppScaffold>
           );
         }
 
+        final phone = constraints.maxWidth < 600;
+        final floatingFeed = phone && tab == 0;
+        final navigation = NavigationBar(
+          height: phone ? 56 : null,
+          backgroundColor: phone ? Colors.transparent : null,
+          surfaceTintColor: phone ? Colors.transparent : null,
+          elevation: phone ? 0 : null,
+          indicatorColor: phone
+              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.18)
+              : null,
+          selectedIndex: tab,
+          onDestinationSelected: (index) =>
+              ref.read(currentTabProvider.notifier).state = index,
+          destinations: [
+            NavigationDestination(
+              icon: const Icon(Icons.home_outlined),
+              label: strings.home,
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.waves_outlined),
+              label: strings.spots,
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.luggage_outlined),
+              label: strings.trips,
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.notifications_active_outlined),
+              label: strings.alerts,
+            ),
+            NavigationDestination(
+              icon: InboxUnreadBadge(
+                count: unreadInboxCount,
+                child: const Icon(Icons.person_outline),
+              ),
+              selectedIcon: InboxUnreadBadge(
+                count: unreadInboxCount,
+                child: const Icon(Icons.person),
+              ),
+              label: strings.profile,
+            ),
+          ],
+        );
         return Scaffold(
+          extendBody: floatingFeed,
           body: SafeArea(
+            bottom: !floatingFeed,
             child: RetainedTabStack(
               key: ValueKey(profile.id),
               index: tab,
@@ -138,41 +184,9 @@ class _AppScaffoldState extends ConsumerState<AppScaffold>
               ],
             ),
           ),
-          bottomNavigationBar: NavigationBar(
-            height: constraints.maxWidth < 600 ? 56 : null,
-            selectedIndex: tab,
-            onDestinationSelected: (index) =>
-                ref.read(currentTabProvider.notifier).state = index,
-            destinations: [
-              NavigationDestination(
-                icon: const Icon(Icons.home_outlined),
-                label: strings.home,
-              ),
-              NavigationDestination(
-                icon: const Icon(Icons.waves_outlined),
-                label: strings.spots,
-              ),
-              NavigationDestination(
-                icon: const Icon(Icons.luggage_outlined),
-                label: strings.trips,
-              ),
-              NavigationDestination(
-                icon: const Icon(Icons.notifications_active_outlined),
-                label: strings.alerts,
-              ),
-              NavigationDestination(
-                icon: InboxUnreadBadge(
-                  count: unreadInboxCount,
-                  child: const Icon(Icons.person_outline),
-                ),
-                selectedIcon: InboxUnreadBadge(
-                  count: unreadInboxCount,
-                  child: const Icon(Icons.person),
-                ),
-                label: strings.profile,
-              ),
-            ],
-          ),
+          bottomNavigationBar: phone
+              ? PhoneFrostedChrome(topBorder: true, child: navigation)
+              : navigation,
         );
       },
     );
