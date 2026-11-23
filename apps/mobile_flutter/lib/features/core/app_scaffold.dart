@@ -139,6 +139,7 @@ class _AppScaffoldState extends ConsumerState<AppScaffold>
             ),
           ),
           bottomNavigationBar: NavigationBar(
+            height: constraints.maxWidth < 600 ? 56 : null,
             selectedIndex: tab,
             onDestinationSelected: (index) =>
                 ref.read(currentTabProvider.notifier).state = index,

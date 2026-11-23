@@ -49,6 +49,7 @@ class HomePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final phone = socialPostUsesPhoneLayout(context);
     final user = ref.watch(meProvider);
     final spots = ref.watch(travelFeedSpotsProvider);
     final spotItems = spots.valueOrNull ?? const [];
@@ -103,6 +104,7 @@ class HomePage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
+        toolbarHeight: phone ? 44 : null,
         titleSpacing: 12,
         title: _FeedSearchPill(onTap: () => context.push('/people-search')),
         backgroundColor: Theme.of(context).colorScheme.surface,
@@ -299,6 +301,7 @@ class _FeedSearchPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final phone = socialPostUsesPhoneLayout(context);
 
     return Semantics(
       button: true,
@@ -306,45 +309,55 @@ class _FeedSearchPill extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(999),
         onTap: onTap,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final compact = constraints.maxWidth < 120;
-            return Container(
-              height: 42,
-              padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 14),
-              decoration: BoxDecoration(
-                color: Theme.of(context).cardColor,
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: scheme.outline.withValues(alpha: 0.18),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 14,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.search_rounded, color: scheme.primary, size: 20),
-                  if (!compact) const SizedBox(width: 9),
-                  if (!compact)
-                    Expanded(
-                      child: Text(
-                        'Search surfers',
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+        child: SizedBox(
+          height: phone ? 44 : 42,
+          child: Center(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 120;
+                return Container(
+                  height: phone ? 34 : 42,
+                  padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 14),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardColor,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: scheme.outline.withValues(alpha: 0.18),
                     ),
-                ],
-              ),
-            );
-          },
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 14,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.search_rounded,
+                        color: scheme.primary,
+                        size: 20,
+                      ),
+                      if (!compact) const SizedBox(width: 9),
+                      if (!compact)
+                        Expanded(
+                          child: Text(
+                            'Search surfers',
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
         ),
       ),
     );
