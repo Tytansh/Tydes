@@ -13,6 +13,7 @@ import 'package:video_player/video_player.dart';
 import '../../core/network/api_models.dart';
 import '../../core/network/surf_repository.dart';
 import 'post_composer_shared.dart';
+import 'post_photo_dimensions.dart';
 
 /// The complete composer is loaded only when a person opens Post on the web.
 /// Providers are inherited from the route; the code loader never owns drafts.
@@ -585,36 +586,56 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
       return null;
     }
 
-    final thumbnail = await _createThumbnail(picked);
-    if (thumbnail == null) {
+    final prepared = await _createThumbnail(picked);
+    if (prepared == null) {
       warnings.add('Could not add one photo. Try another image.');
       return null;
     }
 
-    final draft = _PostPhotoDraft(fullImage: picked, thumbnail: thumbnail);
+    final draft = _PostPhotoDraft(
+      fullImage: picked,
+      thumbnail: prepared.thumbnail,
+      width: prepared.width,
+      height: prepared.height,
+    );
     return _PostMediaDraft.photo(draft);
   }
 
-  Future<XFile?> _createThumbnail(XFile source) async {
+  Future<({XFile thumbnail, int width, int height})?> _createThumbnail(
+    XFile source,
+  ) async {
     // Image codecs are needed when composing, not when opening/scrolling feed.
     await image_tools.loadLibrary();
     final bytes = await source.readAsBytes();
     final decoded = image_tools.decodeImage(bytes);
     if (decoded == null) return null;
+    final dimensions = postPhotoDisplayDimensions(
+      width: decoded.width,
+      height: decoded.height,
+      exifOrientation: decoded.exif.imageIfd.orientation,
+    );
 
     final resized = image_tools.copyResize(decoded, width: 700);
     final encoded = image_tools.encodeJpg(resized, quality: 68);
     final name = 'post_thumb_${DateTime.now().microsecondsSinceEpoch}.jpg';
     if (kIsWeb) {
-      return XFile.fromData(encoded, name: name, mimeType: 'image/jpeg');
+      return (
+        thumbnail: XFile.fromData(encoded, name: name, mimeType: 'image/jpeg'),
+        width: dimensions.width,
+        height: dimensions.height,
+      );
     }
     final tempDir = await getTemporaryDirectory();
     final path = '${tempDir.path}/$name';
     final file = await File(path).writeAsBytes(encoded, flush: true);
-    return XFile(
-      file.path,
-      name: file.uri.pathSegments.last,
-      mimeType: 'image/jpeg',
+    return (
+      thumbnail: XFile(
+        file.path,
+        name: file.uri.pathSegments.last,
+        mimeType: 'image/jpeg',
+      ),
+      width: dimensions.width,
+      height: dimensions.height,
     );
   }
 
@@ -652,18 +673,23 @@ class _CreatePostPageState extends ConsumerState<_CreatePostPage> {
           _setSubmitStatus(
             'Uploading photo ${index + 1} of ${_media.length}${photoSize == null ? '' : ' (${_formatFileSize(photoSize)})'}...',
           );
+          final uploaded = await repository.uploadPostPhoto(
+            image: photo.fullImage,
+            thumbnail: photo.thumbnail,
+            onSendProgress: (sent, total) {
+              final percent = _uploadPercent(sent, total);
+              if (percent == null || percent == lastPercent) return;
+              lastPercent = percent;
+              _setSubmitStatus(
+                'Uploading photo ${index + 1} of ${_media.length} ($percent%)...',
+              );
+            },
+          );
           media.add(
-            await repository.uploadPostPhoto(
-              image: photo.fullImage,
-              thumbnail: photo.thumbnail,
-              onSendProgress: (sent, total) {
-                final percent = _uploadPercent(sent, total);
-                if (percent == null || percent == lastPercent) return;
-                lastPercent = percent;
-                _setSubmitStatus(
-                  'Uploading photo ${index + 1} of ${_media.length} ($percent%)...',
-                );
-              },
+            postPhotoWithDimensions(
+              uploaded,
+              width: photo.width,
+              height: photo.height,
             ),
           );
         } else if (video != null) {
@@ -2012,10 +2038,17 @@ class _PostCaptionLimitNotice extends StatelessWidget {
 }
 
 class _PostPhotoDraft {
-  const _PostPhotoDraft({required this.fullImage, required this.thumbnail});
+  const _PostPhotoDraft({
+    required this.fullImage,
+    required this.thumbnail,
+    required this.width,
+    required this.height,
+  });
 
   final XFile fullImage;
   final XFile thumbnail;
+  final int width;
+  final int height;
 }
 
 class _PostMediaDraft {

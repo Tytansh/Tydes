@@ -16,6 +16,7 @@ import 'package:video_player_platform_interface/video_player_platform_interface.
 class _Images extends Fake implements HttpClient {
   _Images(this.bytes);
   static int requests = 0;
+  static Completer<void>? responseGate;
   final Uint8List bytes;
   @override
   Future<HttpClientRequest> getUrl(Uri url) async {
@@ -28,7 +29,10 @@ class _ImageRequest extends Fake implements HttpClientRequest {
   _ImageRequest(this.bytes);
   final Uint8List bytes;
   @override
-  Future<HttpClientResponse> close() async => _ImageResponse(bytes);
+  Future<HttpClientResponse> close() async {
+    await _Images.responseGate?.future;
+    return _ImageResponse(bytes);
+  }
 }
 
 class _ImageResponse extends Stream<List<int>> implements HttpClientResponse {
@@ -122,12 +126,16 @@ void _mediaTest(
     final videos = _Videos();
     SocialPostMediaCarousel.clearCachedNaturalSizes();
     _Images.requests = 0;
+    _Images.responseGate = null;
     VideoPlayerPlatform.instance = videos;
     PaintingBinding.instance.imageCache.clear();
     PaintingBinding.instance.imageCache.clearLiveImages();
     try {
       await run(tester, videos);
     } finally {
+      final gate = _Images.responseGate;
+      if (gate != null && !gate.isCompleted) gate.complete();
+      _Images.responseGate = null;
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
       await tester.pump();
@@ -398,6 +406,83 @@ void main() {
             .awaitingNaturalSize,
         isFalse,
       );
+    },
+  );
+
+  _mediaTest('legacy photo first appears in its resolved natural frame', (
+    tester,
+    videos,
+  ) async {
+    _imageBytes(const Size(80, 45));
+    final gate = _Images.responseGate = Completer<void>();
+    await _show(tester, width: 390, height: 932, type: 'photo');
+    expect(tester.getSize(find.byType(PageView)), const Size(346, 120));
+    await tester.pump(const Duration(seconds: 2));
+    expect(tester.getSize(find.byType(PageView)), const Size(346, 120));
+    gate.complete();
+    await tester.runAsync(
+      () async => Future<void>.delayed(const Duration(milliseconds: 30)),
+    );
+    for (var frame = 0; frame < 6; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      final visibleImages = tester
+          .widgetList<RawImage>(find.byType(RawImage))
+          .where((image) => image.image != null);
+      if (visibleImages.isNotEmpty) {
+        expect(tester.getSize(find.byType(PageView)), const Size(346, 194.625));
+      }
+    }
+    _expectImageFit(tester, const Size(80, 45));
+    expect(_Images.requests, 1);
+    expect(videos.streams, isEmpty);
+  });
+
+  _mediaTest('remounted photo reserves its cached size during a slow reload', (
+    tester,
+    videos,
+  ) async {
+    _imageBytes(const Size(80, 45));
+    await _show(tester, width: 390, height: 932, type: 'photo');
+    await _imageReady(tester);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    PaintingBinding.instance.imageCache.clear();
+    PaintingBinding.instance.imageCache.clearLiveImages();
+    final gate = _Images.responseGate = Completer<void>();
+    await _show(tester, width: 390, height: 932, type: 'photo');
+    expect(tester.getSize(find.byType(PageView)), const Size(346, 194.625));
+    gate.complete();
+    await _imageReady(tester);
+    _expectImageFit(tester, const Size(80, 45));
+    expect(_Images.requests, 2);
+  });
+
+  _mediaTest(
+    'uploaded photo dimensions reserve the final frame before decoding',
+    (tester, videos) async {
+      _imageBytes(const Size(80, 45));
+      final gate = _Images.responseGate = Completer<void>();
+      await _show(
+        tester,
+        width: 390,
+        height: 932,
+        type: 'photo',
+        media: [
+          SocialMediaAttachmentModel.fromJson({
+            'id': 'photo-with-dimensions',
+            'media_type': 'photo',
+            'url': 'https://media.example.invalid/photo-with-dimensions.png',
+            'thumbnail_url': '',
+            'width': 80,
+            'height': 45,
+          }),
+        ],
+      );
+      expect(tester.getSize(find.byType(PageView)), const Size(346, 194.625));
+      gate.complete();
+      await _imageReady(tester);
+      _expectImageFit(tester, const Size(80, 45));
+      expect(_Images.requests, 1);
     },
   );
 

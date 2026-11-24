@@ -528,7 +528,7 @@ class SocialPostMediaFrame extends StatelessWidget {
     super.key,
     required this.child,
     this.naturalAspectRatio,
-    this.awaitingVideoDimensions = false,
+    this.awaitingDimensions = false,
   });
 
   // A 680px post has 4px card margins and 18px content padding on each side.
@@ -537,7 +537,7 @@ class SocialPostMediaFrame extends StatelessWidget {
 
   final Widget child;
   final double? naturalAspectRatio;
-  final bool awaitingVideoDimensions;
+  final bool awaitingDimensions;
 
   @override
   Widget build(BuildContext context) {
@@ -563,9 +563,9 @@ class SocialPostMediaFrame extends StatelessWidget {
               ? constraints.maxHeight.clamp(0.0, phoneHeightLimit)
               : phoneHeightLimit;
           width = constraints.maxWidth;
-          // Legacy uploads have no dimensions. Do not paint a guessed square
-          // video/poster and then shrink it when playback reports its size.
-          height = (awaitingVideoDimensions ? 120.0 : width / mediaRatio).clamp(
+          // Legacy uploads have no dimensions. Do not paint guessed square
+          // media and then shrink it when playback/image decoding reports size.
+          height = (awaitingDimensions ? 120.0 : width / mediaRatio).clamp(
             0.0,
             boundedHeight,
           );
@@ -2825,8 +2825,7 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
 
     return SocialPostMediaFrame(
       naturalAspectRatio: selectedSize?.aspectRatio,
-      awaitingVideoDimensions:
-          selected.mediaType == 'video' && selectedSize == null,
+      awaitingDimensions: selectedSize == null,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(
           socialPostUsesPhoneLayout(context) ? 0 : widget.borderRadius,
@@ -2879,6 +2878,8 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
                           : null,
                       child: _PostPhoto(
                         url: item.url,
+                        awaitingNaturalSize:
+                            phone && _naturalSize(item) == null,
                         onNaturalSize: socialPostUsesPhoneLayout(context)
                             ? (size) => _reportNaturalSize(item, size)
                             : null,
@@ -2959,10 +2960,15 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
 }
 
 class _PostPhoto extends StatefulWidget {
-  const _PostPhoto({required this.url, this.onNaturalSize});
+  const _PostPhoto({
+    required this.url,
+    this.onNaturalSize,
+    this.awaitingNaturalSize = false,
+  });
 
   final String url;
   final ValueChanged<Size>? onNaturalSize;
+  final bool awaitingNaturalSize;
 
   @override
   State<_PostPhoto> createState() => _PostPhotoState();
@@ -3066,7 +3072,10 @@ class _PostPhotoState extends State<_PostPhoto> {
       gaplessPlayback: true,
       webHtmlElementStrategy: mediaImageStrategy(_requestUrl),
       loadingBuilder: (context, child, progress) {
-        if (progress == null) return child;
+        // Image decoding and the carousel's layout update happen separately.
+        // Keep the decoded photo hidden for that intervening frame instead of
+        // flashing it in the old loading frame's dimensions.
+        if (progress == null && !widget.awaitingNaturalSize) return child;
         return ColoredBox(
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
           child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
