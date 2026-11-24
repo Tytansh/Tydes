@@ -36,6 +36,9 @@ class BunnyVideo:
     encode_progress: int | None = None
     available_resolutions: tuple[str, ...] | None = None
     has_mp4_fallback: bool | None = None
+    # Display-oriented dimensions from the existing provider metadata response.
+    width: int | None = None
+    height: int | None = None
 
     @property
     def fully_encoded(self) -> bool:
@@ -103,6 +106,7 @@ class BunnyStreamClient:
             length_seconds = float(raw_length) if raw_length is not None else None
         except (TypeError, ValueError):
             length_seconds = None
+        width, height = _display_dimensions(payload)
         return BunnyVideo(
             video_id=video_id,
             status=int(payload.get("status", 0)),
@@ -112,6 +116,8 @@ class BunnyStreamClient:
             available_resolutions=_available_resolutions(payload.get("availableResolutions")),
             has_mp4_fallback=(payload.get("hasMP4Fallback")
                               if isinstance(payload.get("hasMP4Fallback"), bool) else None),
+            width=width,
+            height=height,
         )
 
     def delete_video(self, video_id: str | None) -> None:
@@ -259,6 +265,24 @@ class PrivateChatBunnyClient(BunnyStreamClient):
                 raise RuntimeError("Private video MP4 metadata could not be verified")
             return resolution
         return None
+
+
+def _display_dimensions(payload: dict) -> tuple[int | None, int | None]:
+    """Keep malformed/unfinished metadata unknown; never guess a portrait ratio."""
+    width, height, rotation = (
+        payload.get("width"), payload.get("height"), payload.get("rotation")
+    )
+    if (type(width) is not int or type(height) is not int
+            or not 0 < width <= 32768 or not 0 < height <= 32768):
+        return None, None
+    # Bunny reports source-file dimensions and its container rotation separately.
+    # The feed reserves the final display shape, not the unrotated sensor shape.
+    if rotation is not None:
+        if type(rotation) is not int or rotation % 90 != 0:
+            return None, None
+        if rotation % 180:
+            width, height = height, width
+    return width, height
 
 
 def _available_resolutions(raw) -> tuple[str, ...] | None:

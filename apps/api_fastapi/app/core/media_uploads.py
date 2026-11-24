@@ -87,6 +87,8 @@ class UploadReservation:
     chat_source_duration_seconds: float | None = None
     chat_import_state: str | None = None
     chat_import_started_at: datetime | None = None
+    media_width: int | None = None
+    media_height: int | None = None
 
     @property
     def total_bytes(self) -> int:
@@ -156,6 +158,41 @@ class MediaUploadLedger:
             updated = replace(reservation, status=status)
             self._memory[reservation_id] = updated
             return updated
+
+    def complete_social_bunny_video(
+        self, reservation_id: str, user_id: str,
+        *, width: int | None, height: int | None,
+    ) -> UploadReservation:
+        """Persist trusted provider dimensions and completion in one transition."""
+        if (width is None) != (height is None) or (
+            width is not None and (
+                type(width) is not int or type(height) is not int
+                or not 0 < width <= 32768 or not 0 < height <= 32768
+            )
+        ):
+            raise ValueError("Video dimensions are invalid.")
+        if self.database_url is not None:
+            with self._connect() as connection:
+                row = connection.execute(
+                    """UPDATE media_upload_reservations
+                    SET status='complete',media_width=%s,media_height=%s,updated_at=NOW()
+                    WHERE id=%s AND user_id=%s AND purpose='social'
+                        AND media_type='video' AND storage_provider='bunny_stream'
+                        AND status='pending' RETURNING *""",
+                    (width, height, reservation_id, user_id),
+                ).fetchone()
+            if row is None:
+                raise ValueError("Video upload is no longer active.")
+            return _reservation_from_row(row)
+        with self._lock:
+            row = self._memory.get(reservation_id)
+            if (row is None or row.user_id != user_id or row.purpose != "social"
+                    or row.media_type != "video" or row.storage_provider != "bunny_stream"
+                    or row.status != "pending"):
+                raise ValueError("Video upload is no longer active.")
+            result = replace(row, status="complete", media_width=width, media_height=height)
+            self._memory[reservation_id] = result
+            return result
 
     def set_chat_video_target(self, reservation_id: str, user_id: str,
                               video_id: str, expires_at: datetime) -> UploadReservation:
@@ -919,7 +956,8 @@ class MediaUploadLedger:
                                      ("chat_source_name", "TEXT"), ("chat_source_bytes", "BIGINT NOT NULL DEFAULT 0"),
                                      ("chat_source_deleted_at", "TIMESTAMPTZ"), ("chat_source_read_expires_at", "TIMESTAMPTZ"),
                                      ("chat_source_etag", "TEXT"), ("chat_source_duration_seconds", "DOUBLE PRECISION"),
-                                     ("chat_import_state", "TEXT"), ("chat_import_started_at", "TIMESTAMPTZ")):
+                                     ("chat_import_state", "TEXT"), ("chat_import_started_at", "TIMESTAMPTZ"),
+                                     ("media_width", "INTEGER"), ("media_height", "INTEGER")):
                 connection.execute(f"ALTER TABLE media_upload_reservations ADD COLUMN IF NOT EXISTS {name} {definition}")
             connection.execute(
                 """
@@ -1015,6 +1053,8 @@ def _reservation_from_row(row) -> UploadReservation:
         external_id=(
             str(row["external_id"]) if row.get("external_id") is not None else None
         ),
+        media_width=row.get("media_width"),
+        media_height=row.get("media_height"),
         purpose=str(row.get("purpose") or "social"),
         scope_type=row.get("scope_type"),
         scope_id=row.get("scope_id"),

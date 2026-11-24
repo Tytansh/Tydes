@@ -764,8 +764,13 @@ def complete_direct_media_upload(
             bunny.delete_video(video.video_id)
             upload_ledger.set_status(reservation.id, user.id, "rejected")
             raise HTTPException(status_code=400, detail="Videos can be up to 30 seconds long.")
-        completed = upload_ledger.set_status(reservation.id, user.id, "complete")
-        return _reservation_attachment(completed or reservation)
+        try:
+            completed = upload_ledger.complete_social_bunny_video(
+                reservation.id, user.id, width=video.width, height=video.height,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return _reservation_attachment(completed)
 
     try:
         media_metadata = storage.object_metadata(reservation.pending_name)
@@ -1033,6 +1038,8 @@ def _reservation_attachment(
         url=reservation.public_url,
         thumbnail_url=reservation.thumbnail_public_url,
         fallback_url=fallback_url,
+        width=reservation.media_width,
+        height=reservation.media_height,
     )
 
 

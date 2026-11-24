@@ -120,6 +120,7 @@ void _mediaTest(
     final previousImages = debugNetworkImageHttpClientProvider;
     final previousVideos = VideoPlayerPlatform.instance;
     final videos = _Videos();
+    SocialPostMediaCarousel.clearCachedNaturalSizes();
     _Images.requests = 0;
     VideoPlayerPlatform.instance = videos;
     PaintingBinding.instance.imageCache.clear();
@@ -237,7 +238,7 @@ void _expectUncropped(Size source, Size stage) {
   }
 }
 
-void _expectImageFit(WidgetTester tester, Size source, {bool poster = false}) {
+void _expectImageFit(WidgetTester tester, Size source) {
   final image = find.byWidgetPredicate(
     (widget) => widget is Image && widget.image is NetworkImage,
   );
@@ -254,7 +255,7 @@ void _expectImageFit(WidgetTester tester, Size source, {bool poster = false}) {
   expect(Size(decoded!.width.toDouble(), decoded.height.toDouble()), source);
   final stage = tester.getSize(find.byType(PageView));
   if (tester.view.physicalSize.width < 600) {
-    final ratio = poster ? 1.0 : source.aspectRatio;
+    final ratio = source.aspectRatio;
     expect(
       stage.height,
       closeTo((stage.width / ratio).clamp(0.0, 900.0), .00001),
@@ -338,23 +339,47 @@ void main() {
       videos,
     ) async {
       _imageBytes(shape.$2);
-      await _show(tester, width: 390, type: 'video', inactive: true);
+      await _show(
+        tester,
+        width: 390,
+        type: 'video',
+        inactive: true,
+        media: [
+          SocialMediaAttachmentModel.fromJson({
+            'id': 'sized-poster',
+            'media_type': 'video',
+            'url': 'https://media.example.invalid/sized-poster.mp4',
+            'thumbnail_url': 'https://media.example.invalid/poster.png',
+            'width': shape.$2.width.toInt(),
+            'height': shape.$2.height.toInt(),
+          }),
+        ],
+      );
       await _imageReady(tester);
-      _expectImageFit(tester, shape.$2, poster: true);
+      _expectImageFit(tester, shape.$2);
       expect(videos.streams, isEmpty);
       expect(tester.takeException(), isNull);
     });
   }
 
   _mediaTest(
-    'late video dimensions resize the phone stage without recreating playback',
+    'legacy video stays compact until it can appear at the correct size',
     (tester, videos) async {
       videos.initializeImmediately = false;
       _imageBytes(const Size(80, 45));
       await _show(tester, width: 390, height: 932, type: 'video');
       final originalState = tester.state(find.byType(AutoplayVideoPlayer));
-      expect(tester.getSize(find.byType(PageView)), const Size(346, 346));
+      expect(tester.getSize(find.byType(PageView)), const Size(346, 120));
+      expect(find.byType(VideoPlayer), findsNothing);
+      expect(
+        tester
+            .widget<AutoplayVideoPlayer>(find.byType(AutoplayVideoPlayer))
+            .awaitingNaturalSize,
+        isTrue,
+      );
       expect(videos.streams, hasLength(1));
+      await tester.pump(const Duration(seconds: 2));
+      expect(tester.getSize(find.byType(PageView)), const Size(346, 120));
       videos.sourceSize = const Size(1920, 1080);
       videos.initialize(0);
       for (var frame = 0; frame < 6; frame++) {
@@ -367,8 +392,65 @@ void main() {
       );
       expect(videos.streams, hasLength(1));
       expect(videos.playing, {0});
+      expect(
+        tester
+            .widget<AutoplayVideoPlayer>(find.byType(AutoplayVideoPlayer))
+            .awaitingNaturalSize,
+        isFalse,
+      );
     },
   );
+
+  _mediaTest('remounted video reserves its known size before initializing', (
+    tester,
+    videos,
+  ) async {
+    _imageBytes(const Size(80, 45));
+    await _show(tester, width: 390, height: 932, type: 'video');
+    for (var frame = 0; frame < 6; frame++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    expect(tester.getSize(find.byType(PageView)), const Size(346, 194.625));
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    videos.initializeImmediately = false;
+    await _show(tester, width: 390, height: 932, type: 'video');
+    expect(tester.getSize(find.byType(PageView)), const Size(346, 194.625));
+    expect(videos.streams, hasLength(2));
+    videos.initialize(1);
+    for (var frame = 0; frame < 6; frame++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    expect(tester.getSize(find.byType(PageView)), const Size(346, 194.625));
+  });
+
+  _mediaTest('changed media URL does not reuse stale dimensions', (
+    tester,
+    videos,
+  ) async {
+    _imageBytes(const Size(80, 45));
+    await _show(tester, width: 390, height: 932, type: 'video');
+    for (var frame = 0; frame < 6; frame++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    videos.initializeImmediately = false;
+    await _show(
+      tester,
+      width: 390,
+      height: 932,
+      type: 'video',
+      media: [
+        SocialMediaAttachmentModel.fromJson({
+          'id': 'whole-frame-video',
+          'media_type': 'video',
+          'url': 'https://media.example.invalid/replacement.mp4',
+          'thumbnail_url': '',
+        }),
+      ],
+    );
+    expect(tester.getSize(find.byType(PageView)), const Size(346, 120));
+    expect(find.byType(VideoPlayer), findsNothing);
+  });
 
   _mediaTest('metadata gives natural phone proportions before image decoding', (
     tester,
@@ -391,6 +473,12 @@ void main() {
         }),
       ],
     );
+    expect(tester.getSize(find.byType(PageView)), const Size(386, 217.125));
+    videos.sourceSize = const Size(1920, 1080);
+    videos.initialize(0);
+    for (var frame = 0; frame < 6; frame++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
     expect(tester.getSize(find.byType(PageView)), const Size(386, 217.125));
   });
 

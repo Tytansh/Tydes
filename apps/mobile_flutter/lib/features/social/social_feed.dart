@@ -528,6 +528,7 @@ class SocialPostMediaFrame extends StatelessWidget {
     super.key,
     required this.child,
     this.naturalAspectRatio,
+    this.awaitingVideoDimensions = false,
   });
 
   // A 680px post has 4px card margins and 18px content padding on each side.
@@ -536,6 +537,7 @@ class SocialPostMediaFrame extends StatelessWidget {
 
   final Widget child;
   final double? naturalAspectRatio;
+  final bool awaitingVideoDimensions;
 
   @override
   Widget build(BuildContext context) {
@@ -561,7 +563,12 @@ class SocialPostMediaFrame extends StatelessWidget {
               ? constraints.maxHeight.clamp(0.0, phoneHeightLimit)
               : phoneHeightLimit;
           width = constraints.maxWidth;
-          height = (width / mediaRatio).clamp(0.0, boundedHeight);
+          // Legacy uploads have no dimensions. Do not paint a guessed square
+          // video/poster and then shrink it when playback reports its size.
+          height = (awaitingVideoDimensions ? 120.0 : width / mediaRatio).clamp(
+            0.0,
+            boundedHeight,
+          );
         } else {
           final heightLimit = constraints.hasBoundedHeight
               ? constraints.maxHeight.clamp(0.0, maxHeight)
@@ -2636,6 +2643,14 @@ class SocialPostMediaCarousel extends StatefulWidget {
   final List<SocialMediaAttachmentModel> media;
   final double borderRadius;
 
+  // Keep lightweight dimensions when lazy feed rows are disposed/recreated.
+  // Bound this session-only cache; never retain controllers or image bytes.
+  static final _sizeCache = <String, Size>{};
+  static const _sizeCacheLimit = 256;
+
+  @visibleForTesting
+  static void clearCachedNaturalSizes() => _sizeCache.clear();
+
   @override
   State<SocialPostMediaCarousel> createState() =>
       _SocialPostMediaCarouselState();
@@ -2666,7 +2681,10 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
     final width = item.width;
     final height = item.height;
     if (width == null || height == null || width <= 0 || height <= 0) {
-      return null;
+      final key = _sourceKey(item);
+      final cached = SocialPostMediaCarousel._sizeCache.remove(key);
+      if (cached != null) SocialPostMediaCarousel._sizeCache[key] = cached;
+      return cached;
     }
     return Size(width.toDouble(), height.toDouble());
   }
@@ -2676,6 +2694,14 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
       return;
     }
     final key = _sourceKey(item);
+    SocialPostMediaCarousel._sizeCache.remove(key);
+    SocialPostMediaCarousel._sizeCache[key] = size;
+    if (SocialPostMediaCarousel._sizeCache.length >
+        SocialPostMediaCarousel._sizeCacheLimit) {
+      SocialPostMediaCarousel._sizeCache.remove(
+        SocialPostMediaCarousel._sizeCache.keys.first,
+      );
+    }
     if (_naturalSizes[key] == size || _pendingSizes[key] == size) return;
     _pendingSizes[key] = size;
     if (_sizeUpdateQueued) return;
@@ -2793,9 +2819,14 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
       isWeb: kIsWeb,
       mediaCount: media.length,
     );
+    final phone = socialPostUsesPhoneLayout(context);
+    final selected = media[_pageIndex];
+    final selectedSize = _naturalSize(selected);
 
     return SocialPostMediaFrame(
-      naturalAspectRatio: _naturalSize(media[_pageIndex])?.aspectRatio,
+      naturalAspectRatio: selectedSize?.aspectRatio,
+      awaitingVideoDimensions:
+          selected.mediaType == 'video' && selectedSize == null,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(
           socialPostUsesPhoneLayout(context) ? 0 : widget.borderRadius,
@@ -2829,6 +2860,7 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
                       expand: true,
                       active: index == _pageIndex,
                       enableZoom: true,
+                      awaitingNaturalSize: phone && _naturalSize(item) == null,
                       onZoomChanged: _zoomChanged,
                       onNaturalSize: socialPostUsesPhoneLayout(context)
                           ? (size) => _reportNaturalSize(item, size)
@@ -3070,6 +3102,7 @@ class AutoplayVideoPlayer extends ConsumerStatefulWidget {
     this.onZoomChanged,
     this.onNaturalSize,
     this.onOpenViewer,
+    this.awaitingNaturalSize = false,
   });
 
   final String url;
@@ -3082,6 +3115,7 @@ class AutoplayVideoPlayer extends ConsumerStatefulWidget {
   final ValueChanged<bool>? onZoomChanged;
   final ValueChanged<Size>? onNaturalSize;
   final VoidCallback? onOpenViewer;
+  final bool awaitingNaturalSize;
 
   @override
   ConsumerState<AutoplayVideoPlayer> createState() =>
@@ -3372,7 +3406,9 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
   }
 
   bool get _shouldPlay => socialVideoShouldPlay(
-    active: _active,
+    // Metadata may finish before the carousel applies its final dimensions.
+    // Do not start (or unmute) against the compact loading row's geometry.
+    active: _active && !widget.awaitingNaturalSize,
     userPaused: _userPaused,
     mostlyVisible: _isMostlyVisible(),
   );
@@ -3659,7 +3695,12 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
         alignment: Alignment.center,
         children: [
           Positioned.fill(
-            child: readyController != null
+            child: widget.awaitingNaturalSize && !_videoFailed
+                ? const ColoredBox(
+                    color: Color(0xFF07383D),
+                    child: _TydesVideoLoader(compact: true),
+                  )
+                : readyController != null
                 ? _fittedVideo(readyController)
                 : _videoFailed
                 ? Container(
@@ -3674,7 +3715,10 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
                     initializing: _initializing,
                   ),
           ),
-          if (!isPlaying && !_videoFailed && !_initializing)
+          if (!isPlaying &&
+              !_videoFailed &&
+              !_initializing &&
+              !widget.awaitingNaturalSize)
             IgnorePointer(
               child: Material(
                 color: Colors.black.withValues(alpha: 0.28),
@@ -3689,12 +3733,15 @@ class _AutoplayVideoPlayerState extends ConsumerState<AutoplayVideoPlayer>
                 ),
               ),
             ),
-          if (!ready && !_videoFailed && !_initializing)
+          if (!ready &&
+              !_videoFailed &&
+              !_initializing &&
+              !widget.awaitingNaturalSize)
             const Positioned(
               bottom: 14,
               child: _VideoLoadHint(label: 'Auto plays in feed'),
             ),
-          if (_initializing)
+          if (_initializing && !widget.awaitingNaturalSize)
             const Positioned(
               bottom: 14,
               child: _VideoLoadHint(label: 'Loading video...'),
