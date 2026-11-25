@@ -57,10 +57,7 @@ void main() {
         matching: find.byType(ClipRRect),
       );
       final radius = tester.widget<ClipRRect>(carouselClip.first).borderRadius;
-      expect(
-        media.width / media.height,
-        closeTo(width < 600 ? 16 / 9 : 9 / 16, .00001),
-      );
+      expect(media.width / media.height, closeTo(16 / 9, .00001));
       if (width < 600) {
         expect(card.left, 0);
         expect(card.right, width);
@@ -69,8 +66,12 @@ void main() {
         expect(media.height, closeTo(width * 9 / 16, .00001));
         expect(radius, BorderRadius.zero);
       } else {
-        expect(media.width, closeTo(636 * 9 / 16, .00001));
-        expect(media.height, 636);
+        // HomePage keeps 20px sliver padding on desktop/tablet. Measure the
+        // bounded card, then remove its margins and 18px section insets.
+        final contentWidth = card.width - 44;
+        expect(card.width, lessThanOrEqualTo(680));
+        expect(media.width, closeTo(contentWidth, .00001));
+        expect(media.height, closeTo(contentWidth * 9 / 16, .00001));
         expect(media.center.dx, closeTo(width / 2, .00001));
         expect(radius, BorderRadius.circular(18));
       }

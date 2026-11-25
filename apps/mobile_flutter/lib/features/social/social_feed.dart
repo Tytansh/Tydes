@@ -522,8 +522,8 @@ class TydesDesktopPostWidth extends StatelessWidget {
 bool socialPostUsesPhoneLayout(BuildContext context) =>
     MediaQuery.sizeOf(context).width < 600;
 
-/// Phones follow the selected attachment's proportions; desktop keeps its
-/// existing portrait presentation. Tall phone media is contained, never cropped.
+/// Media follows the selected attachment's proportions at every screen size.
+/// Tall originals are contained within the height cap, never cropped.
 class SocialPostMediaFrame extends StatelessWidget {
   const SocialPostMediaFrame({
     super.key,
@@ -532,9 +532,7 @@ class SocialPostMediaFrame extends StatelessWidget {
     this.awaitingDimensions = false,
   });
 
-  // A 680px post has 4px card margins and 18px content padding on each side.
-  static const maxHeight = TydesDesktopPostWidth.maxWidth - 44;
-  static const aspectRatio = 9 / 16;
+  static const maxHeight = 650.0;
 
   final Widget child;
   final double? naturalAspectRatio;
@@ -545,13 +543,13 @@ class SocialPostMediaFrame extends StatelessWidget {
     final phone = socialPostUsesPhoneLayout(context);
     return LayoutBuilder(
       builder: (context, constraints) {
+        final ratio = naturalAspectRatio;
+        final mediaRatio = ratio != null && ratio.isFinite && ratio > 0
+            ? ratio
+            : 1.0;
         late double width;
         late double height;
         if (phone) {
-          final ratio = naturalAspectRatio;
-          final mediaRatio = ratio != null && ratio.isFinite && ratio > 0
-              ? ratio
-              : 1.0;
           final mediaQuery = MediaQuery.of(context);
           final chrome = FeedChromeInsets.maybeOf(context);
           final usableHeight = chrome == null
@@ -574,8 +572,11 @@ class SocialPostMediaFrame extends StatelessWidget {
           final heightLimit = constraints.hasBoundedHeight
               ? constraints.maxHeight.clamp(0.0, maxHeight)
               : maxHeight;
-          width = constraints.maxWidth.clamp(0.0, heightLimit * aspectRatio);
-          height = width / aspectRatio;
+          width = constraints.maxWidth;
+          height = (awaitingDimensions ? 120.0 : width / mediaRatio).clamp(
+            0.0,
+            heightLimit,
+          );
         }
         return Align(
           alignment: Alignment.topCenter,
@@ -2829,7 +2830,7 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
       awaitingDimensions: selectedSize == null,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(
-          socialPostUsesPhoneLayout(context) ? 0 : widget.borderRadius,
+          phone ? 0 : widget.borderRadius,
         ),
         child: ColoredBox(
           color: Colors.black,
@@ -2860,12 +2861,10 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
                       expand: true,
                       active: index == _pageIndex,
                       enableZoom: true,
-                      awaitingNaturalSize: phone && _naturalSize(item) == null,
+                      awaitingNaturalSize: _naturalSize(item) == null,
                       onZoomChanged: _zoomChanged,
-                      onNaturalSize: socialPostUsesPhoneLayout(context)
-                          ? (size) => _reportNaturalSize(item, size)
-                          : null,
-                      onOpenViewer: socialPostUsesPhoneLayout(context)
+                      onNaturalSize: (size) => _reportNaturalSize(item, size),
+                      onOpenViewer: phone
                           ? () => _openViewer(index)
                           : null,
                     );
@@ -2874,16 +2873,13 @@ class _SocialPostMediaCarouselState extends State<SocialPostMediaCarousel> {
                     key: ValueKey(item.id),
                     onZoomChanged: _zoomChanged,
                     child: GestureDetector(
-                      onTap: socialPostUsesPhoneLayout(context)
+                      onTap: phone
                           ? () => _openViewer(index)
                           : null,
                       child: _PostPhoto(
                         url: item.url,
-                        awaitingNaturalSize:
-                            phone && _naturalSize(item) == null,
-                        onNaturalSize: socialPostUsesPhoneLayout(context)
-                            ? (size) => _reportNaturalSize(item, size)
-                            : null,
+                        awaitingNaturalSize: _naturalSize(item) == null,
+                        onNaturalSize: (size) => _reportNaturalSize(item, size),
                       ),
                     ),
                   );

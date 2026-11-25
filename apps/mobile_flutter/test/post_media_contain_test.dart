@@ -269,8 +269,11 @@ void _expectImageFit(WidgetTester tester, Size source) {
       closeTo((stage.width / ratio).clamp(0.0, 900.0), .00001),
     );
   } else {
-    expect(stage.aspectRatio, closeTo(9 / 16, .00001));
-    expect(stage.height, lessThanOrEqualTo(636));
+    expect(stage.width, 636);
+    expect(
+      stage.height,
+      closeTo((stage.width / source.aspectRatio).clamp(0.0, 650.0), .00001),
+    );
   }
   expect(tester.getSize(image), stage);
   _expectUncropped(source, stage);
@@ -330,8 +333,14 @@ void main() {
             ),
           );
         } else {
-          expect(stage.aspectRatio, closeTo(9 / 16, .00001));
-          expect(stage.height, lessThanOrEqualTo(636));
+          expect(stage.width, 636);
+          expect(
+            stage.height,
+            closeTo(
+              (stage.width / shape.$2.aspectRatio).clamp(0.0, 650.0),
+              .00001,
+            ),
+          );
         }
         _expectUncropped(shape.$2, stage);
         _expectBlackAncestor(player);
@@ -591,6 +600,153 @@ void main() {
     final stage = tester.getSize(find.byType(PageView));
     expect(stage, const Size(386, 604));
     _expectUncropped(const Size(400, 2000), stage);
+  });
+
+  _mediaTest(
+    'desktop legacy video waits for dimensions without replacing playback',
+    (tester, videos) async {
+      videos.initializeImmediately = false;
+      _imageBytes(const Size(80, 45));
+      await _show(tester, width: 1400, type: 'video');
+      final originalState = tester.state(find.byType(AutoplayVideoPlayer));
+      expect(tester.getSize(find.byType(PageView)), const Size(636, 120));
+      expect(find.byType(VideoPlayer), findsNothing);
+      expect(
+        tester
+            .widget<AutoplayVideoPlayer>(find.byType(AutoplayVideoPlayer))
+            .awaitingNaturalSize,
+        isTrue,
+      );
+      expect(videos.streams, hasLength(1));
+      videos.sourceSize = const Size(1920, 1080);
+      videos.initialize(0);
+      for (var frame = 0; frame < 6; frame++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(tester.getSize(find.byType(PageView)), const Size(636, 357.75));
+      expect(
+        tester.state(find.byType(AutoplayVideoPlayer)),
+        same(originalState),
+      );
+      expect(videos.streams, hasLength(1));
+      expect(videos.playing, {0});
+    },
+  );
+
+  _mediaTest('desktop photo only appears in its decoded natural frame', (
+    tester,
+    videos,
+  ) async {
+    _imageBytes(const Size(80, 45));
+    final gate = _Images.responseGate = Completer<void>();
+    await _show(tester, width: 1400, type: 'photo');
+    expect(tester.getSize(find.byType(PageView)), const Size(636, 120));
+    gate.complete();
+    await tester.runAsync(
+      () async => Future<void>.delayed(const Duration(milliseconds: 30)),
+    );
+    for (var frame = 0; frame < 6; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      final visibleImages = tester
+          .widgetList<RawImage>(find.byType(RawImage))
+          .where((image) => image.image != null);
+      if (visibleImages.isNotEmpty) {
+        expect(tester.getSize(find.byType(PageView)), const Size(636, 357.75));
+      }
+    }
+    _expectImageFit(tester, const Size(80, 45));
+    expect(_Images.requests, 1);
+    expect(videos.streams, isEmpty);
+  });
+
+  for (final dimensions in [const Size(1920, 1080), const Size(1080, 1920)]) {
+    _mediaTest(
+      'desktop reserves metadata $dimensions before video initialization',
+      (tester, videos) async {
+        videos.initializeImmediately = false;
+        await _show(
+          tester,
+          width: 1400,
+          type: 'video',
+          media: [
+            SocialMediaAttachmentModel.fromJson({
+              'id': 'desktop-metadata',
+              'media_type': 'video',
+              'url': 'https://media.example.invalid/desktop-metadata.mp4',
+              'thumbnail_url': '',
+              'width': dimensions.width.toInt(),
+              'height': dimensions.height.toInt(),
+            }),
+          ],
+        );
+        final expected = Size(
+          636,
+          (636 / dimensions.aspectRatio).clamp(0.0, 650.0),
+        );
+        expect(tester.getSize(find.byType(PageView)), expected);
+        videos.sourceSize = dimensions;
+        videos.initialize(0);
+        for (var frame = 0; frame < 6; frame++) {
+          await tester.pump(const Duration(milliseconds: 20));
+        }
+        expect(tester.getSize(find.byType(PageView)), expected);
+        _expectUncropped(dimensions, expected);
+        expect(videos.streams, hasLength(1));
+        expect(videos.playing, {0});
+      },
+    );
+  }
+
+  _mediaTest(
+    'desktop remount keeps cached dimensions before playback is ready',
+    (tester, videos) async {
+      _imageBytes(const Size(80, 45));
+      await _show(tester, width: 1400, type: 'video');
+      for (var frame = 0; frame < 6; frame++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(tester.getSize(find.byType(PageView)), const Size(636, 357.75));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      videos.initializeImmediately = false;
+      await _show(tester, width: 1400, type: 'video');
+      expect(tester.getSize(find.byType(PageView)), const Size(636, 357.75));
+      expect(videos.streams, hasLength(2));
+      videos.initialize(1);
+      for (var frame = 0; frame < 6; frame++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(tester.getSize(find.byType(PageView)), const Size(636, 357.75));
+    },
+  );
+
+  _mediaTest('desktop carousel changes ratio and caps tall slides at 650px', (
+    tester,
+    videos,
+  ) async {
+    videos.initializeImmediately = false;
+    final attachments = [
+      for (final (id, width, height) in [
+        ('desktop-wide', 1600, 900),
+        ('desktop-tall', 900, 1600),
+      ])
+        SocialMediaAttachmentModel.fromJson({
+          'id': id,
+          'media_type': 'video',
+          'url': 'https://media.example.invalid/$id.mp4',
+          'thumbnail_url': '',
+          'width': width,
+          'height': height,
+        }),
+    ];
+    await _show(tester, width: 1400, type: 'video', media: attachments);
+    expect(tester.getSize(find.byType(PageView)), const Size(636, 357.75));
+    await tester.drag(find.byType(PageView), const Offset(-600, 0));
+    for (var frame = 0; frame < 10; frame++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(tester.getSize(find.byType(PageView)), const Size(636, 650));
+    _expectUncropped(const Size(900, 1600), const Size(636, 650));
   });
 
   _mediaTest(
