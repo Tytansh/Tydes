@@ -17,6 +17,7 @@ import '../../core/network/api_models.dart';
 import '../../core/network/spot_catalog_provider.dart';
 import '../../core/network/surf_repository.dart';
 import '../../core/widgets/media_image_strategy.dart';
+import '../../core/widgets/media_image_dimensions.dart';
 import '../../core/widgets/phone_frosted_chrome.dart';
 import 'direct_messages_page.dart';
 import 'event_chat_page.dart';
@@ -3008,9 +3009,7 @@ class _PostPhotoState extends State<_PostPhoto> {
     _sizeStream = stream;
     _sizeListener = ImageStreamListener((info, _) {
       try {
-        widget.onNaturalSize?.call(
-          Size(info.image.width.toDouble(), info.image.height.toDouble()),
-        );
+        widget.onNaturalSize?.call(mediaImageDimensions(info));
       } finally {
         info.dispose();
       }
